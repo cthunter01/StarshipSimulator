@@ -1,0 +1,281 @@
+#include "StarshipSimulator/render/renderer.h"
+
+#include <imgui.h>
+#include <imgui_impl_sdlgpu3.h>
+
+#include <cstdint>
+#include <exception>
+#include <expected>
+#include <filesystem>
+#include <format>
+#include <memory>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <system_error>
+#include <utility>
+
+#include <SDL3/SDL_error.h>
+#include <SDL3/SDL_gpu.h>
+#include <SDL3/SDL_pixels.h>
+#include <SDL3/SDL_surface.h>
+
+#include "StarshipSimulator/core/camera.h"
+#include "StarshipSimulator/core/gpu_abi/uniforms.h"
+#include "StarshipSimulator/core/math.h"
+#include "StarshipSimulator/render/gpu_device.h"
+#include "StarshipSimulator/render/gpu_handles.h"
+#include "StarshipSimulator/render/passes/grid_pass.h"
+#include "StarshipSimulator/render/passes/marker_pass.h"
+#include "StarshipSimulator/render/passes/tonemap_pass.h"
+#include "StarshipSimulator/render/render_targets.h"
+
+namespace StarshipSimulator
+{
+
+struct Renderer::Passes
+{
+    GridPass    grid;
+    MarkerPass  markers;
+    TonemapPass tonemap;
+};
+
+namespace
+{
+
+constexpr std::uint32_t kBytesPerPixel = 4;
+
+std::optional<SDL_PixelFormat> pixelFormatOf(SDL_GPUTextureFormat format)
+{
+    switch (format)
+    {
+        case SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM:
+        case SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM_SRGB:
+            return SDL_PIXELFORMAT_BGRA32;
+        case SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM:
+        case SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB:
+            return SDL_PIXELFORMAT_RGBA32;
+        default:
+            return std::nullopt;
+    }
+}
+
+std::expected<std::filesystem::path, std::string> savePng(const std::filesystem::path& path,
+                                                          SDL_PixelFormat format, void* pixels,
+                                                          std::uint32_t width, std::uint32_t height)
+{
+    std::error_code error;
+    if (path.has_parent_path())
+    {
+        std::filesystem::create_directories(path.parent_path(), error);
+    }
+    SDL_Surface* surface =
+        SDL_CreateSurfaceFrom(static_cast<int>(width), static_cast<int>(height), format, pixels,
+                              static_cast<int>(width * kBytesPerPixel));
+    if (surface == nullptr)
+    {
+        return std::unexpected(std::format("Cannot wrap the screenshot: {}", SDL_GetError()));
+    }
+    const bool saved = SDL_SavePNG(surface, path.string().c_str());
+    SDL_DestroySurface(surface);
+    if (!saved)
+    {
+        return std::unexpected(std::format("Cannot save {}: {}", path.string(), SDL_GetError()));
+    }
+    return path;
+}
+
+}  // namespace
+
+Renderer::Renderer(GpuDevice& device, std::filesystem::path shaderDirectory)
+  : device_(&device),
+    shaders_(device.get(), std::move(shaderDirectory)),
+    targets_(device.get(), chooseSceneFormats(device.get(), SDL_GPU_SAMPLECOUNT_4)),
+    passes_(createPasses())
+{
+}
+
+Renderer::~Renderer()
+{
+    SDL_WaitForGPUIdle(device_->get());
+}
+
+std::unique_ptr<Renderer::Passes> Renderer::createPasses() const
+{
+    SDL_GPUDevice* device = device_->get();
+    return std::make_unique<Passes>(Passes{
+        .grid    = GridPass(device, shaders_, targets_.formats()),
+        .markers = MarkerPass(device, shaders_, targets_.formats()),
+        .tonemap = TonemapPass(device, shaders_, device_->swapchainFormat()),
+    });
+}
+
+std::expected<void, std::string> Renderer::reloadShaders()
+{
+    try
+    {
+        auto passes = createPasses();
+        SDL_WaitForGPUIdle(device_->get());
+        passes_ = std::move(passes);
+        return {};
+    }
+    catch (const std::exception& e)
+    {
+        return std::unexpected(std::string(e.what()));
+    }
+}
+
+FrameResult Renderer::renderFrame(const SceneView& view, const FrameOptions& options)
+{
+    SDL_GPUCommandBuffer* commands = SDL_AcquireGPUCommandBuffer(device_->get());
+    if (commands == nullptr)
+    {
+        throw std::runtime_error(
+            std::format("Cannot acquire a command buffer: {}", SDL_GetError()));
+    }
+    SDL_GPUTexture* swapchain = nullptr;
+    std::uint32_t   width     = 0;
+    std::uint32_t   height    = 0;
+    if (!SDL_WaitAndAcquireGPUSwapchainTexture(commands, device_->window(), &swapchain, &width,
+                                               &height))
+    {
+        SDL_CancelGPUCommandBuffer(commands);
+        throw std::runtime_error(std::format("Cannot acquire the swapchain: {}", SDL_GetError()));
+    }
+
+    FrameResult result{.width = width, .height = height};
+    if (swapchain == nullptr || width == 0 || height == 0)
+    {
+        // Minimized or occluded: nothing to draw, but the command buffer must still be submitted.
+        SDL_SubmitGPUCommandBuffer(commands);
+        return result;
+    }
+
+    targets_.resize(width, height);
+    if (options.ui != nullptr)
+    {
+        ImGui_ImplSDLGPU3_PrepareDrawData(options.ui, commands);  // copy pass: before render passes
+    }
+    drawScene(commands, view, width, height);
+    drawDisplay(commands, swapchain, view, options.ui);
+    result.presented = true;
+
+    if (options.screenshot)
+    {
+        result.screenshot =
+            captureAndSubmit(commands, view, *options.screenshot,
+                             options.screenshotIncludesUi ? options.ui : nullptr, width, height);
+    }
+    else if (!SDL_SubmitGPUCommandBuffer(commands))
+    {
+        throw std::runtime_error(std::format("Cannot submit the frame: {}", SDL_GetError()));
+    }
+    return result;
+}
+
+void Renderer::drawScene(SDL_GPUCommandBuffer* commands, const SceneView& view, std::uint32_t width,
+                         std::uint32_t height)
+{
+    const gpu::FrameUniforms frame          = gpu::makeFrameUniforms(view.camera, width, height);
+    const Mat4d              viewProjection = cameraRelativeViewProjection(
+        view.camera, static_cast<double>(width) / static_cast<double>(height));
+
+    const bool                   msaa = targets_.multisampled();
+    const SDL_GPUColorTargetInfo color{
+        .texture               = targets_.color(),
+        .clear_color           = {.r = 0.0F, .g = 0.0F, .b = 0.0F, .a = 1.0F},
+        .load_op               = SDL_GPU_LOADOP_CLEAR,
+        .store_op              = msaa ? SDL_GPU_STOREOP_RESOLVE : SDL_GPU_STOREOP_STORE,
+        .resolve_texture       = msaa ? targets_.resolved() : nullptr,
+        .cycle                 = true,
+        .cycle_resolve_texture = msaa,
+    };
+    const SDL_GPUDepthStencilTargetInfo depth{
+        .texture          = targets_.depth(),
+        .clear_depth      = 0.0F,  // reverse-Z: 0 is infinitely far
+        .load_op          = SDL_GPU_LOADOP_CLEAR,
+        .store_op         = SDL_GPU_STOREOP_DONT_CARE,
+        .stencil_load_op  = SDL_GPU_LOADOP_DONT_CARE,
+        .stencil_store_op = SDL_GPU_STOREOP_DONT_CARE,
+        .cycle            = true,
+    };
+    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &color, 1, &depth);
+    passes_->grid.draw(commands, pass, frame);
+    passes_->markers.draw(commands, pass, viewProjection, view.camera.position, view.markers);
+    SDL_EndGPURenderPass(pass);
+}
+
+void Renderer::drawDisplay(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* target,
+                           const SceneView& view, ImDrawData* ui)
+{
+    const SDL_GPUColorTargetInfo color{
+        .texture  = target,
+        .load_op  = SDL_GPU_LOADOP_DONT_CARE,  // the tonemap pass covers every pixel
+        .store_op = SDL_GPU_STOREOP_STORE,
+    };
+    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &color, 1, nullptr);
+    passes_->tonemap.draw(commands, pass, targets_.resolved(), view.exposure);
+    if (ui != nullptr)
+    {
+        ImGui_ImplSDLGPU3_RenderDrawData(ui, commands, pass);
+    }
+    SDL_EndGPURenderPass(pass);
+}
+
+std::expected<std::filesystem::path, std::string> Renderer::captureAndSubmit(
+    SDL_GPUCommandBuffer* commands, const SceneView& view, const std::filesystem::path& path,
+    ImDrawData* ui, std::uint32_t width, std::uint32_t height)
+{
+    SDL_GPUDevice*                 device      = device_->get();
+    const SDL_GPUTextureFormat     format      = device_->swapchainFormat();
+    const auto                     pixelFormat = pixelFormatOf(format);
+    const std::uint32_t            byteCount   = width * height * kBytesPerPixel;
+    const SDL_GPUTextureCreateInfo textureInfo{
+        .type                 = SDL_GPU_TEXTURETYPE_2D,
+        .format               = format,
+        .usage                = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET,
+        .width                = width,
+        .height               = height,
+        .layer_count_or_depth = 1,
+        .num_levels           = 1,
+        .sample_count         = SDL_GPU_SAMPLECOUNT_1,
+        .props                = 0,
+    };
+    const SDL_GPUTransferBufferCreateInfo transferInfo{
+        .usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, .size = byteCount, .props = 0};
+    const GpuTexture        capture(device, SDL_CreateGPUTexture(device, &textureInfo));
+    const GpuTransferBuffer download(device, SDL_CreateGPUTransferBuffer(device, &transferInfo));
+    if (!pixelFormat || !capture.valid() || !download.valid())
+    {
+        SDL_SubmitGPUCommandBuffer(commands);
+        return std::unexpected(pixelFormat ? std::format("Cannot capture: {}", SDL_GetError())
+                                           : std::string("Cannot capture this swapchain format"));
+    }
+
+    // Draw the frame again into a texture we can read back (never blit the swapchain).
+    drawDisplay(commands, capture.get(), view, ui);
+    SDL_GPUCopyPass*           copy = SDL_BeginGPUCopyPass(commands);
+    const SDL_GPUTextureRegion region{.texture = capture.get(), .w = width, .h = height, .d = 1};
+    const SDL_GPUTextureTransferInfo destination{.transfer_buffer = download.get(), .offset = 0};
+    SDL_DownloadFromGPUTexture(copy, &region, &destination);
+    SDL_EndGPUCopyPass(copy);
+
+    SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(commands);
+    if (fence == nullptr)
+    {
+        return std::unexpected(std::format("Cannot submit the capture: {}", SDL_GetError()));
+    }
+    SDL_WaitForGPUFences(device, true, &fence, 1);
+    SDL_ReleaseGPUFence(device, fence);
+
+    void* pixels = SDL_MapGPUTransferBuffer(device, download.get(), false);
+    if (pixels == nullptr)
+    {
+        return std::unexpected(std::format("Cannot read the capture: {}", SDL_GetError()));
+    }
+    auto saved = savePng(path, *pixelFormat, pixels, width, height);
+    SDL_UnmapGPUTransferBuffer(device, download.get());
+    return saved;
+}
+
+}  // namespace StarshipSimulator

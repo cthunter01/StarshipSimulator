@@ -1,0 +1,6 @@
+# LeakSanitizer suppressions for running the (asan-built) application, not the unit tests:
+#   LSAN_OPTIONS=suppressions=tools/lsan.supp build/asan/bin/StarshipSimulator
+# System libraries that intentionally keep allocations until exit.
+leak:libdbus-1.so
+leak:libnvidia-
+leak:libvulkan.so

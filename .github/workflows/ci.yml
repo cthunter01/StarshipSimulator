@@ -1,0 +1,39 @@
+# Builds and tests every CI preset, and checks formatting.
+# Runs in an Arch Linux container so CI has the same current GCC/Clang as the dev machine.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    name: ${{ matrix.preset }}
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [ci-gcc, ci-clang, asan, tidy]
+    steps:
+      - name: Install toolchain and libraries
+        # sdl3: window/input/GPU API, glm: math, shaderc: glslc (GLSL -> SPIR-V at build time).
+        # The app is built but not run in CI (no GPU); unit tests only need the core library.
+        run: pacman -Syu --noconfirm --needed cmake ninja clang git sdl3 glm shaderc
+      - uses: actions/checkout@v7
+      - name: Configure, build and test
+        run: cmake --workflow --preset ${{ matrix.preset }}
+
+  format:
+    name: clang-format
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Install clang-format
+        run: pacman -Syu --noconfirm --needed clang git
+      - uses: actions/checkout@v7
+      - name: Check formatting
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git ls-files -z -- '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hpp' \
+            | xargs -0 --no-run-if-empty clang-format --dry-run --Werror
