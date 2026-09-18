@@ -1,0 +1,52 @@
+#pragma once
+
+#include <cstdint>
+#include <string_view>
+
+#include <SDL3/SDL_gpu.h>
+
+#include "StarshipSimulator/render/gpu_handles.h"
+#include "StarshipSimulator/render/render_targets.h"
+
+namespace StarshipSimulator
+{
+
+enum class BlendMode : std::uint8_t
+{
+    Opaque,
+    Additive,  // dst + src
+    Multiply,  // dst * src
+    Alpha,     // premultiplied: src + dst * (1 - src.a)
+};
+
+enum class DepthMode : std::uint8_t
+{
+    None,       // no depth test or write
+    TestWrite,  // reverse-Z: GREATER passes
+    TestOnly,
+    AlwaysWrite,
+};
+
+/// What differs between our graphics pipelines; everything else is shared.
+struct PipelineDescription
+{
+    SDL_GPUShader*       vertexShader   = nullptr;
+    SDL_GPUShader*       fragmentShader = nullptr;
+    bool                 meshVertices   = false;  // StarshipSimulator::Vertex input, else none
+    SDL_GPUCullMode      cull           = SDL_GPU_CULLMODE_NONE;
+    DepthMode            depth          = DepthMode::None;
+    BlendMode            blend          = BlendMode::Opaque;
+    SDL_GPUTextureFormat colorFormat    = SDL_GPU_TEXTUREFORMAT_INVALID;
+    SDL_GPUTextureFormat depthFormat = SDL_GPU_TEXTUREFORMAT_INVALID;  // INVALID: no depth target
+    SDL_GPUSampleCount   samples     = SDL_GPU_SAMPLECOUNT_1;
+};
+
+/// A description for drawing into the HDR scene targets.
+[[nodiscard]] PipelineDescription scenePipeline(const SceneFormats& formats);
+
+/// Creates a graphics pipeline; throws std::runtime_error naming it on failure.
+[[nodiscard]] GpuGraphicsPipeline createPipeline(SDL_GPUDevice*             device,
+                                                 const PipelineDescription& description,
+                                                 std::string_view           name);
+
+}  // namespace StarshipSimulator

@@ -44,6 +44,12 @@ include(${PROJECT_SOURCE_DIR}/cmake/Shaders.cmake)
 add_subdirectory(shaders)
 add_subdirectory(src)
 
+# Runtime data (scenario presets, ...), copied next to the executable: build/<preset>/bin/data.
+add_custom_target(StarshipSimulator_data ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+            ${PROJECT_SOURCE_DIR}/data ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/data
+    COMMENT "Copying runtime data")
+
 if(STARSHIPSIMULATOR_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)

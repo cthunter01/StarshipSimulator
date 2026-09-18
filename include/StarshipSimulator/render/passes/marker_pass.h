@@ -13,16 +13,23 @@
 namespace StarshipSimulator
 {
 
-/// An axis-aligned box placed in the world, used for test and reference markers.
-struct Marker
+enum class MarkerShape : std::uint8_t
 {
-    Vec3d position{0.0};      // centre, world space (double precision)
-    Vec3f halfExtents{0.5F};  // metres
-    Vec3f color{0.8F};        // linear RGB
-    Vec3f emission{0.0F};     // linear RGB, glows regardless of lighting
+    Box,
+    Sphere,
 };
 
-/// Draws markers as lit boxes. Each box's camera-relative transform is computed in double
+/// A simple shape placed in the world: thrown balls, trajectory dots, reference markers.
+struct Marker
+{
+    Vec3d       position{0.0};      // centre, habitat frame (double precision)
+    Vec3f       halfExtents{0.5F};  // metres (radius for spheres)
+    Vec3f       color{0.8F};        // linear RGB
+    Vec3f       emission{0.0F};     // linear RGB, glows regardless of lighting
+    MarkerShape shape = MarkerShape::Box;
+};
+
+/// Draws markers as lit shapes. Each one's camera-relative transform is computed in double
 /// precision.
 class MarkerPass
 {
@@ -33,10 +40,18 @@ public:
               const Vec3d& cameraPosition, std::span<const Marker> markers) const;
 
 private:
+    struct Range
+    {
+        std::uint32_t firstIndex   = 0;
+        std::uint32_t indexCount   = 0;
+        std::int32_t  vertexOffset = 0;
+    };
+
     GpuGraphicsPipeline pipeline_;
     GpuBuffer           vertices_;
     GpuBuffer           indices_;
-    std::uint32_t       indexCount_ = 0;
+    Range               box_;
+    Range               sphere_;
 };
 
 }  // namespace StarshipSimulator

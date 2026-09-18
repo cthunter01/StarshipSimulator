@@ -1,0 +1,41 @@
+# StarshipSimulator habitat scenario
+format_version = 1
+generator_version = 1
+title = "Coriolis Playground"
+description = "A small 250 m radius cylinder spinning at almost 2 rpm. Same floor gravity as Earth, but Coriolis forces are 14 times stronger than in Island Three: throws curve and jumps drift visibly."
+
+# Spin axis +Z points at the Sun. Gravity comes from spin: omega^2 * radius.
+[habitat]
+type = "oneill_cylinder"
+radius_m = 250.0
+length_m = 800.0
+surface_gravity_g = 1.0
+strip_pairs = 3
+window_fraction = 0.4
+population_density_per_km2 = 3000.0
+
+[habitat.sunward_endcap]
+shape = "hemisphere"
+
+[habitat.antisunward_endcap]
+shape = "hemisphere"
+
+# 45 degrees puts the sun overhead; 90 is sunset.
+[habitat.mirrors]
+opening_angle_deg = 50.0
+reflectivity = 0.9
+
+[habitat.atmosphere]
+surface_pressure_kpa = 101.325
+temperature_k = 293.0
+
+[habitat.terrain]
+seed = 7
+hill_height_m = 3.0
+mountain_height_m = 6.0
+feature_size_m = 60.0
+
+[start]
+valley = 1
+z_m = 0.0
+heading_deg = 0.0

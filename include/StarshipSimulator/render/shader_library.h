@@ -19,7 +19,7 @@ class ShaderLibrary
 public:
     ShaderLibrary(SDL_GPUDevice* device, std::filesystem::path directory);
 
-    /// Loads "<directory>/<name>.spv", e.g. load("grid.frag"). Throws std::runtime_error.
+    /// Loads "<directory>/<name>.spv", e.g. load("habitat.frag"). Throws std::runtime_error.
     [[nodiscard]] GpuShader load(std::string_view name) const;
 
     [[nodiscard]] const std::filesystem::path& directory() const { return directory_; }

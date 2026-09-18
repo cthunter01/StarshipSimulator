@@ -28,6 +28,16 @@ FetchContent_Declare(glm
     FIND_PACKAGE_ARGS CONFIG)
 FetchContent_MakeAvailable(glm)
 
+# toml++: reads habitat scenario files (Arch: pacman -S tomlplusplus). Used only inside core.
+FetchContent_Declare(tomlplusplus
+    GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
+    GIT_TAG        v3.4.0
+    GIT_SHALLOW    TRUE
+    SYSTEM
+    EXCLUDE_FROM_ALL
+    FIND_PACKAGE_ARGS CONFIG)
+FetchContent_MakeAvailable(tomlplusplus)
+
 # Dear ImGui: debug HUD and editor panels. It has no CMake build, so the repository is only downloaded
 # and StarshipSimulator_imgui is built from its sources, with the SDL3 platform and SDL_GPU renderer backends.
 FetchContent_Declare(imgui

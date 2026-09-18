@@ -59,6 +59,18 @@ TEST(AppOptions, ReportsProblemsClearly)
     EXPECT_NE(parse({"--capture-frames", "0"}).error().find("positive"), std::string::npos);
 }
 
+TEST(AppOptions, HabitatOptions)
+{
+    const auto parsed =
+        parse({"--scenario", "my.toml", "--view", "lookup", "--mirror", "80", "--benchmark"});
+    ASSERT_TRUE(parsed.has_value()) << parsed.error();
+    EXPECT_EQ(parsed->scenarioPath, "my.toml");
+    EXPECT_EQ(parsed->view, "lookup");
+    EXPECT_EQ(parsed->mirrorAngleDeg, 80.0);
+    EXPECT_TRUE(parsed->benchmark);
+    EXPECT_FALSE(parse({"--mirror", "200"}).has_value());
+}
+
 TEST(AppOptions, HelpFlag)
 {
     EXPECT_TRUE(parse({"-h"})->showHelp);

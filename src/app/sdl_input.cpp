@@ -54,6 +54,15 @@ void SdlInput::handleKey(SDL_Keycode key, InputFrame& frame, ImGuiLayer& imgui)
         case SDLK_F12:
             frame.screenshot = true;
             break;
+        case SDLK_C:
+            frame.toggleComfort = true;
+            break;
+        case SDLK_G:
+            frame.throwBall = true;
+            break;
+        case SDLK_TAB:
+            frame.toggleEditor = true;
+            break;
         default:
             break;
     }

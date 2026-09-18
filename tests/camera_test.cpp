@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 
+#include "StarshipSimulator/core/frustum.h"
 #include "StarshipSimulator/core/math.h"
 
 namespace
@@ -130,6 +131,19 @@ TEST(Camera, ViewProjectionPutsPointsAheadInTheCentre)
     EXPECT_NEAR(clip.x / clip.w, 0.0, 1e-12);
     EXPECT_NEAR(clip.y / clip.w, 0.0, 1e-12);
     EXPECT_NEAR(clip.z / clip.w, camera.nearPlaneMeters / 10.0, 1e-12);
+}
+
+TEST(Frustum, CullsBoxesOutsideTheView)
+{
+    Camera camera;
+    camera.orientation = LookRig().orientation();  // looking +y
+    const StarshipSimulator::Frustum frustum(
+        StarshipSimulator::cameraRelativeViewProjection(camera, 16.0 / 9.0));
+    EXPECT_TRUE(frustum.intersects(Vec3d(-1.0, 10.0, -1.0), Vec3d(1.0, 12.0, 1.0)));  // ahead
+    EXPECT_TRUE(frustum.intersects(Vec3d(-1.0, 1.0e6, -1.0), Vec3d(1.0, 1.0e6 + 2.0, 1.0)));  // far
+    EXPECT_FALSE(frustum.intersects(Vec3d(-1.0, -12.0, -1.0), Vec3d(1.0, -10.0, 1.0)));  // behind
+    EXPECT_FALSE(frustum.intersects(Vec3d(-500.0, 10.0, -1.0), Vec3d(-400.0, 12.0, 1.0)));  // left
+    EXPECT_TRUE(frustum.intersects(Vec3d(-5.0, -5.0, -5.0), Vec3d(5.0, 5.0, 5.0)));  // around us
 }
 
 }  // namespace

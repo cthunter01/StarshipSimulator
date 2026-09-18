@@ -14,6 +14,7 @@
 #include <string>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_gpu.h>
@@ -21,11 +22,13 @@
 #include <SDL3/SDL_surface.h>
 
 #include "StarshipSimulator/core/camera.h"
+#include "StarshipSimulator/core/frustum.h"
 #include "StarshipSimulator/core/gpu_abi/uniforms.h"
 #include "StarshipSimulator/core/math.h"
+#include "StarshipSimulator/core/procgen/star_field.h"
 #include "StarshipSimulator/render/gpu_device.h"
 #include "StarshipSimulator/render/gpu_handles.h"
-#include "StarshipSimulator/render/passes/grid_pass.h"
+#include "StarshipSimulator/render/passes/habitat_passes.h"
 #include "StarshipSimulator/render/passes/marker_pass.h"
 #include "StarshipSimulator/render/passes/tonemap_pass.h"
 #include "StarshipSimulator/render/render_targets.h"
@@ -35,7 +38,10 @@ namespace StarshipSimulator
 
 struct Renderer::Passes
 {
-    GridPass    grid;
+    StarPass    stars;
+    TerrainPass terrain;
+    MirrorPass  mirrors;
+    GlassPass   glass;
     MarkerPass  markers;
     TonemapPass tonemap;
 };
@@ -87,8 +93,10 @@ std::expected<std::filesystem::path, std::string> savePng(const std::filesystem:
 
 }  // namespace
 
-Renderer::Renderer(GpuDevice& device, std::filesystem::path shaderDirectory)
+Renderer::Renderer(GpuDevice& device, std::filesystem::path shaderDirectory,
+                   std::vector<GpuStar> stars)
   : device_(&device),
+    stars_(std::move(stars)),
     shaders_(device.get(), std::move(shaderDirectory)),
     targets_(device.get(), chooseSceneFormats(device.get(), SDL_GPU_SAMPLECOUNT_4)),
     passes_(createPasses())
@@ -102,10 +110,14 @@ Renderer::~Renderer()
 
 std::unique_ptr<Renderer::Passes> Renderer::createPasses() const
 {
-    SDL_GPUDevice* device = device_->get();
+    SDL_GPUDevice*      device  = device_->get();
+    const SceneFormats& formats = targets_.formats();
     return std::make_unique<Passes>(Passes{
-        .grid    = GridPass(device, shaders_, targets_.formats()),
-        .markers = MarkerPass(device, shaders_, targets_.formats()),
+        .stars   = StarPass(device, shaders_, formats, stars_),
+        .terrain = TerrainPass(device, shaders_, formats),
+        .mirrors = MirrorPass(device, shaders_, formats),
+        .glass   = GlassPass(device, shaders_, formats),
+        .markers = MarkerPass(device, shaders_, formats),
         .tonemap = TonemapPass(device, shaders_, device_->swapchainFormat()),
     });
 }
@@ -156,7 +168,7 @@ FrameResult Renderer::renderFrame(const SceneView& view, const FrameOptions& opt
     {
         ImGui_ImplSDLGPU3_PrepareDrawData(options.ui, commands);  // copy pass: before render passes
     }
-    drawScene(commands, view, width, height);
+    drawScene(commands, view, width, height, result);
     drawDisplay(commands, swapchain, view, options.ui);
     result.presented = true;
 
@@ -174,11 +186,17 @@ FrameResult Renderer::renderFrame(const SceneView& view, const FrameOptions& opt
 }
 
 void Renderer::drawScene(SDL_GPUCommandBuffer* commands, const SceneView& view, std::uint32_t width,
-                         std::uint32_t height)
+                         std::uint32_t height, FrameResult& result)
 {
     const gpu::FrameUniforms frame          = gpu::makeFrameUniforms(view.camera, width, height);
     const Mat4d              viewProjection = cameraRelativeViewProjection(
         view.camera, static_cast<double>(width) / static_cast<double>(height));
+    const Frustum      frustum(viewProjection);
+    const HabitatFrame habitatFrame{.frame          = &frame,
+                                    .habitat        = &view.habitat,
+                                    .viewProjection = viewProjection,
+                                    .camera         = view.camera.position,
+                                    .frustum        = &frustum};
 
     const bool                   msaa = targets_.multisampled();
     const SDL_GPUColorTargetInfo color{
@@ -200,8 +218,20 @@ void Renderer::drawScene(SDL_GPUCommandBuffer* commands, const SceneView& view, 
         .cycle            = true,
     };
     SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &color, 1, &depth);
-    passes_->grid.draw(commands, pass, frame);
-    passes_->markers.draw(commands, pass, viewProjection, view.camera.position, view.markers);
+    passes_->stars.draw(commands, pass, frame, view.sky);
+    if (view.world != nullptr)
+    {
+        const DrawStats terrain = passes_->terrain.draw(commands, pass, *view.world, habitatFrame);
+        passes_->mirrors.draw(commands, pass, habitatFrame);
+        passes_->markers.draw(commands, pass, viewProjection, view.camera.position, view.markers);
+        const DrawStats glass = passes_->glass.draw(commands, pass, *view.world, habitatFrame);
+        result.chunksDrawn    = terrain.chunks + glass.chunks;
+        result.trianglesDrawn = terrain.triangles + glass.triangles;
+    }
+    else
+    {
+        passes_->markers.draw(commands, pass, viewProjection, view.camera.position, view.markers);
+    }
     SDL_EndGPURenderPass(pass);
 }
 

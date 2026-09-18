@@ -3,14 +3,25 @@
 add_library(StarshipSimulator_core STATIC
     app_options.cpp
     camera.cpp
-    fly_controller.cpp
+    frustum.cpp
     sim_clock.cpp
     gpu_abi/spirv_reflect.cpp
     gpu_abi/uniforms.cpp
-    procgen/mesh.cpp)
+    habitat/habitat_geometry.cpp
+    habitat/habitat_spec.cpp
+    habitat/meridian_profile.cpp
+    habitat/metrics.cpp
+    habitat/mirror_optics.cpp
+    physics/player_controller.cpp
+    physics/rotating_frame.cpp
+    procgen/habitat_mesher.cpp
+    procgen/mesh.cpp
+    procgen/noise.cpp
+    procgen/star_field.cpp
+    scenario/scenario.cpp)
 add_library(StarshipSimulator::core ALIAS StarshipSimulator_core)
 target_include_directories(StarshipSimulator_core PUBLIC ${PROJECT_SOURCE_DIR}/include)
-target_link_libraries(StarshipSimulator_core PUBLIC glm::glm-header-only)
+target_link_libraries(StarshipSimulator_core PUBLIC glm::glm-header-only PRIVATE tomlplusplus::tomlplusplus)
 # Every includer must agree on GLM's configuration:
 #   XYZW_ONLY: plain x/y/z/w members instead of unions (keeps clang-tidy's union checks quiet)
 #   EXPLICIT_CTOR: double -> float vector conversions must be spelled out (no silent precision loss)

@@ -1,6 +1,8 @@
 #include "StarshipSimulator/core/procgen/mesh.h"
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 
 #include "StarshipSimulator/core/math.h"
@@ -44,6 +46,41 @@ CpuMesh makeBox(const Vec3f& halfExtents, std::uint32_t material)
         for (const std::uint32_t corner : {0U, 1U, 2U, 0U, 2U, 3U})
         {
             mesh.indices.push_back(base + corner);
+        }
+    }
+    return mesh;
+}
+
+CpuMesh makeSphere(float radius, int segments, std::uint32_t material)
+{
+    const int rings   = std::max(2, segments / 2);
+    const int columns = std::max(3, segments);
+    CpuMesh   mesh;
+    for (int i = 0; i <= rings; ++i)
+    {
+        const double polar = kPi * i / rings;
+        for (int k = 0; k <= columns; ++k)
+        {
+            const double azimuth = 2.0 * kPi * k / columns;
+            const Vec3f  normal(Vec3d(std::sin(polar) * std::cos(azimuth),
+                                      std::sin(polar) * std::sin(azimuth), std::cos(polar)));
+            mesh.vertices.push_back({.position = normal * radius,
+                                     .normal   = normal,
+                                     .uv       = Vec2f(Vec2d(static_cast<double>(k) / columns,
+                                                             static_cast<double>(i) / rings)),
+                                     .material = material});
+        }
+    }
+    const auto at = [columns](int ring, int column) {
+        return static_cast<std::uint32_t>((ring * (columns + 1)) + column);
+    };
+    for (int i = 0; i < rings; ++i)
+    {
+        for (int k = 0; k < columns; ++k)
+        {
+            // Counter-clockwise seen from outside.
+            mesh.indices.insert(mesh.indices.end(), {at(i, k), at(i + 1, k), at(i, k + 1),
+                                                     at(i + 1, k), at(i + 1, k + 1), at(i, k + 1)});
         }
     }
     return mesh;

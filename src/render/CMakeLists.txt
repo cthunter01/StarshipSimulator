@@ -1,12 +1,14 @@
 # The SDL_GPU renderer: device, shaders, render targets, passes and the ImGui layer.
 add_library(StarshipSimulator_render STATIC
     gpu_device.cpp
+    gpu_world.cpp
     imgui_layer.cpp
+    pipeline.cpp
     render_targets.cpp
     renderer.cpp
     shader_library.cpp
     upload.cpp
-    passes/grid_pass.cpp
+    passes/habitat_passes.cpp
     passes/marker_pass.cpp
     passes/tonemap_pass.cpp)
 add_library(StarshipSimulator::render ALIAS StarshipSimulator_render)

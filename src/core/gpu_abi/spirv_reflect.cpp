@@ -354,6 +354,11 @@ std::optional<ResourceBinding> classifyVariable(const Module& module, const IdIn
     {
         resource.name = type->name;  // anonymous blocks are named after their type
     }
+    if (resource.name.empty())  // optimized shaders may have no names at all
+    {
+        resource.name =
+            std::format("resource at set {} binding {}", resource.set, resource.binding);
+    }
     return resource;
 }
 

@@ -34,4 +34,7 @@ struct CpuMesh
 /// An axis-aligned box centred on the origin, with flat normals and outward-facing triangles.
 [[nodiscard]] CpuMesh makeBox(const Vec3f& halfExtents, std::uint32_t material = 0);
 
+/// A UV sphere centred on the origin with outward normals.
+[[nodiscard]] CpuMesh makeSphere(float radius, int segments, std::uint32_t material = 0);
+
 }  // namespace StarshipSimulator

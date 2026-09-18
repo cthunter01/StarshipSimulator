@@ -4,8 +4,8 @@
 #include <SDL3/SDL_keycode.h>
 #include <SDL3/SDL_video.h>
 
-#include "StarshipSimulator/core/fly_controller.h"
 #include "StarshipSimulator/core/math.h"
+#include "StarshipSimulator/core/physics/player_controller.h"
 
 namespace StarshipSimulator
 {
@@ -23,6 +23,9 @@ struct InputFrame
     bool       toggleHud        = false;
     bool       reloadShaders    = false;
     bool       screenshot       = false;
+    bool       toggleComfort    = false;
+    bool       throwBall        = false;
+    bool       toggleEditor     = false;
 };
 
 /// Turns SDL events and keyboard state into an InputFrame, and manages mouse capture: click the

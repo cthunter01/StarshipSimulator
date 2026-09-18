@@ -112,6 +112,24 @@ std::expected<void, std::string> applyValueOption(AppOptions& options, std::stri
     {
         options.capturePath = std::filesystem::path(value);
     }
+    else if (name == "--scenario")
+    {
+        options.scenarioPath = std::filesystem::path(value);
+    }
+    else if (name == "--view")
+    {
+        options.view = std::string(value);
+    }
+    else if (name == "--mirror")
+    {
+        const auto angle = parseNumber<double>(value);
+        if (!angle || *angle < 0.0 || *angle > 180.0)
+        {
+            return std::unexpected(
+                std::format("--mirror expects an angle in degrees (0..180), got '{}'", value));
+        }
+        options.mirrorAngleDeg = angle;
+    }
     else if (name == "--capture-frames")
     {
         const auto frames = parseNumber<int>(value);
@@ -144,6 +162,10 @@ bool applyFlag(AppOptions& options, std::string_view name)
     {
         options.captureUi = true;
     }
+    else if (name == "--benchmark")
+    {
+        options.benchmark = true;
+    }
     else
     {
         return false;
@@ -154,7 +176,8 @@ bool applyFlag(AppOptions& options, std::string_view name)
 bool takesValue(std::string_view name)
 {
     return name == "--size" || name == "--camera" || name == "--capture" ||
-           name == "--capture-frames";
+           name == "--capture-frames" || name == "--scenario" || name == "--view" ||
+           name == "--mirror";
 }
 
 }  // namespace
@@ -192,19 +215,25 @@ std::string appUsage()
 
 Options:
   -h, --help               Show this help
-  --size WxH               Window size in pixels, e.g. 1920x1080
-  --camera x,y,z,yaw,pitch Start at this eye position (m) looking this way (degrees)
+  --scenario FILE.toml     Habitat to load (default: data/presets/island_three.toml)
+  --view NAME              Start at a viewpoint: valley, lookup, window, endcap, ramp, sunward,
+                           axis, overview
+  --camera x,y,z,yaw,pitch Start at this eye position (m, habitat frame) and view (degrees)
+  --mirror DEG             Mirror angle, i.e. time of day: 45 = noon, 90 = sunset, over 90 = night
+  --size WxH               Window size, e.g. 1920x1080
   --no-vsync               Present as fast as possible (mailbox or immediate)
-  --gpu-debug              Enable SDL_GPU debug mode and Vulkan validation (default in Debug builds)
+  --gpu-debug              SDL_GPU debug mode and Vulkan validation (default in Debug builds)
   --no-gpu-debug           Disable it
   --capture FILE.png       Render, save a screenshot to FILE.png, then exit
   --capture-frames N       Frames to render before the capture (default 90)
   --capture-ui             Include the HUD in the capture
+  --benchmark              Fly a fixed tour of viewpoints, print frame times, then exit
 
 Controls:
   Click the view to capture the mouse, Esc to release it
-  WASD move, Shift run/fast, Space jump (walk) or up (fly), Ctrl down (fly)
-  F toggle walk/fly, mouse wheel fly speed, F1 HUD, F5 reload shaders, F12 screenshot
+  WASD move, Shift run, Space jump (walk) or rise (fly), Ctrl descend (fly)
+  F walk/fly, G throw a ball, C comfort mode (no Coriolis on you), mouse wheel fly speed
+  Tab habitat editor, F1 HUD, F5 reload shaders, F12 screenshot
 )";
 }
 

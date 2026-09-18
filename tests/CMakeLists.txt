@@ -2,8 +2,12 @@
 add_executable(StarshipSimulator_tests
     app_options_test.cpp
     camera_test.cpp
-    fly_controller_test.cpp
+    habitat_mesher_test.cpp
+    habitat_test.cpp
     mesh_test.cpp
+    physics_test.cpp
+    procgen_test.cpp
+    scenario_test.cpp
     sim_clock_test.cpp
     spirv_reflect_test.cpp
     uniforms_test.cpp)
@@ -11,7 +15,8 @@ target_link_libraries(StarshipSimulator_tests PRIVATE StarshipSimulator::core GT
 # spirv_reflect_test checks every compiled shader against SDL_GPU's binding rules.
 add_dependencies(StarshipSimulator_tests StarshipSimulator_shaders)
 target_compile_definitions(StarshipSimulator_tests PRIVATE
-    STARSHIPSIMULATOR_SHADER_DIR="${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders")
+    STARSHIPSIMULATOR_SHADER_DIR="${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders"
+    STARSHIPSIMULATOR_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
 StarshipSimulator_configure_target(StarshipSimulator_tests)
 
 include(GoogleTest)

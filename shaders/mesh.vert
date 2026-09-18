@@ -10,18 +10,20 @@ layout(location = 3) in uint inMaterial;
 layout(std140, set = 1, binding = 0) uniform Draw
 {
     mat4 modelViewProjection;  // includes the camera-relative translation
-    mat4 model;                // rotation and scale, for normals
+    mat4 model;                // camera-relative model matrix
 }
 draw;
 
 layout(location = 0) out vec3 outNormal;
 layout(location = 1) out vec2 outUv;
 layout(location = 2) flat out uint outMaterial;
+layout(location = 3) out vec3 outCameraRelative;  // position relative to the camera
 
 void main()
 {
-    gl_Position = draw.modelViewProjection * vec4(inPosition, 1.0);
-    outNormal   = mat3(draw.model) * inNormal;
-    outUv       = inUv;
-    outMaterial = inMaterial;
+    gl_Position       = draw.modelViewProjection * vec4(inPosition, 1.0);
+    outNormal         = mat3(draw.model) * inNormal;
+    outUv             = inUv;
+    outMaterial       = inMaterial;
+    outCameraRelative = (draw.model * vec4(inPosition, 1.0)).xyz;
 }

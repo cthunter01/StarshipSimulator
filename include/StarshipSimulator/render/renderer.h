@@ -7,11 +7,15 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <vector>
 
 #include <SDL3/SDL_gpu.h>
 
 #include "StarshipSimulator/core/camera.h"
+#include "StarshipSimulator/core/gpu_abi/uniforms.h"
+#include "StarshipSimulator/core/procgen/star_field.h"
 #include "StarshipSimulator/render/gpu_device.h"
+#include "StarshipSimulator/render/gpu_world.h"
 #include "StarshipSimulator/render/passes/marker_pass.h"
 #include "StarshipSimulator/render/render_targets.h"
 #include "StarshipSimulator/render/shader_library.h"
@@ -21,13 +25,13 @@ struct ImDrawData;
 namespace StarshipSimulator
 {
 
-class GridPass;
-class TonemapPass;
-
 /// What to draw this frame.
 struct SceneView
 {
     Camera                  camera;
+    const GpuWorld*         world = nullptr;  // the habitat; nothing but stars and markers if null
+    gpu::HabitatUniforms    habitat;
+    gpu::SkyUniforms        sky;
     std::span<const Marker> markers;
     float                   exposure = 1.0F;
 };
@@ -41,9 +45,11 @@ struct FrameOptions
 
 struct FrameResult
 {
-    bool          presented = false;  // false while the window is minimized or hidden
-    std::uint32_t width     = 0;      // swapchain size in pixels
-    std::uint32_t height    = 0;
+    bool          presented      = false;  // false while the window is minimized or hidden
+    std::uint32_t width          = 0;      // swapchain size in pixels
+    std::uint32_t height         = 0;
+    std::uint32_t chunksDrawn    = 0;
+    std::uint64_t trianglesDrawn = 0;
     std::optional<std::expected<std::filesystem::path, std::string>> screenshot;
 };
 
@@ -51,7 +57,7 @@ struct FrameResult
 class Renderer
 {
 public:
-    Renderer(GpuDevice& device, std::filesystem::path shaderDirectory);
+    Renderer(GpuDevice& device, std::filesystem::path shaderDirectory, std::vector<GpuStar> stars);
     ~Renderer();
 
     Renderer(const Renderer&)            = delete;
@@ -75,7 +81,7 @@ private:
 
     [[nodiscard]] std::unique_ptr<Passes> createPasses() const;
     void drawScene(SDL_GPUCommandBuffer* commands, const SceneView& view, std::uint32_t width,
-                   std::uint32_t height);
+                   std::uint32_t height, FrameResult& result);
     void drawDisplay(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* target, const SceneView& view,
                      ImDrawData* ui);
     [[nodiscard]] std::expected<std::filesystem::path, std::string> captureAndSubmit(
@@ -83,6 +89,7 @@ private:
         ImDrawData* ui, std::uint32_t width, std::uint32_t height);
 
     GpuDevice*              device_;
+    std::vector<GpuStar>    stars_;
     ShaderLibrary           shaders_;
     RenderTargets           targets_;
     std::unique_ptr<Passes> passes_;

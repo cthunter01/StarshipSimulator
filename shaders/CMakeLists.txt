@@ -5,7 +5,12 @@ StarshipSimulator_add_shaders(StarshipSimulator_shaders
     INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include
     SOURCES
         fullscreen.vert
-        grid.frag
-        mesh.vert
+        glass.frag
+        habitat.frag
         marker.frag
+        mesh.vert
+        mirror.frag
+        mirror.vert
+        stars.frag
+        stars.vert
         tonemap.frag)

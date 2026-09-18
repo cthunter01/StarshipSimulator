@@ -16,7 +16,8 @@ struct WindowSize
     int height = 0;
 };
 
-/// A starting viewpoint: eye position in metres and view angles in degrees.
+/// A starting viewpoint in the habitat frame: eye position in metres and view angles in degrees
+/// (yaw 0 faces the sunward end, positive yaw turns left; pitch up is positive).
 struct CameraPose
 {
     double x        = 0.0;
@@ -34,6 +35,10 @@ struct AppOptions
     bool                                 vsync = true;
     std::optional<WindowSize>            windowSize;
     std::optional<CameraPose>            camera;
+    std::optional<std::filesystem::path> scenarioPath;    // default: the Island Three preset
+    std::optional<std::string>           view;            // a named viewpoint, see appUsage()
+    std::optional<double>                mirrorAngleDeg;  // time of day
+    bool                                 benchmark = false;
     std::optional<std::filesystem::path> capturePath;  // render, save a PNG, then exit
     int                                  captureFrames = 90;
     bool                                 captureUi     = false;
