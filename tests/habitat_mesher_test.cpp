@@ -12,6 +12,7 @@
 #include "StarshipSimulator/core/habitat/habitat_geometry.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
 #include "StarshipSimulator/core/math.h"
+#include "StarshipSimulator/core/procgen/hull_mesh.h"
 #include "StarshipSimulator/core/procgen/mesh.h"
 
 namespace
@@ -163,6 +164,63 @@ TEST(HabitatMesher, OutputDoesNotDependOnTheThreadCount)
         ASSERT_EQ(a.size(), b.size());
         EXPECT_EQ(std::memcmp(a.data(), b.data(), a.size() * sizeof(Vertex)), 0);
     }
+}
+
+// ---- The hull, seen from outside --------------------------------------------------------------
+
+TEST(HullMesh, ClosedOutwardFacingShellWithWindowStrips)
+{
+    const HabitatGeometry& geometry = islandThree();
+    const CpuMesh          hull     = buildHullMesh(geometry);
+    ASSERT_FALSE(hull.indices.empty());
+    std::size_t glass = 0;
+    for (std::size_t i = 0; i < hull.indices.size(); i += 3)
+    {
+        const Vertex& a = hull.vertices[hull.indices[i]];
+        const Vertex& b = hull.vertices[hull.indices[i + 1]];
+        const Vertex& c = hull.vertices[hull.indices[i + 2]];
+        const Vec3f   n = glm::cross(b.position - a.position, c.position - a.position);
+        if (glm::length(n) < 1e-3F)
+        {
+            continue;  // degenerate at the axis
+        }
+        // Counter-clockwise seen from outside: the face normal agrees with the vertex normal.
+        EXPECT_GT(glm::dot(n, a.normal), 0.0F);
+        // Every vertex lies on the hull: radius R on the wall, inside the dome elsewhere.
+        const float r = std::hypot(a.position.x, a.position.y);
+        EXPECT_LE(r, static_cast<float>(geometry.radius()) + 0.01F);
+        if (a.material == material::kGlass)
+        {
+            ++glass;
+            EXPECT_NEAR(r, geometry.radius(), 0.01);
+            EXPECT_GE(a.position.z, geometry.floorZMin() - 0.01);
+            EXPECT_LE(a.position.z, geometry.floorZMax() + 0.01);
+            const Vec3d centre = Vec3d(a.position + b.position + c.position) / 3.0;
+            EXPECT_EQ(geometry.regionAt(centre.z, HabitatGeometry::angleOf(centre)).kind,
+                      RegionKind::Window);
+        }
+    }
+    EXPECT_GT(glass, 0U);
+}
+
+TEST(HullMesh, PartnerCounterRotatesAlongside)
+{
+    const double separation = 80000.0;
+    const Mat4d  atRest     = partnerTransform(separation, 0.0);
+    const Vec4d  centre     = atRest * Vec4d(0.0, 0.0, 0.0, 1.0);
+    EXPECT_NEAR(centre.x, separation, 1e-6);
+    EXPECT_NEAR(centre.y, 0.0, 1e-6);
+
+    // A quarter turn later the partner has swung a quarter turn backwards around us, and its own
+    // +X (turned the other way) has turned half a turn relative to ours.
+    const Mat4d later = partnerTransform(separation, kPi / 2.0);
+    const Vec4d moved = later * Vec4d(0.0, 0.0, 0.0, 1.0);
+    EXPECT_NEAR(moved.x, 0.0, 1e-6);
+    EXPECT_NEAR(moved.y, -separation, 1e-6);
+    const Vec4d x = later * Vec4d(1.0, 0.0, 0.0, 0.0);
+    EXPECT_NEAR(x.x, -1.0, 1e-12);
+    const Vec4d z = later * Vec4d(0.0, 0.0, 1.0, 0.0);
+    EXPECT_NEAR(z.z, 1.0, 1e-12);  // axes stay parallel: both point at the Sun
 }
 
 }  // namespace

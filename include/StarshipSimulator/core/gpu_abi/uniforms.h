@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "StarshipSimulator/core/astro/ephemeris.h"
 #include "StarshipSimulator/core/camera.h"
 #include "StarshipSimulator/core/habitat/habitat_geometry.h"
 #include "StarshipSimulator/core/math.h"
@@ -44,13 +45,42 @@ struct alignas(16) HabitatUniforms
 static_assert(sizeof(HabitatUniforms) == 16 * (2 + kMaxSunBeams + 6));
 static_assert(offsetof(HabitatUniforms, sunColor) == 16 * (2 + kMaxSunBeams));
 
-/// The starry sky (shaders/stars.vert, block "Sky").
+/// The starry sky (shaders/include/sky.glsl, block "Sky").
 struct alignas(16) SkyUniforms
 {
-    Mat4f habitatFromInertial{1.0F};  // rotates the fixed stars into the spinning habitat frame
-    Vec4f params{1.0F, 0.0F, 0.0F, 0.0F};  // x: brightness
+    Mat4f habitatFromInertial{1.0F};  // rotates fixed (EQJ) directions into the spinning habitat
+    Vec4f params{1.0F, 0.0F, 0.0F, 0.0F};  // x: star brightness, y: Milky Way brightness
 };
 static_assert(sizeof(SkyUniforms) == 80);
+
+/// Earth or the Moon, drawn as a lit sphere (shaders/body.vert and body.frag, block "Body").
+struct alignas(16) BodyUniforms
+{
+    Vec4f direction{0.0F, 0.0F, 1.0F, 0.0F};  // xyz: toward the body (habitat frame), w: radius
+                                              // (angular, radians)
+    Vec4f towardSun{0.0F, 0.0F, 1.0F, 0.0F};  // xyz: from the body toward the Sun (habitat frame)
+    Vec4f sunlight{0.0F};  // rgb: sunlight falling on the body (scene units), a: albedo scale
+    Vec4f params{0.0F};    // x: 1 = has an atmosphere, y: night lights, z: ambient (earthshine)
+    Mat4f bodyFromHabitat{1.0F};  // habitat directions -> body-fixed (x: prime meridian, z: north)
+};
+static_assert(sizeof(BodyUniforms) == 128);
+
+inline constexpr std::size_t kMaxPlanets = 8;
+
+/// The planets as points of light (shaders/planets.vert, block "Planets"): GpuStar pairs.
+struct alignas(16) PlanetUniforms
+{
+    std::array<Vec4f, 2 * kMaxPlanets> stars{};      // per planet: direction + size, colour
+    Vec4f                              count{0.0F};  // x: number of planets
+};
+static_assert(sizeof(PlanetUniforms) == 16 * ((2 * kMaxPlanets) + 1));
+
+/// Where a habitat's exterior (mirrors, hull) is drawn (shaders/mirror.vert, block "Placement").
+struct alignas(16) PlacementUniforms
+{
+    Mat4f model{1.0F};  // habitat frame -> camera-relative
+};
+static_assert(sizeof(PlacementUniforms) == 64);
 
 /// Per-draw data for meshes (shaders/mesh.vert, block "Draw").
 struct alignas(16) DrawUniforms
@@ -92,7 +122,18 @@ struct LightingSettings
                                                   double                  openingAngle,
                                                   const LightingSettings& lighting);
 
-/// Stars: the habitat has turned by spinPhase radians since t = 0.
-[[nodiscard]] SkyUniforms makeSkyUniforms(double spinPhase, double brightness);
+/// The sky seen from the habitat: habitatFromInertial rotates EQJ directions into the habitat frame
+/// (see astro::habitatFromEqj).
+[[nodiscard]] SkyUniforms makeSkyUniforms(const Mat3d& habitatFromInertial, double starBrightness,
+                                          double milkyWayBrightness);
+
+/// Earth or the Moon as seen from the habitat. Sunlight is in the same scene units as the light
+/// in the habitat (LightingSettings::sunIntensity).
+[[nodiscard]] BodyUniforms makeBodyUniforms(const astro::VisibleBody& body,
+                                            const Mat3d&              habitatFromInertial,
+                                            const LightingSettings&   lighting);
+
+/// The planets as points: brightness from their magnitudes.
+[[nodiscard]] PlanetUniforms makePlanetUniforms(const astro::SkyState& sky);
 
 }  // namespace StarshipSimulator::gpu

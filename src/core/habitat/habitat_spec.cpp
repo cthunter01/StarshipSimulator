@@ -23,6 +23,11 @@ double endcapDepthInside(const EndcapSpec& endcap, double radiusM)
     return lower + upper;
 }
 
+double minimumPartnerSeparation(const OneillCylinderSpec& spec)
+{
+    return 2.0 * (spec.radiusM + spec.lengthM);
+}
+
 const char* endcapShapeName(EndcapShape shape)
 {
     switch (shape)
@@ -104,6 +109,13 @@ std::vector<std::string> validate(const OneillCylinderSpec& spec)
     {
         problems.emplace_back(
             "terrain needs a feature size of at least 50 m and non-negative heights");
+    }
+    if (spec.partner.enabled && spec.partner.separationM < minimumPartnerSeparation(spec))
+    {
+        problems.push_back(std::format(
+            "the partner cylinder must be at least {:.0f} km away (axis to axis) so the mirrors "
+            "clear each other",
+            minimumPartnerSeparation(spec) / 1000.0));
     }
     validateEndcap(spec.sunwardEndcap, "sunward", spec.radiusM, problems);
     validateEndcap(spec.antisunwardEndcap, "anti-sunward", spec.radiusM, problems);

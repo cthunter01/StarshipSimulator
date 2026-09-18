@@ -13,6 +13,9 @@
 #include <system_error>
 #include <vector>
 
+#include "StarshipSimulator/core/astro/astro_time.h"
+#include "StarshipSimulator/core/astro/ephemeris.h"
+
 namespace StarshipSimulator
 {
 
@@ -87,6 +90,58 @@ std::expected<CameraPose, std::string> parseCameraPose(std::string_view text)
         .x = values[0], .y = values[1], .z = values[2], .yawDeg = values[3], .pitchDeg = values[4]};
 }
 
+bool isSkyOption(std::string_view name)
+{
+    return name == "--time" || name == "--time-scale" || name == "--look-at" || name == "--fov";
+}
+
+/// Options about the sky and the view of it.
+std::expected<void, std::string> applySkyOption(AppOptions& options, std::string_view name,
+                                                std::string_view value)
+{
+    if (name == "--time")
+    {
+        auto time = astro::parseIsoTime(value);
+        if (!time)
+        {
+            return std::unexpected(std::format("--time: {}", time.error()));
+        }
+        options.startTime = *time;
+    }
+    else if (name == "--time-scale")
+    {
+        const auto scale = parseNumber<double>(value);
+        if (!scale || *scale < 0.0 || *scale > 1.0e7)
+        {
+            return std::unexpected(
+                std::format("--time-scale expects a factor of 0..10000000, got '{}'", value));
+        }
+        options.timeScale = scale;
+    }
+    else if (name == "--look-at")
+    {
+        if (value.empty() || astro::bodyFromName(value) == astro::Body::Sun)
+        {
+            return std::unexpected(std::format(
+                "--look-at expects a planet, the Moon, a star or 'partner', got '{}' (the Sun "
+                "is always behind the mirrors)",
+                value));
+        }
+        options.lookAt = std::string(value);
+    }
+    else if (name == "--fov")
+    {
+        const auto fov = parseNumber<double>(value);
+        if (!fov || *fov < 1.0 || *fov > 120.0)
+        {
+            return std::unexpected(std::format(
+                "--fov expects a vertical field of view of 1..120 degrees, got '{}'", value));
+        }
+        options.fieldOfViewDeg = fov;
+    }
+    return {};
+}
+
 std::expected<void, std::string> applyValueOption(AppOptions& options, std::string_view name,
                                                   std::string_view value)
 {
@@ -129,6 +184,10 @@ std::expected<void, std::string> applyValueOption(AppOptions& options, std::stri
                 std::format("--mirror expects an angle in degrees (0..180), got '{}'", value));
         }
         options.mirrorAngleDeg = angle;
+    }
+    else if (isSkyOption(name))
+    {
+        return applySkyOption(options, name, value);
     }
     else if (name == "--capture-frames")
     {
@@ -177,7 +236,7 @@ bool takesValue(std::string_view name)
 {
     return name == "--size" || name == "--camera" || name == "--capture" ||
            name == "--capture-frames" || name == "--scenario" || name == "--view" ||
-           name == "--mirror";
+           name == "--mirror" || isSkyOption(name);
 }
 
 }  // namespace
@@ -219,7 +278,13 @@ Options:
   --view NAME              Start at a viewpoint: valley, lookup, window, endcap, ramp, sunward,
                            axis, overview
   --camera x,y,z,yaw,pitch Start at this eye position (m, habitat frame) and view (degrees)
-  --mirror DEG             Mirror angle, i.e. time of day: 45 = noon, 90 = sunset, over 90 = night
+  --mirror DEG             Hold the mirrors at this angle instead of following the day schedule:
+                           45 = noon, 90 = sunset, over 90 = night
+  --time DATE              Start at this moment (UTC), e.g. 2045-06-15T21:30
+  --time-scale N           Run the clock N times faster (0 pauses it; the spin stays real)
+  --look-at NAME            Look out of a window at earth, moon, a planet, a star (e.g. Vega)
+                           or the partner cylinder ("partner")
+  --fov DEG                Vertical field of view (default 70; B toggles binoculars)
   --size WxH               Window size, e.g. 1920x1080
   --no-vsync               Present as fast as possible (mailbox or immediate)
   --gpu-debug              SDL_GPU debug mode and Vulkan validation (default in Debug builds)
@@ -233,6 +298,8 @@ Controls:
   Click the view to capture the mouse, Esc to release it
   WASD move, Shift run, Space jump (walk) or rise (fly), Ctrl descend (fly)
   F walk/fly, G throw a ball, C comfort mode (no Coriolis on you), mouse wheel fly speed
+  I identify the star, planet or moon under the crosshair, B binoculars
+  P pause the clock, comma/period slower/faster time
   Tab habitat editor, F1 HUD, F5 reload shaders, F12 screenshot
 )";
 }

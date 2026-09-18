@@ -5,6 +5,8 @@
 
 #include <gtest/gtest.h>
 
+#include "StarshipSimulator/core/astro/astro_time.h"
+#include "StarshipSimulator/core/astro/ephemeris.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
 
 namespace
@@ -31,7 +33,14 @@ TEST(Scenario, RoundTripsThroughToml)
     original.habitat.mirrors.openingAngleDeg        = 33.3;
     original.habitat.atmosphere.surfacePressurePa   = 50662.5;
     original.habitat.terrain.seed                   = 123456789012345ULL;
-    original.start = {.valley = 2, .zM = -123.25, .headingDeg = 45.0};
+    original.start                       = {.valley = 2, .zM = -123.25, .headingDeg = 45.0};
+    original.habitat.partner.separationM = 90000.0;
+    original.sky.location                = astro::Location::SunMarsL4;
+    original.sky.start                   = astro::parseIsoTime("2061-07-28T18:45:30Z").value();
+    original.sky.utcOffsetHours          = -5.5;
+    original.day.enabled                 = false;
+    original.day.dayLengthHours          = 16.5;
+    original.day.noonAngleDeg            = 50.0;
 
     const auto parsed = parseScenario(serializeScenario(original));
     ASSERT_TRUE(parsed.has_value()) << parsed.error().describe();
@@ -49,6 +58,14 @@ TEST(Scenario, RoundTripsThroughToml)
     EXPECT_EQ(copy.habitat.terrain.seed, 123456789012345ULL);
     EXPECT_EQ(copy.start.valley, 2);
     EXPECT_EQ(copy.start.zM, -123.25);
+    EXPECT_TRUE(copy.habitat.partner.enabled);
+    EXPECT_EQ(copy.habitat.partner.separationM, 90000.0);
+    EXPECT_EQ(copy.sky.location, astro::Location::SunMarsL4);
+    EXPECT_EQ(copy.sky.start, original.sky.start);
+    EXPECT_EQ(copy.sky.utcOffsetHours, -5.5);
+    EXPECT_FALSE(copy.day.enabled);
+    EXPECT_EQ(copy.day.dayLengthHours, 16.5);
+    EXPECT_EQ(copy.day.noonAngleDeg, 50.0);
     EXPECT_EQ(serializeScenario(copy), serializeScenario(original));
 }
 
@@ -60,9 +77,17 @@ TEST(Scenario, PresetsLoad)
     EXPECT_EQ(island->habitat.radiusM, 4000.0);
     EXPECT_EQ(island->habitat.antisunwardEndcap.shape, EndcapShape::ConicalRamp);
 
+    EXPECT_EQ(island->sky.location, astro::Location::EarthMoonL5);
+    EXPECT_TRUE(island->habitat.partner.enabled);
+    EXPECT_TRUE(island->day.enabled);
+
     const auto playground = loadScenario(presets() / "coriolis_playground.toml");
     ASSERT_TRUE(playground.has_value()) << playground.error().describe();
     EXPECT_EQ(playground->habitat.radiusM, 250.0);
+
+    // The presets are written the way serializeScenario writes them.
+    EXPECT_EQ(serializeScenario(island.value()),
+              serializeScenario(parseScenario(serializeScenario(island.value())).value()));
 }
 
 TEST(Scenario, MissingKeysKeepDefaults)
@@ -96,6 +121,23 @@ TEST(Scenario, ErrorsSayWhatAndWhere)
     const auto shape = parseScenario("[habitat.sunward_endcap]\nshape = \"cube\"\n");
     ASSERT_FALSE(shape.has_value());
     EXPECT_EQ(shape.error().line, 2);
+
+    const auto place = parseScenario("[sky]\nlocation = \"mars_orbit\"\n");
+    ASSERT_FALSE(place.has_value());
+    EXPECT_EQ(place.error().line, 2);
+    EXPECT_NE(place.error().message.find("earth_moon_l5"), std::string::npos);
+
+    const auto date = parseScenario("[sky]\nstart = \"2045-02-30\"\n");
+    ASSERT_FALSE(date.has_value());
+    EXPECT_EQ(date.error().line, 2);
+
+    const auto flag = parseScenario("[day]\nenabled = 1\n");
+    ASSERT_FALSE(flag.has_value());
+    EXPECT_EQ(flag.error().line, 2);
+
+    const auto night = parseScenario("[day]\nnight_angle_deg = 80.0\n");
+    ASSERT_FALSE(night.has_value());
+    EXPECT_NE(night.error().message.find("night"), std::string::npos);
 
     const auto future = parseScenario("format_version = 99\n");
     ASSERT_FALSE(future.has_value());

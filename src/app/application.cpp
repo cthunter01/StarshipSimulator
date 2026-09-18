@@ -1,5 +1,7 @@
 #include "application.h"
 
+#include <imgui.h>
+
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -10,6 +12,7 @@
 #include <exception>
 #include <filesystem>
 #include <format>
+#include <functional>
 #include <future>
 #include <memory>
 #include <optional>
@@ -29,16 +32,23 @@
 #include <SDL3/SDL_video.h>
 
 #include "StarshipSimulator/core/app_options.h"
+#include "StarshipSimulator/core/astro/astro_time.h"
+#include "StarshipSimulator/core/astro/ephemeris.h"
+#include "StarshipSimulator/core/astro/sky_objects.h"
+#include "StarshipSimulator/core/astro/star_catalog.h"
 #include "StarshipSimulator/core/camera.h"
 #include "StarshipSimulator/core/gpu_abi/uniforms.h"
+#include "StarshipSimulator/core/habitat/day_schedule.h"
 #include "StarshipSimulator/core/habitat/habitat_geometry.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
 #include "StarshipSimulator/core/habitat/metrics.h"
+#include "StarshipSimulator/core/habitat/mirror_optics.h"
 #include "StarshipSimulator/core/log.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/physics/player_controller.h"
 #include "StarshipSimulator/core/physics/rotating_frame.h"
 #include "StarshipSimulator/core/procgen/habitat_mesher.h"
+#include "StarshipSimulator/core/procgen/hull_mesh.h"
 #include "StarshipSimulator/core/procgen/star_field.h"
 #include "StarshipSimulator/core/scenario/scenario.h"
 #include "StarshipSimulator/render/gpu_device.h"
@@ -48,6 +58,7 @@
 #include "StarshipSimulator/render/shader_library.h"
 #include "hud.h"
 #include "sdl_input.h"
+#include "sky_loader.h"
 
 namespace StarshipSimulator
 {
@@ -73,7 +84,15 @@ constexpr double        kBenchmarkWarmup      = 0.5;
 constexpr double        kBenchmarkPanRate     = degreesToRadians(20.0);  // per second
 constexpr std::array<std::string_view, 7> kBenchmarkViews{"valley",  "lookup", "window",  "ramp",
                                                           "sunward", "axis",   "overview"};
-constexpr Vec3d kNorth(0.0, 0.0, 1.0);  // the "north" of the look rig: toward the sunward end
+constexpr Vec3d  kNorth(0.0, 0.0, 1.0);       // the "north" of the look rig: toward the sunward end
+constexpr double kStarMagnitudeLimit = 7.5;   // a little fainter than the naked eye in a dark sky
+constexpr double kMilkyWayScale      = 0.02;  // NASA's map (0..1) to scene radiance
+constexpr double kNightExposure      = 60.0;  // how far the view brightens in darkness
+constexpr double kLabelSeconds       = 8.0;   // how long an identified name stays up
+constexpr double kLabelFadeSeconds   = 2.0;
+constexpr float  kBinocularsFovDeg   = 8.0F;
+constexpr float  kNormalFovDeg       = 70.0F;
+constexpr double kCaptureStepSeconds = 1.0 / 60.0;
 
 SDL_Window* createWindow(const AppOptions& options)
 {
@@ -155,6 +174,7 @@ GeneratedWorld generateWorld(const OneillCylinderSpec& spec)
                                                                 .chunkSizeM     = 40.0 * cell,
                                                                 .glassCellSizeM = 20.0 * cell,
                                                                 .threads        = 0});
+        world.hull = buildHullMesh(*world.geometry);
     }
     catch (const std::exception& e)
     {
@@ -253,6 +273,15 @@ Application::Application(AppOptions options)
 {
     hudSettings_.mirrorAngleDeg = static_cast<float>(
         options_.mirrorAngleDeg.value_or(scenario_.habitat.mirrors.openingAngleDeg));
+    hudSettings_.followSchedule = scenario_.day.enabled && !options_.mirrorAngleDeg;
+    if (options_.timeScale)
+    {
+        hudSettings_.timePaused = *options_.timeScale <= 0.0;
+        hudSettings_.timeScale  = hudSettings_.timePaused ? 1.0 : *options_.timeScale;
+    }
+    simTime_ = options_.startTime.value_or(scenario_.sky.start);
+    hudSettings_.fieldOfViewDeg =
+        static_cast<float>(options_.fieldOfViewDeg.value_or(kNormalFovDeg));
     editor_.draft = scenario_.habitat;
     setSaveName(editor_, scenario_.title);
     refreshScenarioList();
@@ -277,13 +306,20 @@ Application::Application(AppOptions options)
         benchmark_.emplace();
         applyView(kBenchmarkViews.front());
     }
+    startSkyLoad();
+    updateSky();
+    if (options_.lookAt)
+    {
+        lookAtName(*options_.lookAt);
+    }
 }
 
 // ---- Habitats ----------------------------------------------------------------------------------
 
 void Application::adoptWorld(GeneratedWorld world, bool placeAtStartPoint)
 {
-    auto        gpuWorld = std::make_unique<GpuWorld>(device_.get(), world.meshes);
+    auto gpuWorld = std::make_unique<GpuWorld>(device_.get(), world.meshes);
+    renderer_.setHull(world.hull);
     const Vec3d eye      = player_.eyePosition();
     const bool  hadWorld = geometry_ != nullptr;
     geometry_            = std::move(world.geometry);
@@ -354,6 +390,8 @@ void Application::loadScenarioFile(const std::filesystem::path& path)
     scenario_                   = std::move(*loaded);
     editor_.draft               = scenario_.habitat;
     hudSettings_.mirrorAngleDeg = static_cast<float>(scenario_.habitat.mirrors.openingAngleDeg);
+    hudSettings_.followSchedule = scenario_.day.enabled;
+    simTime_                    = scenario_.sky.start;
     setSaveName(editor_, scenario_.title);
     startGeneration(scenario_.habitat, true);
 }
@@ -365,6 +403,8 @@ void Application::saveDraft()
     copy.title                           = title.empty() ? scenario_.title : title;
     copy.habitat                         = editor_.draft;
     copy.habitat.mirrors.openingAngleDeg = static_cast<double>(hudSettings_.mirrorAngleDeg);
+    copy.sky.start                       = simTime_;  // the visit resumes from this moment
+    copy.day.enabled                     = hudSettings_.followSchedule;
     const std::filesystem::path path =
         userDirectory() / "habitats" / (fileNameFor(copy.title) + ".toml");
     const auto saved = saveScenario(copy, path);
@@ -484,13 +524,318 @@ void Application::applyCameraPose(const CameraPose& pose)
     look_.setAngles(degreesToRadians(pose.yawDeg), degreesToRadians(pose.pitchDeg));
 }
 
+// ---- The sky and the clock -------------------------------------------------------------------
+
+void Application::startSkyLoad()
+{
+    const std::filesystem::path directory = findSkyDataDirectory(dataDirectory());
+    if (options_.capturePath || options_.benchmark)
+    {
+        adoptSky(loadSkyData(directory, kStarMagnitudeLimit));  // captures need the real sky
+        return;
+    }
+    pendingSky_ = std::async(std::launch::async, loadSkyData, directory, kStarMagnitudeLimit);
+}
+
+void Application::pollSky()
+{
+    if (pendingSky_.valid() &&
+        pendingSky_.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+    {
+        adoptSky(pendingSky_.get());
+    }
+}
+
+void Application::adoptSky(SkyData data)
+{
+    try
+    {
+        renderer_.setSkyImages(data.images);
+        if (data.catalog)
+        {
+            renderer_.setStars(astro::toGpuStars(*data.catalog));
+            catalog_ = std::move(data.catalog);
+        }
+    }
+    catch (const std::exception& e)
+    {
+        data.problems.emplace_back(e.what());
+    }
+    skyStatus_ = catalog_ ? std::format("{} stars from the HYG catalog", catalog_->stars.size())
+                          : std::string("Placeholder stars: the star catalog is missing");
+    if (!data.problems.empty())
+    {
+        skyStatus_ += std::format("; {} sky file(s) missing, see the log", data.problems.size());
+        for (const std::string& problem : data.problems)
+        {
+            log::warn("Sky data: {}", problem);
+        }
+    }
+    log::info("Sky loaded in {:.1f} s: {}", data.seconds, skyStatus_);
+    if (pendingLookAt_ && catalog_)
+    {
+        const std::string name = *pendingLookAt_;
+        pendingLookAt_.reset();
+        lookAtName(name);
+    }
+}
+
+void Application::advanceClock(double realSeconds)
+{
+    if (!hudSettings_.timePaused)
+    {
+        simTime_ = simTime_.plusSeconds(realSeconds * hudSettings_.timeScale);
+    }
+    identifiedAge_ += realSeconds;
+}
+
+void Application::updateSky()
+{
+    sky_            = astro::computeSky(scenario_.sky.location, simTime_);
+    habitatFromSky_ = astro::habitatFromEqj(sky_.sunDirection, spinPhase_);
+    if (hudSettings_.followSchedule)
+    {
+        const double hour = astro::hourOfDay(simTime_, scenario_.sky.utcOffsetHours);
+        hudSettings_.mirrorAngleDeg =
+            static_cast<float>(scheduledMirrorAngleDeg(scenario_.day, hour));
+    }
+}
+
+void Application::setTime(astro::SimTime time)
+{
+    simTime_ = time;
+    status_  = std::format("Time set to {}", astro::formatIsoTime(time));
+    updateSky();
+}
+
+void Application::stepTimeScale(int steps)
+{
+    // The preset nearest the current scale, then that many presets faster or slower.
+    std::size_t nearest = 0;
+    for (std::size_t i = 0; i < kTimeScales.size(); ++i)
+    {
+        if (std::abs(std::log(kTimeScales.at(i) / hudSettings_.timeScale)) <
+            std::abs(std::log(kTimeScales.at(nearest) / hudSettings_.timeScale)))
+        {
+            nearest = i;
+        }
+    }
+    const auto index = std::clamp(static_cast<std::ptrdiff_t>(nearest) + steps, std::ptrdiff_t{0},
+                                  static_cast<std::ptrdiff_t>(kTimeScales.size()) - 1);
+    hudSettings_.timeScale  = kTimeScales.at(static_cast<std::size_t>(index));
+    hudSettings_.timePaused = false;
+    status_                 = std::format("Time runs at {}", timeScaleName(hudSettings_.timeScale));
+}
+
+void Application::identify()
+{
+    const Vec3d eye     = player_.eyePosition();
+    const Vec3d forward = look_.forward();
+    // Only what can be seen: the line of sight must leave the habitat through a window.
+    if (const auto hit = geometry_->raycast(eye, forward, 4.0 * geometry_->spec().lengthM))
+    {
+        const Vec3d point = eye + (forward * *hit);
+        const auto  kind  = geometry_->regionAt(point.z, HabitatGeometry::angleOf(point)).kind;
+        if (kind != RegionKind::Window)
+        {
+            identified_.reset();
+            status_ = "That is the land across the habitat. Look out through a window.";
+            return;
+        }
+    }
+    const Vec3d direction = glm::transpose(habitatFromSky_) * forward;
+    identified_           = astro::identifyInSky(direction, sky_, catalog_ ? &*catalog_ : nullptr);
+    identifiedAge_        = 0.0;
+    status_ = identified_ ? std::format("{}: {}", identified_->name, identified_->details)
+                          : std::string(
+                                "Nothing bright there. Point the crosshair at a "
+                                "star, a planet, Earth or the Moon.");
+}
+
+void Application::lookAtBody(astro::Body body)
+{
+    const auto found = std::ranges::find(sky_.bodies, body, &astro::VisibleBody::body);
+    if (found == sky_.bodies.end())
+    {
+        status_ = std::format("{} is not in the sky model", astro::bodyName(body));
+        return;
+    }
+    lookOut(found->direction, astro::bodyName(body));
+}
+
+void Application::lookAtName(std::string_view name)
+{
+    if (name == "partner")
+    {
+        lookAtPartner();
+        return;
+    }
+    if (const auto body = astro::bodyFromName(name))
+    {
+        lookAtBody(*body);
+        return;
+    }
+    if (!catalog_)
+    {
+        pendingLookAt_ = std::string(name);  // once the star catalog has loaded
+        return;
+    }
+    if (const astro::CatalogStar* star = catalog_->find(name))
+    {
+        lookOut(star->direction, astro::displayName(*star));
+        return;
+    }
+    status_ = std::format("There is no planet or named star called '{}'", name);
+    log::warn("{}", status_);
+}
+
+void Application::lookAtPartner()
+{
+    // The partner lies along +X of the habitat at rest (spin phase 0).
+    lookOut(glm::transpose(astro::habitatFromEqj(sky_.sunDirection, 0.0)) * Vec3d(1.0, 0.0, 0.0),
+            "the partner cylinder");
+}
+
+void Application::lookOut(Vec3d directionEqj, std::string_view name)
+{
+    // directionEqj is a copy: it often points into sky_, which updateSky() below replaces.
+    // Turn the habitat so the direction lies straight out from window 0 (angle 0) ...
+    const Vec3d atRest = astro::habitatFromEqj(sky_.sunDirection, 0.0) * directionEqj;
+    spinPhase_         = std::fmod(std::atan2(atRest.y, atRest.x) + (2.0 * kPi), 2.0 * kPi);
+    updateSky();
+    const Vec3d d = habitatFromSky_ * directionEqj;  // now in the x-z plane, x >= 0
+
+    // ... and float just off the axis on the other side, looking out through the middle of it.
+    const HabitatGeometry& geometry = *geometry_;
+    constexpr double       kOffAxis = 60.0;
+    const double           reach    = (geometry.radius() + kOffAxis) / std::max(d.x, 1e-3);
+    const double           middle   = 0.5 * (geometry.floorZMin() + geometry.floorZMax());
+    const double           z = std::clamp(middle - (reach * d.z), geometry.walkableZMin() + 500.0,
+                                          geometry.walkableZMax() - 500.0);
+    player_.setLocomotion(Locomotion::Fly);
+    player_.teleport(Vec3d(-kOffAxis, 0.0, z));
+    look_.setFrame(player_.viewUp(), kNorth);
+    const Vec3d  up         = look_.up();
+    const Vec3d  horizontal = d - (glm::dot(d, up) * up);
+    const double yaw =
+        std::atan2(glm::dot(horizontal, glm::cross(up, kNorth)), glm::dot(horizontal, kNorth));
+    const double pitch = std::asin(std::clamp(glm::dot(d, up), -1.0, 1.0));
+    look_.setAngles(yaw, pitch);
+
+    const Vec3d exit = player_.eyePosition() + (d * reach);
+    status_ = exit.z > geometry.floorZMin() && exit.z < geometry.floorZMax()
+                  ? std::format(
+                        "Looking at {} through a window; the spin carries it past every "
+                        "{:.0f} s",
+                        name, 2.0 * kPi / geometry.omega())
+                  : std::format("{} is nearly along the spin axis: the endcaps hide it", name);
+}
+
+double Application::mirrorAngle() const
+{
+    return degreesToRadians(static_cast<double>(hudSettings_.mirrorAngleDeg));
+}
+
+double Application::autoExposure() const
+{
+    if (!hudSettings_.autoExposure)
+    {
+        return 1.0;
+    }
+    // Eyes adapt: about 1x in daylight, up to kNightExposure^0.8 in the dark.
+    const double daylight = daylightFactor(mirrorAngle());
+    return std::pow(1.0 / (daylight + (1.0 / kNightExposure)), 0.8);
+}
+
+std::optional<SkyLabel> Application::skyLabel() const
+{
+    if (!identified_ || identifiedAge_ > kLabelSeconds + kLabelFadeSeconds)
+    {
+        return std::nullopt;
+    }
+    const ImVec2 size   = ImGui::GetIO().DisplaySize;
+    const double aspect = static_cast<double>(size.x) / std::max(1.0, static_cast<double>(size.y));
+    const Vec4d  clip   = cameraRelativeViewProjection(camera(), aspect) *
+                          Vec4d(habitatFromSky_ * identified_->direction, 0.0);
+    if (clip.w <= 0.0)
+    {
+        return std::nullopt;  // behind the viewer
+    }
+    const double x = ((clip.x / clip.w) * 0.5) + 0.5;
+    const double y = 0.5 - ((clip.y / clip.w) * 0.5);
+    return SkyLabel{
+        .screen  = ImVec2(static_cast<float>(x) * size.x, static_cast<float>(y) * size.y),
+        .name    = identified_->name,
+        .details = identified_->details,
+        .fade    = static_cast<float>(std::clamp(
+            (kLabelSeconds + kLabelFadeSeconds - identifiedAge_) / kLabelFadeSeconds, 0.0, 1.0))};
+}
+
+SkyModel Application::skyModel() const
+{
+    const astro::CalendarTime utc = astro::toCalendar(simTime_);
+    SkyModel                  model;
+    model.clock     = std::format("{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC", utc.year, utc.month,
+                                  utc.day, utc.hour, utc.minute, static_cast<int>(utc.second));
+    model.localHour = astro::hourOfDay(simTime_, scenario_.sky.utcOffsetHours);
+    model.location  = astro::locationName(scenario_.sky.location);
+    model.partner   = geometry_->spec().partner.enabled;
+    model.sky       = &sky_;
+    for (const astro::VisibleBody& body : sky_.bodies)
+    {
+        if (body.body == astro::Body::Earth)
+        {
+            model.earth = &body;
+        }
+        else if (body.body == astro::Body::Moon)
+        {
+            model.moon = &body;
+        }
+    }
+    model.loading  = pendingSky_.valid();
+    model.status   = skyStatus_;
+    model.exposure = autoExposure();
+    model.label    = skyLabel();
+    return model;
+}
+
+std::vector<BodyDraw> Application::bodyDraws(const gpu::LightingSettings& lighting) const
+{
+    std::vector<const astro::VisibleBody*> disks;
+    for (const astro::VisibleBody& body : sky_.bodies)
+    {
+        if (body.body == astro::Body::Earth || body.body == astro::Body::Moon)
+        {
+            disks.push_back(&body);
+        }
+    }
+    std::ranges::sort(disks, std::ranges::greater{}, &astro::VisibleBody::distanceKm);
+
+    // Sunlit Earth is as bright as sunlit fields; at night, with the view brightened for the dark
+    // land, it would be a white blur. Like a photographer bracketing, keep the sunlit sides at
+    // their daytime exposure (Earth's city lights still get the night brightening).
+    const auto            compensation = static_cast<float>(1.0 / autoExposure());
+    std::vector<BodyDraw> draws;
+    for (const astro::VisibleBody* body : disks)
+    {
+        BodyDraw draw{.uniforms = gpu::makeBodyUniforms(*body, habitatFromSky_, lighting),
+                      .textures = body->body == astro::Body::Earth ? BodyTextures::Earth
+                                                                   : BodyTextures::Moon};
+        draw.uniforms.sunlight =
+            Vec4f(Vec3f(draw.uniforms.sunlight) * compensation, draw.uniforms.sunlight.w);
+        draws.push_back(draw);
+    }
+    return draws;
+}
+
 // ---- Frames ------------------------------------------------------------------------------------
 
 Camera Application::camera() const
 {
     Camera camera;
-    camera.position    = player_.eyePosition();
-    camera.orientation = look_.orientation();
+    camera.position           = player_.eyePosition();
+    camera.orientation        = look_.orientation();
+    camera.verticalFovRadians = degreesToRadians(static_cast<double>(hudSettings_.fieldOfViewDeg));
     return camera;
 }
 
@@ -524,6 +869,7 @@ HudActions Application::drawUi()
         .generating     = pending_.valid(),
         .status         = status_,
         .throwReport    = ball_ ? std::optional<ThrowReport>(ball_->report) : std::nullopt,
+        .sky            = skyModel(),
     };
     return drawHud(model, hudSettings_, editor_, player_.settings);
 }
@@ -579,6 +925,42 @@ void Application::applyInput(const InputFrame& input, const HudActions& actions)
     if (actions.load)
     {
         loadScenarioFile(*actions.load);
+    }
+    applySkyInput(input, actions);
+}
+
+void Application::applySkyInput(const InputFrame& input, const HudActions& actions)
+{
+    if (input.identify || actions.identify)
+    {
+        identify();
+    }
+    if (input.toggleZoom)
+    {
+        const bool zoomed           = hudSettings_.fieldOfViewDeg <= kBinocularsFovDeg + 0.5F;
+        hudSettings_.fieldOfViewDeg = zoomed ? kNormalFovDeg : kBinocularsFovDeg;
+    }
+    if (input.togglePause)
+    {
+        hudSettings_.timePaused = !hudSettings_.timePaused;
+        status_ =
+            hudSettings_.timePaused ? "Time paused (the habitat keeps spinning)" : "Time running";
+    }
+    if (input.timeSteps != 0)
+    {
+        stepTimeScale(input.timeSteps);
+    }
+    if (actions.setTime)
+    {
+        setTime(*actions.setTime);
+    }
+    if (actions.lookAt)
+    {
+        lookAtBody(*actions.lookAt);
+    }
+    if (actions.lookAtPartner)
+    {
+        lookAtPartner();
     }
 }
 
@@ -702,17 +1084,24 @@ std::optional<int> Application::render(int frame, bool screenshotRequested, ImDr
     }
 
     gpu::LightingSettings lighting;
-    lighting.haze                    = static_cast<double>(hudSettings_.haze);
-    const std::vector<Marker> shapes = markers();
-    const SceneView           scene{
+    lighting.haze                      = static_cast<double>(hudSettings_.haze);
+    const std::vector<Marker>   shapes = markers();
+    const std::vector<BodyDraw> bodies = bodyDraws(lighting);
+    const OneillCylinderSpec&   spec   = geometry_->spec();
+    const SceneView             scene{
         .camera  = camera(),
         .world   = world_.get(),
-        .habitat = gpu::makeHabitatUniforms(
-            *geometry_, degreesToRadians(static_cast<double>(hudSettings_.mirrorAngleDeg)),
-            lighting),
-        .sky = gpu::makeSkyUniforms(spinPhase_, static_cast<double>(hudSettings_.starBrightness)),
+        .habitat = gpu::makeHabitatUniforms(*geometry_, mirrorAngle(), lighting),
+        .sky =
+            gpu::makeSkyUniforms(habitatFromSky_, static_cast<double>(hudSettings_.starBrightness),
+                                 kMilkyWayScale * static_cast<double>(hudSettings_.milkyWay)),
+        .planets  = gpu::makePlanetUniforms(sky_),
+        .bodies   = bodies,
+        .partner  = spec.partner.enabled ? std::optional<Mat4d>(partnerTransform(
+                                               spec.partner.separationM, spinPhase_))
+                                         : std::nullopt,
         .markers  = shapes,
-        .exposure = hudSettings_.exposure,
+        .exposure = static_cast<float>(static_cast<double>(hudSettings_.exposure) * autoExposure()),
     };
     const FrameResult result = renderer_.renderFrame(scene, frameOptions);
     if (result.presented)
@@ -782,11 +1171,14 @@ int Application::run()
         {
             return EXIT_SUCCESS;
         }
-        const std::uint64_t now         = SDL_GetTicksNS();
-        const double        realSeconds = static_cast<double>(now - previous) * 1e-9;
-        previous                        = now;
+        const std::uint64_t now = SDL_GetTicksNS();
+        // Captures step a fixed 1/60 s per frame, so they show the same moment every time.
+        const double realSeconds =
+            options_.capturePath ? kCaptureStepSeconds : static_cast<double>(now - previous) * 1e-9;
+        previous = now;
         updateStats(realSeconds);
         pollGeneration();
+        pollSky();
         if (const auto exitCode = stepBenchmark(realSeconds))
         {
             return *exitCode;
@@ -798,6 +1190,8 @@ int Application::run()
         ImDrawData*      ui      = imgui_.endFrame();
         applyInput(input, actions);
         simulate(benchmark_ ? MoveIntent{} : input.move, realSeconds);
+        advanceClock(realSeconds);
+        updateSky();
 
         if (const auto exitCode = render(frame, input.screenshot, ui))
         {

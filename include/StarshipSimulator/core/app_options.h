@@ -7,6 +7,9 @@
 #include <string>
 #include <string_view>
 
+#include "StarshipSimulator/core/astro/astro_time.h"
+#include "StarshipSimulator/core/astro/ephemeris.h"
+
 namespace StarshipSimulator
 {
 
@@ -37,7 +40,11 @@ struct AppOptions
     std::optional<CameraPose>            camera;
     std::optional<std::filesystem::path> scenarioPath;    // default: the Island Three preset
     std::optional<std::string>           view;            // a named viewpoint, see appUsage()
-    std::optional<double>                mirrorAngleDeg;  // time of day
+    std::optional<double>                mirrorAngleDeg;  // fixed mirror angle (no day schedule)
+    std::optional<astro::SimTime>        startTime;       // overrides the scenario's start
+    std::optional<double>                timeScale;       // simulated seconds per real second
+    std::optional<std::string>           lookAt;  // a planet, "moon", a star's name or "partner"
+    std::optional<double>                fieldOfViewDeg;  // vertical
     bool                                 benchmark = false;
     std::optional<std::filesystem::path> capturePath;  // render, save a PNG, then exit
     int                                  captureFrames = 90;

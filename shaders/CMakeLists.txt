@@ -4,13 +4,18 @@ StarshipSimulator_add_shaders(StarshipSimulator_shaders
     OUTPUT_DIR   ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders
     INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include
     SOURCES
+        body.frag
+        body.vert
         fullscreen.vert
         glass.frag
         habitat.frag
+        hull.frag
         marker.frag
         mesh.vert
+        milkyway.frag
         mirror.frag
         mirror.vert
+        planets.vert
         stars.frag
         stars.vert
         tonemap.frag)

@@ -26,6 +26,10 @@ struct InputFrame
     bool       toggleComfort    = false;
     bool       throwBall        = false;
     bool       toggleEditor     = false;
+    bool       identify         = false;  // name what is under the crosshair
+    bool       toggleZoom       = false;  // binoculars
+    bool       togglePause      = false;  // stop or restart the clock
+    int        timeSteps        = 0;      // time scale steps: positive faster, negative slower
 };
 
 /// Turns SDL events and keyboard state into an InputFrame, and manages mouse capture: click the

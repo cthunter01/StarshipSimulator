@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)   # FetchContent SYSTEM + EXCLUDE_FROM_ALL + FIND_PACKAGE_ARGS
-project(StarshipSimulator VERSION 0.1.0 DESCRIPTION "Walk around inside space habitats and starships under an accurate sky" LANGUAGES CXX)
+project(StarshipSimulator VERSION 0.1.0 DESCRIPTION "Walk around inside space habitats and starships under an accurate sky" LANGUAGES C CXX)
 
 if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
     message(FATAL_ERROR "In-source builds are not allowed. Use a preset: cmake --preset clang-debug")
@@ -40,7 +40,9 @@ endif()
 include(${PROJECT_SOURCE_DIR}/cmake/ProjectOptions.cmake)
 include(${PROJECT_SOURCE_DIR}/cmake/Dependencies.cmake)
 include(${PROJECT_SOURCE_DIR}/cmake/Shaders.cmake)
+include(${PROJECT_SOURCE_DIR}/cmake/SkyData.cmake)
 
+add_subdirectory(third_party)
 add_subdirectory(shaders)
 add_subdirectory(src)
 

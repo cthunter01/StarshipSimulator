@@ -25,6 +25,11 @@ shape = "hemisphere"
 opening_angle_deg = 50.0
 reflectivity = 0.9
 
+# The counter-rotating partner cylinder, alongside (axis to axis).
+[habitat.partner]
+enabled = false
+separation_m = 80000.0
+
 [habitat.atmosphere]
 surface_pressure_kpa = 101.325
 temperature_k = 293.0
@@ -39,3 +44,18 @@ feature_size_m = 60.0
 valley = 1
 z_m = 0.0
 heading_deg = 0.0
+
+# Where the habitat is and when the visit begins (UTC).
+# Locations: earth_moon_l4, earth_moon_l5, sun_earth_l4, sun_earth_l5, sun_mars_l4, sun_mars_l5
+[sky]
+location = "earth_moon_l5"
+start = "2045-06-15T09:00:00Z"
+utc_offset_hours = 0.0
+
+# The mirrors' daily swing (local time): 90 degrees at sunrise and sunset.
+[day]
+enabled = true
+day_length_hours = 14.0
+sunrise_hour = 6.0
+noon_angle_deg = 45.0
+night_angle_deg = 105.0

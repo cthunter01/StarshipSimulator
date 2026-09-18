@@ -7,10 +7,14 @@
 #include <cstddef>
 #include <filesystem>
 #include <format>
+#include <optional>
 #include <string>
 
 #include <SDL3/SDL_gpu.h>
 
+#include "StarshipSimulator/core/astro/astro_time.h"
+#include "StarshipSimulator/core/astro/ephemeris.h"
+#include "StarshipSimulator/core/astro/sky_objects.h"
 #include "StarshipSimulator/core/habitat/habitat_geometry.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
 #include "StarshipSimulator/core/habitat/metrics.h"
@@ -143,14 +147,146 @@ void drawLocation(const HudModel& model, HudSettings& settings, PlayerSettings& 
     }
 }
 
-void drawTimeAndLook(HudSettings& settings)
+void drawClock(const SkyModel& sky, HudSettings& settings, HudActions& actions)
 {
-    ImGui::SliderFloat("Mirror angle", &settings.mirrorAngleDeg, 0.0F, 120.0F, "%.1f deg");
+    const int hour   = static_cast<int>(sky.localHour);
+    const int minute = static_cast<int>((sky.localHour - hour) * 60.0);
+    ui::field("Time", std::format("{}, local {:02}:{:02}", sky.clock, hour, minute));
+    if (ImGui::Button(settings.timePaused ? "Run (P)" : "Pause (P)"))
+    {
+        settings.timePaused = !settings.timePaused;
+    }
+    for (const double scale : kTimeScales)
+    {
+        ImGui::SameLine();
+        const bool current = settings.timeScale == scale;
+        ImGui::BeginDisabled(current);
+        if (ImGui::Button(timeScaleName(scale).c_str()))
+        {
+            settings.timeScale = scale;
+        }
+        ImGui::EndDisabled();
+    }
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 12.0F);
+    const bool entered =
+        ImGui::InputTextWithHint("##date", "2045-06-15T21:30", settings.dateText.data(),
+                                 settings.dateText.size(), ImGuiInputTextFlags_EnterReturnsTrue);
+    ImGui::SameLine();
+    if (ImGui::Button("Go to date (UTC)") || entered)
+    {
+        if (const auto time = astro::parseIsoTime(settings.dateText.data()))
+        {
+            actions.setTime = *time;
+        }
+    }
+    if (settings.dateText[0] != '\0' && !astro::parseIsoTime(settings.dateText.data()))
+    {
+        ui::textMuted("Dates look like 2045-06-15 or 2045-06-15T21:30 (UTC)");
+    }
+}
+
+void drawSkyObjects(const SkyModel& sky, HudActions& actions)
+{
+    ui::field("Place", sky.location);
+    if (sky.partner)
+    {
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Look at the partner"))
+        {
+            actions.lookAtPartner = true;
+        }
+    }
+    for (const astro::VisibleBody* body : {sky.earth, sky.moon})
+    {
+        if (body == nullptr)
+        {
+            continue;
+        }
+        ui::textWrapped(astro::describeBody(*body));
+        ImGui::SameLine();
+        ImGui::PushID(static_cast<int>(body->body));
+        if (ImGui::SmallButton("Look"))
+        {
+            actions.lookAt = body->body;
+        }
+        ImGui::PopID();
+    }
+    ui::textMuted(sky.loading ? "Loading the star catalog and sky maps..." : sky.status);
+}
+
+void drawTimeAndLook(const HudModel& model, HudSettings& settings, HudActions& actions)
+{
+    drawClock(model.sky, settings, actions);
+    if (ImGui::SliderFloat("Mirror angle", &settings.mirrorAngleDeg, 0.0F, 120.0F, "%.1f deg"))
+    {
+        settings.followSchedule = false;  // the user took over
+    }
+    ImGui::Checkbox("Mirrors follow the day schedule", &settings.followSchedule);
     ui::textMuted(describeSun(static_cast<double>(settings.mirrorAngleDeg)));
+    if (model.sky.sky != nullptr)
+    {
+        drawSkyObjects(model.sky, actions);
+    }
+    if (ImGui::Button("Identify (I)"))
+    {
+        actions.identify = true;
+    }
+    ImGui::SameLine();
+    ui::textMuted("names what is under the crosshair");
+
     ImGui::SliderFloat("Exposure", &settings.exposure, 0.1F, 16.0F, "%.2f",
                        ImGuiSliderFlags_Logarithmic);
+    ImGui::SameLine();
+    ImGui::Checkbox("Auto", &settings.autoExposure);
+    if (ImGui::BeginItemTooltip())
+    {
+        ui::text(std::format("Adapt to the dark at night (now {:.1f}x)", model.sky.exposure));
+        ImGui::EndTooltip();
+    }
     ImGui::SliderFloat("Haze", &settings.haze, 0.0F, 4.0F, "%.2f");
     ImGui::SliderFloat("Stars", &settings.starBrightness, 0.0F, 4.0F, "%.2f");
+    ImGui::SliderFloat("Milky Way", &settings.milkyWay, 0.0F, 4.0F, "%.2f");
+    ImGui::SliderFloat("Field of view", &settings.fieldOfViewDeg, 2.0F, 100.0F, "%.0f deg",
+                       ImGuiSliderFlags_Logarithmic);
+}
+
+void drawCredits()
+{
+    ui::textWrapped(
+        "Stars: HYG database v4.4 by David Nash (astronexus), CC BY-SA 4.0, from Hipparcos, Yale "
+        "Bright Star and Gliese catalogs.");
+    ui::textWrapped(
+        "Milky Way: NASA/Goddard Space Flight Center Scientific Visualization Studio, Deep Star "
+        "Maps 2020, using Gaia DR2 (ESA/Gaia/DPAC).");
+    ui::textWrapped(
+        "Earth: NASA Visible Earth, Blue Marble (Reto Stockli, NASA GSFC) and Black Marble 2012 "
+        "(NASA Earth Observatory, Suomi NPP VIIRS).");
+    ui::textWrapped(
+        "Moon: NASA SVS CGI Moon Kit, Lunar Reconnaissance Orbiter LROC (NASA/GSFC/ASU).");
+    ui::textWrapped(
+        "Positions: Astronomy Engine by Don Cross (MIT). Checked against JPL Horizons.");
+}
+
+/// The name of what the user identified, next to it in the sky, with a crosshair in the middle.
+void drawSkyLabel(const std::optional<SkyLabel>& label)
+{
+    const ImGuiIO& io     = ImGui::GetIO();
+    ImDrawList*    draw   = ImGui::GetForegroundDrawList();
+    const ImVec2   centre = ImVec2(io.DisplaySize.x * 0.5F, io.DisplaySize.y * 0.5F);
+    if (!label || label->fade <= 0.0F)
+    {
+        return;
+    }
+    const auto      alpha = static_cast<int>(255.0F * std::clamp(label->fade, 0.0F, 1.0F));
+    const ImU32     color = IM_COL32(255, 240, 200, alpha);
+    constexpr float kArm  = 6.0F;
+    draw->AddLine(ImVec2(centre.x - kArm, centre.y), ImVec2(centre.x + kArm, centre.y), color);
+    draw->AddLine(ImVec2(centre.x, centre.y - kArm), ImVec2(centre.x, centre.y + kArm), color);
+    draw->AddCircle(label->screen, 14.0F, color, 0, 1.5F);
+    const ImVec2 textAt(label->screen.x + 20.0F, label->screen.y - ImGui::GetFontSize());
+    draw->AddText(textAt, color, label->name.c_str());
+    draw->AddText(ImVec2(textAt.x, textAt.y + ImGui::GetFontSize()),
+                  IM_COL32(220, 220, 220, alpha * 3 / 4), label->details.c_str());
 }
 
 void drawMetrics(const HudModel& model)
@@ -207,6 +343,15 @@ void drawEditorShape(OneillCylinderSpec& spec)
         spec.sunwardEndcap.shape     = static_cast<EndcapShape>(sunward);
         sliderDouble("Ramp slope (deg)", spec.antisunwardEndcap.rampSlopeDeg, 10.0, 40.0, "%.0f");
         spec.sunwardEndcap.rampSlopeDeg = spec.antisunwardEndcap.rampSlopeDeg;
+    }
+    if (ImGui::CollapsingHeader("Partner cylinder"))
+    {
+        ImGui::Checkbox("Counter-rotating partner", &spec.partner.enabled);
+        double kilometres = spec.partner.separationM / 1000.0;
+        sliderDouble("Distance (km)", kilometres, 10.0, 300.0, "%.0f");
+        spec.partner.separationM = kilometres * 1000.0;
+        ui::textMuted(std::format("At least {:.0f} km, so the mirrors clear each other",
+                                  minimumPartnerSeparation(spec) / 1000.0));
     }
     if (ImGui::CollapsingHeader("Terrain and air"))
     {
@@ -290,11 +435,29 @@ void drawHelp(const HudModel& model, HudSettings& settings)
                                           : "Click the view to look around");
         ui::textMuted("WASD move, Shift run, Space jump (fly: rise), Ctrl descend");
         ui::textMuted("F walk/fly, G throw, C comfort, wheel fly speed");
+        ui::textMuted("I identify, B binoculars, P pause time, comma/period slower/faster");
         ui::textMuted("Tab editor, F1 HUD, F12 screenshot");
     }
 }
 
 }  // namespace
+
+std::string timeScaleName(double scale)
+{
+    if (scale >= 86400.0)
+    {
+        return std::format("{:g} d/s", scale / 86400.0);
+    }
+    if (scale >= 3600.0)
+    {
+        return std::format("{:g} h/s", scale / 3600.0);
+    }
+    if (scale >= 60.0)
+    {
+        return std::format("{:g} min/s", scale / 60.0);
+    }
+    return std::format("{:g}x", scale);
+}
 
 HudActions drawHud(const HudModel& model, HudSettings& settings, EditorState& editor,
                    PlayerSettings& player)
@@ -306,9 +469,9 @@ HudActions drawHud(const HudModel& model, HudSettings& settings, EditorState& ed
     if (ImGui::Begin(model.title.c_str()))
     {
         drawLocation(model, settings, player, actions);
-        if (ImGui::CollapsingHeader("Time of day and look", ImGuiTreeNodeFlags_DefaultOpen))
+        if (ImGui::CollapsingHeader("Sky, time and look", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            drawTimeAndLook(settings);
+            drawTimeAndLook(model, settings, actions);
         }
         if (ImGui::CollapsingHeader("This habitat"))
         {
@@ -317,6 +480,10 @@ HudActions drawHud(const HudModel& model, HudSettings& settings, EditorState& ed
         if (ImGui::CollapsingHeader("Renderer"))
         {
             drawRenderer(model);
+        }
+        if (ImGui::CollapsingHeader("Credits"))
+        {
+            drawCredits();
         }
         if (!model.status.empty())
         {
@@ -331,6 +498,7 @@ HudActions drawHud(const HudModel& model, HudSettings& settings, EditorState& ed
     {
         drawEditor(model, editor, settings, actions);
     }
+    drawSkyLabel(model.sky.label);
     return actions;
 }
 

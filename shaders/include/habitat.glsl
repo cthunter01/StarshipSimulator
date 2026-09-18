@@ -134,7 +134,8 @@ vec3 sunlight(vec3 p, vec3 n)
 vec3 ambientLight(vec3 p, vec3 n)
 {
     float upness = dot(n, localUp(p)) * 0.5 + 0.5;
-    // At night a faint glow from settlements across the habitat keeps the land just visible.
-    const vec3 NIGHT_GLOW = vec3(0.006, 0.005, 0.004);
+    // At night Earthlight through the windows and the glow of towns across the habitat keep the
+    // land just visible.
+    const vec3 NIGHT_GLOW = vec3(0.0020, 0.0021, 0.0026);
     return mix(habitat.ambientDown.rgb, habitat.ambientUp.rgb, upness) + NIGHT_GLOW;
 }

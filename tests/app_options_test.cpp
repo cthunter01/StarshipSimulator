@@ -6,6 +6,8 @@
 
 #include <gtest/gtest.h>
 
+#include "StarshipSimulator/core/astro/astro_time.h"
+
 namespace
 {
 
@@ -69,6 +71,25 @@ TEST(AppOptions, HabitatOptions)
     EXPECT_EQ(parsed->mirrorAngleDeg, 80.0);
     EXPECT_TRUE(parsed->benchmark);
     EXPECT_FALSE(parse({"--mirror", "200"}).has_value());
+}
+
+TEST(AppOptions, SkyOptions)
+{
+    const auto parsed = parse(
+        {"--time", "2045-06-15T21:30", "--time-scale", "3600", "--look-at", "Moon", "--fov", "10"});
+    ASSERT_TRUE(parsed.has_value()) << parsed.error();
+    ASSERT_TRUE(parsed->startTime.has_value());
+    EXPECT_EQ(StarshipSimulator::astro::formatIsoTime(
+                  parsed->startTime.value_or(StarshipSimulator::astro::SimTime{})),
+              "2045-06-15T21:30:00Z");
+    EXPECT_EQ(parsed->timeScale, 3600.0);
+    EXPECT_EQ(parsed->lookAt, "Moon");
+    EXPECT_EQ(parsed->fieldOfViewDeg, 10.0);
+    EXPECT_FALSE(parse({"--fov", "0"}).has_value());
+    EXPECT_EQ(parse({"--look-at", "partner"})->lookAt, "partner");
+    EXPECT_NE(parse({"--time", "tomorrow"}).error().find("--time"), std::string::npos);
+    EXPECT_NE(parse({"--look-at", "sun"}).error().find("--look-at"), std::string::npos);
+    EXPECT_FALSE(parse({"--time-scale", "-1"}).has_value());
 }
 
 TEST(AppOptions, HelpFlag)

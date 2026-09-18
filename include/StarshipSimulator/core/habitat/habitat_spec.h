@@ -40,6 +40,15 @@ struct MirrorSpec
     double reflectivity    = 0.9;
 };
 
+/// Island Three comes as a counter-rotating pair: their spins cancel, so the pair can be turned to
+/// keep facing the Sun without fighting gyroscopic torque. The partner flies alongside, its axis
+/// parallel to ours (both point at the Sun), offset along the ecliptic.
+struct PartnerSpec
+{
+    bool   enabled     = true;
+    double separationM = 80000.0;  // axis to axis; the mirrors of both must clear each other
+};
+
 struct AtmosphereSpec
 {
     double surfacePressurePa = units::kStandardAtmosphere;
@@ -66,6 +75,7 @@ struct OneillCylinderSpec
     EndcapSpec     sunwardEndcap     = makeEndcap(EndcapShape::Hemisphere);
     EndcapSpec     antisunwardEndcap = makeEndcap(EndcapShape::ConicalRamp);
     MirrorSpec     mirrors;
+    PartnerSpec    partner;
     AtmosphereSpec atmosphere;
     TerrainSpec    terrain;
     double         populationDensityPerKm2 = 5000.0;  // of land
@@ -73,6 +83,10 @@ struct OneillCylinderSpec
 
 /// Problems that make a spec unbuildable, as human-readable messages (empty when valid).
 [[nodiscard]] std::vector<std::string> validate(const OneillCylinderSpec& spec);
+
+/// Smallest axis-to-axis distance at which two such cylinders' mirrors cannot touch, however they
+/// are turned: each mirror reaches out at most a cylinder length beyond the hull.
+[[nodiscard]] double minimumPartnerSeparation(const OneillCylinderSpec& spec);
 
 /// Axial depth of an endcap inside the cylinder section (0 for flat and hemisphere endcaps).
 [[nodiscard]] double endcapDepthInside(const EndcapSpec& endcap, double radiusM);

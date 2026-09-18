@@ -12,6 +12,7 @@
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_gpu.h>
 
+#include "StarshipSimulator/core/procgen/mesh.h"
 #include "StarshipSimulator/render/gpu_handles.h"
 
 namespace StarshipSimulator
@@ -73,6 +74,15 @@ GpuBuffer createBufferWithData(SDL_GPUDevice* device, SDL_GPUBufferUsageFlags us
     return createBufferFilledBy(
         device, usage, static_cast<std::uint32_t>(data.size()),
         [&](std::span<std::byte> target) { std::memcpy(target.data(), data.data(), data.size()); });
+}
+
+GpuMesh uploadMesh(SDL_GPUDevice* device, const CpuMesh& mesh)
+{
+    return {.vertices   = createBufferWithData(device, SDL_GPU_BUFFERUSAGE_VERTEX,
+                                               std::as_bytes(std::span(mesh.vertices))),
+            .indices    = createBufferWithData(device, SDL_GPU_BUFFERUSAGE_INDEX,
+                                               std::as_bytes(std::span(mesh.indices))),
+            .indexCount = static_cast<std::uint32_t>(mesh.indices.size())};
 }
 
 }  // namespace StarshipSimulator

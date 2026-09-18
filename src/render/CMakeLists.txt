@@ -7,9 +7,11 @@ add_library(StarshipSimulator_render STATIC
     render_targets.cpp
     renderer.cpp
     shader_library.cpp
+    texture.cpp
     upload.cpp
     passes/habitat_passes.cpp
     passes/marker_pass.cpp
+    passes/sky_passes.cpp
     passes/tonemap_pass.cpp)
 add_library(StarshipSimulator::render ALIAS StarshipSimulator_render)
 target_link_libraries(StarshipSimulator_render PUBLIC StarshipSimulator::core SDL3::SDL3 StarshipSimulator_imgui)

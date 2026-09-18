@@ -5,6 +5,9 @@
 #include <string>
 #include <string_view>
 
+#include "StarshipSimulator/core/astro/astro_time.h"
+#include "StarshipSimulator/core/astro/ephemeris.h"
+#include "StarshipSimulator/core/habitat/day_schedule.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
 
 namespace StarshipSimulator
@@ -19,6 +22,17 @@ struct StartSpec
     double headingDeg = 0.0;
 };
 
+/// Where in the solar system the habitat is, and when the visit starts.
+struct SkySpec
+{
+    astro::Location location       = astro::Location::EarthMoonL5;
+    astro::SimTime  start          = defaultStartTime();
+    double          utcOffsetHours = 0.0;  // the habitat's local clock (drives the day schedule)
+
+    // 2045-06-15 09:00 UTC: morning, with Earth well clear of the axis in the sky.
+    [[nodiscard]] static astro::SimTime defaultStartTime();
+};
+
 /// A shareable habitat file: everything needed to regenerate the same world.
 struct Scenario
 {
@@ -31,6 +45,8 @@ struct Scenario
     std::string        description;
     OneillCylinderSpec habitat;
     StartSpec          start;
+    SkySpec            sky;
+    DayScheduleSpec    day;
 };
 
 struct ScenarioError

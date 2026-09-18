@@ -26,8 +26,12 @@ Views: valley, lookup, window, endcap, ramp, sunward, axis, overview (or `--came
 habitat frame; `--scenario data/presets/coriolis_playground.toml` for the small habitat). Write captures to the
 scratchpad and inspect them with the Read tool before reporting visual work as done. The window opens briefly
 on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
+- The sky: `--time 2045-06-15T01:00` (UTC; the day schedule makes 20:00-06:00 night), `--look-at earth|moon|
+  jupiter|Vega|partner` (spins the habitat so it shows through window 0 and floats you off the axis facing it),
+  `--fov 2.5` to zoom in. Captures step a fixed 1/60 s per frame and load the sky data synchronously, so they
+  are repeatable; keep the window size small (e.g. 960x540), the compositor may resize large windows
 - Performance: `build/clang-release/bin/StarshipSimulator --size 1920x1080 --no-vsync --no-gpu-debug --benchmark`
-  prints average/p99 frame times over a fixed tour (M1 on the RTX A1000: ~5 ms average, ~9 ms p99)
+  prints average/p99 frame times over a fixed tour (M2 on the RTX A1000: ~5 ms average, ~9 ms p99)
 - ASan build of the app: `LSAN_OPTIONS=suppressions=tools/lsan.supp build/asan/bin/StarshipSimulator --no-gpu-debug ...`
   (system libraries such as libdbus leak on purpose; the Vulkan validation layer leaks a few hundred bytes of its
   own bookkeeping, so leave GPU debug off for leak checks)
@@ -38,14 +42,24 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
   render includes**: the `layering` test (`cmake/CheckLayering.cmake`) fails otherwise. Unit tests link only core
   - `habitat/`: `OneillCylinderSpec` (the shareable description), `metrics` (spin, gravity, air, hull strength),
     `MeridianProfile` (the revolved cross-section), `HabitatGeometry` (regions, terrain, ground queries),
-    `mirror_optics` (where the sun appears, day/night)
+    `mirror_optics` (where the sun appears, day/night), `day_schedule` (mirror angle by local time)
+  - `astro/`: `SimTime` (int64 microseconds since J2000, UT), `ephemeris` (Astronomy Engine: bodies, Lagrange
+    point locations, `computeSky`, `habitatFromEqj`: the spin axis points at the Sun), `star_catalog` (HYG),
+    `sky_objects` (phases, naming what the crosshair points at)
+  - `assets/`: file reading, gzip/zlib, a minimal OpenEXR reader (NASA's Milky Way map), JPEG/PNG via stb
   - `physics/`: `RotatingFrame` (centrifugal + Coriolis, exact free flight, `stepFreeBody`), `PlayerController`
-  - `procgen/`: deterministic noise, `habitat_mesher` (chunked meshes), star field, mesh primitives
+  - `procgen/`: deterministic noise, `habitat_mesher` (chunked meshes), `hull_mesh` (the outside, for the
+    partner cylinder, and `partnerTransform`), placeholder star field, mesh primitives
   - `scenario/`: TOML habitat files (toml++, used only in `scenario.cpp`); `gpu_abi/`: uniform structs, SPIR-V
     reflection; plus camera, frustum, sim clock, app options
 - `render` (`StarshipSimulator_render`): SDL_GPU device, shader library, `GpuWorld` (all habitat chunks in one
-  vertex/index buffer), passes (stars, terrain, mirrors, markers, glass, tonemap), `pipeline.h` helper, ImGui layer
-- `src/app/`: the `StarshipSimulator` executable (main loop, input, HUD); its headers are private
+  vertex/index buffer), passes (Milky Way, stars, planets, Earth/Moon, partner hull, terrain, mirrors, markers,
+  glass, tonemap; drawn in that order), `texture.h` (uploads with GPU mipmaps), `pipeline.h` helper, ImGui layer
+- `src/app/`: the `StarshipSimulator` executable (main loop, input, HUD, sky data loading on a worker thread);
+  its headers are private
+- `third_party/`: vendored C code (Astronomy Engine, stb) in their own targets, never reformatted
+- `cmake/SkyData.cmake`: downloads the star catalog and sky maps (~52 MB, SHA-256 checked) once into
+  `build/_downloads/sky`; off when `CI` is set. Tests using them skip when missing. Credits: `data/CREDITS.md`
 - `shaders/`: GLSL, compiled by glslc to `build/<preset>/bin/shaders/*.spv` (`cmake/Shaders.cmake`);
   `include/habitat.glsl` holds the shared air (aerial perspective) and sunlight (mirror beams) models
 - `data/presets/*.toml`: scenario presets, copied to `build/<preset>/bin/data` at build time
@@ -64,6 +78,9 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
   with `GLM_FORCE_EXPLICIT_CTOR`, so double → float conversions must be explicit
 - Habitat frame: spin axis +Z, the Sun toward +Z; window i is centred on angle i * 2pi/strips, land strip i halfway
   to the next window; "up" is toward the axis. Everything is simulated in this rotating frame
+- Sky frame: J2000 equatorial (EQJ). `astro::habitatFromEqj(sunDirection, spinPhase)` turns it into the habitat
+  frame; shaders get only that matrix (never times). Simulated time (`SimTime`) is separate from the spin, which
+  always runs in real time
 - Determinism: procedural generation uses our own `SplitMix64`/`SimplexNoise` (never `std::` distributions) and
   core builds with `-ffp-contract=off`; `buildHabitatMeshes` output must not depend on the thread count
 - Precision: world positions are `double`. The GPU only sees camera-relative `float` data (compute
@@ -93,7 +110,9 @@ Resource bindings must use SDL_GPU's descriptor sets; within a set, bindings cou
   `SpirvReflect.AllBuiltShadersFollowTheSdlGpuLayout` test validates every compiled shader
 - Shaders are compiled for `--target-env=vulkan1.0 -fpreserve-bindings`: without the latter, optimized (Release)
   builds drop unused uniform blocks and break the contiguous slot numbering. F5 in the app hot-reloads shaders
-- Include order for uniforms: `frame.glsl` (slot 0) then `habitat.glsl` (slot 1); define `UNIFORM_SET` first
+- Include order for uniforms: `frame.glsl` (slot 0) then `habitat.glsl`, `sky.glsl` or `body.glsl` (slot 1);
+  define `UNIFORM_SET` first
+- Colour textures from 8-bit images use `*_UNORM_SRGB` formats (decoded by the sampler); HDR maps use RGBA16F
 
 ## GPU notes (this machine)
 - Laptop with an NVIDIA RTX A1000 (4 GB) and Intel Iris Xe; only the NVIDIA GPU has a Vulkan driver installed.

@@ -1,5 +1,6 @@
 #include "StarshipSimulator/core/scenario/scenario.h"
 
+#include <cmath>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -16,6 +17,9 @@
 
 #include <toml++/toml.hpp>
 
+#include "StarshipSimulator/core/astro/astro_time.h"
+#include "StarshipSimulator/core/astro/ephemeris.h"
+#include "StarshipSimulator/core/habitat/day_schedule.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
 
 namespace StarshipSimulator
@@ -27,6 +31,17 @@ namespace
 int lineOf(const toml::node& node)
 {
     return static_cast<int>(node.source().begin.line);
+}
+
+/// "earth_moon_l4, earth_moon_l5, ..."
+std::string locationKeyList()
+{
+    std::string keys;
+    for (const astro::Location location : astro::allLocations())
+    {
+        keys += std::format("{}{}", keys.empty() ? "" : ", ", astro::locationKey(location));
+    }
+    return keys;
 }
 
 /// Reads typed values from one TOML table, remembering the first error.
@@ -67,6 +82,21 @@ public:
             else
             {
                 fail(std::format("'{}' in [{}] must be a number", key, name_), lineOf(*node));
+            }
+        }
+    }
+
+    void read(std::string_view key, bool& value)
+    {
+        if (const toml::node* node = table_->get(key))
+        {
+            if (const auto flag = node->value_exact<bool>())
+            {
+                value = *flag;
+            }
+            else
+            {
+                fail(std::format("'{}' in [{}] must be true or false", key, name_), lineOf(*node));
             }
         }
     }
@@ -139,6 +169,43 @@ public:
              lineOf(*node));
     }
 
+    void read(std::string_view key, astro::Location& value)
+    {
+        const toml::node* node = table_->get(key);
+        if (node == nullptr)
+        {
+            return;
+        }
+        std::string text;
+        read(key, text);
+        if (const auto location = astro::locationFromKey(text))
+        {
+            value = *location;
+            return;
+        }
+        fail(std::format("'{}' in [{}] must be one of {}", key, name_, locationKeyList()),
+             lineOf(*node));
+    }
+
+    void read(std::string_view key, astro::SimTime& value)
+    {
+        const toml::node* node = table_->get(key);
+        if (node == nullptr)
+        {
+            return;
+        }
+        std::string text;
+        read(key, text);
+        if (const auto time = astro::parseIsoTime(text))
+        {
+            value = *time;
+        }
+        else
+        {
+            fail(std::format("'{}' in [{}]: {}", key, name_, time.error()), lineOf(*node));
+        }
+    }
+
     /// A sub-table, if present (an error if the key exists but is not a table).
     [[nodiscard]] const toml::table* table(std::string_view key)
     {
@@ -195,7 +262,7 @@ void readHabitat(const toml::table& table, OneillCylinderSpec& spec,
     TableReader habitat(table, "habitat", error);
     habitat.allowOnly({"type", "radius_m", "length_m", "surface_gravity_g", "strip_pairs",
                        "window_fraction", "population_density_per_km2", "sunward_endcap",
-                       "antisunward_endcap", "mirrors", "atmosphere", "terrain"});
+                       "antisunward_endcap", "mirrors", "partner", "atmosphere", "terrain"});
     std::string type = "oneill_cylinder";
     habitat.read("type", type);
     if (type != "oneill_cylinder" && !error)
@@ -221,6 +288,13 @@ void readHabitat(const toml::table& table, OneillCylinderSpec& spec,
         reader.allowOnly({"opening_angle_deg", "reflectivity"});
         reader.read("opening_angle_deg", spec.mirrors.openingAngleDeg);
         reader.read("reflectivity", spec.mirrors.reflectivity);
+    }
+    if (const toml::table* partner = habitat.table("partner"))
+    {
+        TableReader reader(*partner, "habitat.partner", error);
+        reader.allowOnly({"enabled", "separation_m"});
+        reader.read("enabled", spec.partner.enabled);
+        reader.read("separation_m", spec.partner.separationM);
     }
     if (const toml::table* atmosphere = habitat.table("atmosphere"))
     {
@@ -276,6 +350,55 @@ std::string tomlString(std::string_view text)
     return out + "\"";
 }
 
+void readSkyAndDay(TableReader& top, Scenario& scenario, std::optional<ScenarioError>& error)
+{
+    if (const toml::table* sky = top.table("sky"))
+    {
+        TableReader reader(*sky, "sky", error);
+        reader.allowOnly({"location", "start", "utc_offset_hours"});
+        reader.read("location", scenario.sky.location);
+        reader.read("start", scenario.sky.start);
+        reader.read("utc_offset_hours", scenario.sky.utcOffsetHours);
+    }
+    if (const toml::table* day = top.table("day"))
+    {
+        TableReader reader(*day, "day", error);
+        reader.allowOnly(
+            {"enabled", "day_length_hours", "sunrise_hour", "noon_angle_deg", "night_angle_deg"});
+        reader.read("enabled", scenario.day.enabled);
+        reader.read("day_length_hours", scenario.day.dayLengthHours);
+        reader.read("sunrise_hour", scenario.day.sunriseHour);
+        reader.read("noon_angle_deg", scenario.day.noonAngleDeg);
+        reader.read("night_angle_deg", scenario.day.nightAngleDeg);
+    }
+}
+
+/// Problems with the sky and day settings (the habitat has its own validate()).
+std::optional<std::string> validateSkyAndDay(const Scenario& scenario)
+{
+    const DayScheduleSpec& day = scenario.day;
+    if (std::abs(scenario.sky.utcOffsetHours) > 14.0)
+    {
+        return "utc_offset_hours must be between -14 and 14";
+    }
+    if (day.dayLengthHours < 1.0 || day.dayLengthHours > 23.0 || day.sunriseHour < 0.0 ||
+        day.sunriseHour >= 24.0)
+    {
+        return "the day must last 1..23 hours and start at an hour of 0..24";
+    }
+    if (day.noonAngleDeg < 20.0 || day.noonAngleDeg > 85.0 || day.nightAngleDeg < 90.0 ||
+        day.nightAngleDeg > 150.0)
+    {
+        return "the noon mirror angle must be 20..85 degrees and the night angle 90..150";
+    }
+    return std::nullopt;
+}
+
+std::string boolean(bool value)
+{
+    return value ? "true" : "false";
+}
+
 void writeEndcap(std::string& out, std::string_view table, const EndcapSpec& endcap)
 {
     out += std::format("\n[habitat.{}]\nshape = {}\n", table,
@@ -291,6 +414,12 @@ void writeEndcap(std::string& out, std::string_view table, const EndcapSpec& end
 }
 
 }  // namespace
+
+astro::SimTime SkySpec::defaultStartTime()
+{
+    return astro::fromCalendar(
+        {.year = 2045, .month = 6, .day = 15, .hour = 9, .minute = 0, .second = 0.0});
+}
 
 std::string ScenarioError::describe() const
 {
@@ -313,8 +442,8 @@ std::expected<Scenario, ScenarioError> parseScenario(std::string_view toml)
     Scenario                     scenario;
     std::optional<ScenarioError> error;
     TableReader                  top(root, "top level", error);
-    top.allowOnly(
-        {"format_version", "generator_version", "title", "description", "habitat", "start"});
+    top.allowOnly({"format_version", "generator_version", "title", "description", "habitat",
+                   "start", "sky", "day"});
     top.read("format_version", scenario.formatVersion);
     top.read("generator_version", scenario.generatorVersion);
     top.read("title", scenario.title);
@@ -338,9 +467,14 @@ std::expected<Scenario, ScenarioError> parseScenario(std::string_view toml)
         reader.read("z_m", scenario.start.zM);
         reader.read("heading_deg", scenario.start.headingDeg);
     }
+    readSkyAndDay(top, scenario, error);
     if (error)
     {
         return std::unexpected(*error);
+    }
+    if (const auto problem = validateSkyAndDay(scenario))
+    {
+        return std::unexpected(ScenarioError{.message = *problem, .line = 0});
     }
     if (const auto problems = validate(scenario.habitat); !problems.empty())
     {
@@ -375,6 +509,9 @@ std::string serializeScenario(const Scenario& scenario)
     out += "\n# 45 degrees puts the sun overhead; 90 is sunset.\n";
     out += std::format("[habitat.mirrors]\nopening_angle_deg = {}\nreflectivity = {}\n",
                        number(spec.mirrors.openingAngleDeg), number(spec.mirrors.reflectivity));
+    out += "\n# The counter-rotating partner cylinder, alongside (axis to axis).\n";
+    out += std::format("[habitat.partner]\nenabled = {}\nseparation_m = {}\n",
+                       boolean(spec.partner.enabled), number(spec.partner.separationM));
     out += std::format("\n[habitat.atmosphere]\nsurface_pressure_kpa = {}\ntemperature_k = {}\n",
                        number(spec.atmosphere.surfacePressurePa / 1000.0),
                        number(spec.atmosphere.temperatureK));
@@ -386,6 +523,19 @@ std::string serializeScenario(const Scenario& scenario)
     out +=
         std::format("\n[start]\nvalley = {}\nz_m = {}\nheading_deg = {}\n", scenario.start.valley,
                     number(scenario.start.zM), number(scenario.start.headingDeg));
+    out += std::format("\n# Where the habitat is and when the visit begins (UTC).\n# Locations: {}",
+                       locationKeyList());
+    out += std::format("\n[sky]\nlocation = {}\nstart = {}\nutc_offset_hours = {}\n",
+                       tomlString(astro::locationKey(scenario.sky.location)),
+                       tomlString(astro::formatIsoTime(scenario.sky.start)),
+                       number(scenario.sky.utcOffsetHours));
+    const DayScheduleSpec& day = scenario.day;
+    out += "\n# The mirrors' daily swing (local time): 90 degrees at sunrise and sunset.\n";
+    out += std::format(
+        "[day]\nenabled = {}\nday_length_hours = {}\nsunrise_hour = {}\nnoon_angle_deg = {}\n"
+        "night_angle_deg = {}\n",
+        boolean(day.enabled), number(day.dayLengthHours), number(day.sunriseHour),
+        number(day.noonAngleDeg), number(day.nightAngleDeg));
     return out;
 }
 

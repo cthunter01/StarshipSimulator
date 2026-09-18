@@ -25,25 +25,32 @@
 #include "StarshipSimulator/core/frustum.h"
 #include "StarshipSimulator/core/gpu_abi/uniforms.h"
 #include "StarshipSimulator/core/math.h"
+#include "StarshipSimulator/core/procgen/mesh.h"
 #include "StarshipSimulator/core/procgen/star_field.h"
 #include "StarshipSimulator/render/gpu_device.h"
 #include "StarshipSimulator/render/gpu_handles.h"
 #include "StarshipSimulator/render/passes/habitat_passes.h"
 #include "StarshipSimulator/render/passes/marker_pass.h"
+#include "StarshipSimulator/render/passes/sky_passes.h"
 #include "StarshipSimulator/render/passes/tonemap_pass.h"
 #include "StarshipSimulator/render/render_targets.h"
+#include "StarshipSimulator/render/upload.h"
 
 namespace StarshipSimulator
 {
 
 struct Renderer::Passes
 {
-    StarPass    stars;
-    TerrainPass terrain;
-    MirrorPass  mirrors;
-    GlassPass   glass;
-    MarkerPass  markers;
-    TonemapPass tonemap;
+    MilkyWayPass milkyWay;
+    StarPass     stars;
+    PlanetPass   planets;
+    BodyPass     bodies;
+    HullPass     hull;
+    TerrainPass  terrain;
+    MirrorPass   mirrors;
+    GlassPass    glass;
+    MarkerPass   markers;
+    TonemapPass  tonemap;
 };
 
 namespace
@@ -99,6 +106,7 @@ Renderer::Renderer(GpuDevice& device, std::filesystem::path shaderDirectory,
     stars_(std::move(stars)),
     shaders_(device.get(), std::move(shaderDirectory)),
     targets_(device.get(), chooseSceneFormats(device.get(), SDL_GPU_SAMPLECOUNT_4)),
+    skyTextures_(device.get()),
     passes_(createPasses())
 {
 }
@@ -113,12 +121,16 @@ std::unique_ptr<Renderer::Passes> Renderer::createPasses() const
     SDL_GPUDevice*      device  = device_->get();
     const SceneFormats& formats = targets_.formats();
     return std::make_unique<Passes>(Passes{
-        .stars   = StarPass(device, shaders_, formats, stars_),
-        .terrain = TerrainPass(device, shaders_, formats),
-        .mirrors = MirrorPass(device, shaders_, formats),
-        .glass   = GlassPass(device, shaders_, formats),
-        .markers = MarkerPass(device, shaders_, formats),
-        .tonemap = TonemapPass(device, shaders_, device_->swapchainFormat()),
+        .milkyWay = MilkyWayPass(device, shaders_, formats),
+        .stars    = StarPass(device, shaders_, formats, stars_),
+        .planets  = PlanetPass(device, shaders_, formats),
+        .bodies   = BodyPass(device, shaders_, formats),
+        .hull     = HullPass(device, shaders_, formats),
+        .terrain  = TerrainPass(device, shaders_, formats),
+        .mirrors  = MirrorPass(device, shaders_, formats),
+        .glass    = GlassPass(device, shaders_, formats),
+        .markers  = MarkerPass(device, shaders_, formats),
+        .tonemap  = TonemapPass(device, shaders_, device_->swapchainFormat()),
     });
 }
 
@@ -135,6 +147,33 @@ std::expected<void, std::string> Renderer::reloadShaders()
     {
         return std::unexpected(std::string(e.what()));
     }
+}
+
+void Renderer::setStars(std::vector<GpuStar> stars)
+{
+    stars_         = std::move(stars);
+    passes_->stars = StarPass(device_->get(), shaders_, targets_.formats(), stars_);
+}
+
+void Renderer::setSkyImages(const SkyImages& images)
+{
+    if (images.milkyWay)
+    {
+        skyTextures_.setMilkyWay(*images.milkyWay);
+    }
+    if (images.earthDay && images.earthNight)
+    {
+        skyTextures_.setEarth(*images.earthDay, *images.earthNight);
+    }
+    if (images.moon)
+    {
+        skyTextures_.setMoon(*images.moon);
+    }
+}
+
+void Renderer::setHull(const CpuMesh& hull)
+{
+    hull_ = uploadMesh(device_->get(), hull);
 }
 
 FrameResult Renderer::renderFrame(const SceneView& view, const FrameOptions& options)
@@ -218,15 +257,35 @@ void Renderer::drawScene(SDL_GPUCommandBuffer* commands, const SceneView& view, 
         .cycle            = true,
     };
     SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &color, 1, &depth);
+
+    // Outside, from far to near: the sky at infinity, then the partner cylinder.
+    passes_->milkyWay.draw(commands, pass, frame, view.sky, skyTextures_);
     passes_->stars.draw(commands, pass, frame, view.sky);
+    passes_->planets.draw(commands, pass, frame, view.sky, view.planets);
+    for (const BodyDraw& body : view.bodies)
+    {
+        const bool earth = body.textures == BodyTextures::Earth;
+        passes_->bodies.draw(commands, pass, frame, body.uniforms,
+                             earth ? skyTextures_.earthDay() : skyTextures_.moon(),
+                             earth ? skyTextures_.earthNight() : skyTextures_.black(),
+                             skyTextures_.sampler());
+    }
+    DrawStats partner;
+    if (view.partner && view.world != nullptr)
+    {
+        partner = passes_->hull.draw(commands, pass, hull_, habitatFrame, *view.partner);
+        passes_->mirrors.draw(commands, pass, habitatFrame, *view.partner);
+    }
+
+    // Inside: the land, our mirrors seen through the windows, markers, then the window glass.
     if (view.world != nullptr)
     {
         const DrawStats terrain = passes_->terrain.draw(commands, pass, *view.world, habitatFrame);
-        passes_->mirrors.draw(commands, pass, habitatFrame);
+        passes_->mirrors.draw(commands, pass, habitatFrame, Mat4d(1.0));
         passes_->markers.draw(commands, pass, viewProjection, view.camera.position, view.markers);
         const DrawStats glass = passes_->glass.draw(commands, pass, *view.world, habitatFrame);
-        result.chunksDrawn    = terrain.chunks + glass.chunks;
-        result.trianglesDrawn = terrain.triangles + glass.triangles;
+        result.chunksDrawn    = terrain.chunks + glass.chunks + partner.chunks;
+        result.trianglesDrawn = terrain.triangles + glass.triangles + partner.triangles;
     }
     else
     {

@@ -5,11 +5,14 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "StarshipSimulator/core/astro/ephemeris.h"
+#include "StarshipSimulator/core/astro/star_catalog.h"
 #include "StarshipSimulator/core/camera.h"
 #include "StarshipSimulator/core/habitat/habitat_geometry.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
 #include "StarshipSimulator/core/habitat/mirror_optics.h"
 #include "StarshipSimulator/core/math.h"
+#include "StarshipSimulator/core/procgen/star_field.h"
 #include "StarshipSimulator/core/units.h"
 
 namespace StarshipSimulator::gpu
@@ -24,6 +27,24 @@ constexpr double kSunAngularRadius = degreesToRadians(0.2666);  // at 1 AU
 constexpr Vec3d kSunColor(1.0, 0.94, 0.84);
 constexpr Vec3d kFarSideColor(0.30, 0.36, 0.28);
 constexpr Vec3d kGroundBounce(0.10, 0.10, 0.07);
+
+/// Colour temperatures that give the planets their familiar tints as points of light.
+double planetColorKelvin(astro::Body body)
+{
+    switch (body)
+    {
+        case astro::Body::Mars:
+            return 3300.0;  // ochre
+        case astro::Body::Jupiter:
+        case astro::Body::Saturn:
+            return 5000.0;  // cream
+        case astro::Body::Uranus:
+        case astro::Body::Neptune:
+            return 9000.0;  // blue-green
+        default:
+            return 5800.0;
+    }
+}
 
 }  // namespace
 
@@ -78,13 +99,51 @@ HabitatUniforms makeHabitatUniforms(const HabitatGeometry& geometry, double open
     return habitat;
 }
 
-SkyUniforms makeSkyUniforms(double spinPhase, double brightness)
+SkyUniforms makeSkyUniforms(const Mat3d& habitatFromInertial, double starBrightness,
+                            double milkyWayBrightness)
 {
     SkyUniforms sky;
-    // The habitat turns by +phase about +Z, so fixed stars appear turned by -phase.
-    sky.habitatFromInertial = Mat4f(glm::rotate(Mat4d(1.0), -spinPhase, Vec3d(0.0, 0.0, 1.0)));
-    sky.params              = Vec4f(static_cast<float>(brightness), 0.0F, 0.0F, 0.0F);
+    sky.habitatFromInertial = Mat4f(Mat4d(habitatFromInertial));
+    sky.params              = Vec4f(Vec4d(starBrightness, milkyWayBrightness, 0.0, 0.0));
     return sky;
+}
+
+BodyUniforms makeBodyUniforms(const astro::VisibleBody& body, const Mat3d& habitatFromInertial,
+                              const LightingSettings& lighting)
+{
+    const bool   earth = body.body == astro::Body::Earth;
+    BodyUniforms uniforms;
+    uniforms.direction =
+        Vec4f(Vec4d(glm::normalize(habitatFromInertial * body.direction), body.angularRadius));
+    uniforms.towardSun = Vec4f(Vec4d(glm::normalize(habitatFromInertial * body.towardSun), 0.0));
+    // The same Sun that lights the habitat (before the mirrors) lights Earth and the Moon. NASA's
+    // Earth image averages an albedo of 0.36, about Earth's own; it is dimmed a little so the
+    // clouds keep some detail. The Moon map averages 0.30, the Moon itself only 0.12.
+    uniforms.sunlight = Vec4f(Vec4d(kSunColor * lighting.sunIntensity, earth ? 0.6 : 0.4));
+    uniforms.params   = earth ? Vec4f(1.0F, 0.02F, 0.0F, 0.0F) : Vec4f(0.0F, 0.0F, 0.0015F, 0.0F);
+    uniforms.bodyFromHabitat = Mat4f(Mat4d(body.bodyFromEqj * glm::transpose(habitatFromInertial)));
+    return uniforms;
+}
+
+PlanetUniforms makePlanetUniforms(const astro::SkyState& sky)
+{
+    PlanetUniforms planets;
+    std::size_t    count = 0;
+    for (const astro::VisibleBody& body : sky.bodies)
+    {
+        if (body.body == astro::Body::Earth || body.body == astro::Body::Moon ||
+            count >= kMaxPlanets)
+        {
+            continue;
+        }
+        const GpuStar star =
+            astro::gpuStar(body.direction, body.magnitude, planetColorKelvin(body.body));
+        planets.stars.at(2 * count)       = star.direction;
+        planets.stars.at((2 * count) + 1) = star.color;
+        ++count;
+    }
+    planets.count = Vec4f(static_cast<float>(count), 0.0F, 0.0F, 0.0F);
+    return planets;
 }
 
 }  // namespace StarshipSimulator::gpu

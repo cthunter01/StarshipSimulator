@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 
+#include "StarshipSimulator/core/habitat/day_schedule.h"
 #include "StarshipSimulator/core/habitat/habitat_geometry.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
 #include "StarshipSimulator/core/habitat/meridian_profile.h"
@@ -240,6 +241,59 @@ TEST(MirrorOptics, DaylightFadesAtDuskAndNight)
     const auto            beams = sunBeams(geometry, degreesToRadians(60.0));
     ASSERT_EQ(beams.size(), 3U);
     EXPECT_NEAR(beams[0].intensity, 0.9, 1e-12);  // mirror reflectivity
+}
+
+// ---- Day schedule -----------------------------------------------------------------------------
+
+TEST(DaySchedule, SunriseNoonSunsetAndMidnight)
+{
+    const DayScheduleSpec day;  // 14 h of daylight from 06:00, noon at 45, night at 105 degrees
+    EXPECT_NEAR(scheduledMirrorAngleDeg(day, 6.0), 90.0, 1e-9);
+    EXPECT_NEAR(scheduledMirrorAngleDeg(day, 13.0), 45.0, 1e-9);
+    EXPECT_NEAR(scheduledMirrorAngleDeg(day, 20.0), 90.0, 1e-9);
+    EXPECT_NEAR(sunsetHour(day), 20.0, 1e-12);
+    EXPECT_NEAR(scheduledMirrorAngleDeg(day, 1.0), 105.0, 1e-9);   // halfway through the night
+    EXPECT_NEAR(scheduledMirrorAngleDeg(day, 25.0), 105.0, 1e-9);  // hours wrap
+    EXPECT_NEAR(scheduledMirrorAngleDeg(day, -23.0), 105.0, 1e-9);
+}
+
+TEST(DaySchedule, DaylightExactlyWhileTheMirrorsAreBelowNinety)
+{
+    const DayScheduleSpec day;
+    for (int quarter = 0; quarter < 96; ++quarter)
+    {
+        const double hour    = quarter / 4.0;
+        const double angle   = scheduledMirrorAngleDeg(day, hour);
+        const bool   daytime = hour > 6.0 && hour < 20.0;
+        EXPECT_EQ(daylightFactor(degreesToRadians(angle)) > 0.0, daytime) << hour;
+    }
+}
+
+TEST(DaySchedule, IsContinuous)
+{
+    const DayScheduleSpec day{.enabled        = true,
+                              .dayLengthHours = 10.0,
+                              .sunriseHour    = 22.0,
+                              .noonAngleDeg   = 60.0,
+                              .nightAngleDeg  = 120.0};
+    double                previous = scheduledMirrorAngleDeg(day, 0.0);
+    for (int step = 1; step <= 2400; ++step)
+    {
+        const double hour  = step / 100.0;
+        const double angle = scheduledMirrorAngleDeg(day, hour);
+        EXPECT_LT(std::abs(angle - previous), 0.2) << hour;
+        previous = angle;
+    }
+}
+
+TEST(HabitatSpec, PartnerMirrorsMustClearEachOther)
+{
+    OneillCylinderSpec spec;
+    EXPECT_GE(spec.partner.separationM, minimumPartnerSeparation(spec));
+    spec.partner.separationM = 20000.0;
+    EXPECT_FALSE(validate(spec).empty());
+    spec.partner.enabled = false;
+    EXPECT_TRUE(validate(spec).empty());
 }
 
 }  // namespace

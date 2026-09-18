@@ -16,13 +16,13 @@
       "name": "clang",
       "hidden": true,
       "inherits": "base",
-      "cacheVariables": { "CMAKE_CXX_COMPILER": "clang++" }
+      "cacheVariables": { "CMAKE_C_COMPILER": "clang", "CMAKE_CXX_COMPILER": "clang++" }
     },
     {
       "name": "gcc",
       "hidden": true,
       "inherits": "base",
-      "cacheVariables": { "CMAKE_CXX_COMPILER": "g++" }
+      "cacheVariables": { "CMAKE_C_COMPILER": "gcc", "CMAKE_CXX_COMPILER": "g++" }
     },
     {
       "name": "werror",

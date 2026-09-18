@@ -63,6 +63,21 @@ void SdlInput::handleKey(SDL_Keycode key, InputFrame& frame, ImGuiLayer& imgui)
         case SDLK_TAB:
             frame.toggleEditor = true;
             break;
+        case SDLK_I:
+            frame.identify = true;
+            break;
+        case SDLK_B:
+            frame.toggleZoom = true;
+            break;
+        case SDLK_P:
+            frame.togglePause = true;
+            break;
+        case SDLK_COMMA:
+            frame.timeSteps -= 1;
+            break;
+        case SDLK_PERIOD:
+            frame.timeSteps += 1;
+            break;
         default:
             break;
     }

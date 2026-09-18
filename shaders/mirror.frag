@@ -35,7 +35,7 @@ void main()
     if (dot(view, normal) < 0.0)
     {
         // Dust and panel imperfections scatter a little sunlight, so the mirror reads as a surface.
-        vec3 scatter = habitat.sunColor.rgb * 0.012 * max(dot(normal, habitat.sun.xyz), 0.0) *
+        vec3 scatter = habitat.sunColor.rgb * 0.004 * max(dot(normal, habitat.sun.xyz), 0.0) *
                        (0.8 + 0.4 * valueNoise(inUv * vec2(24.0, 120.0)));
         color = mix(REFLECTIVITY * skyRadiance(reflect(view, normal)) + scatter, vec3(0.02), seams);
     }

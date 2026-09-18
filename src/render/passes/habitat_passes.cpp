@@ -139,11 +139,14 @@ MirrorPass::MirrorPass(SDL_GPUDevice* device, const ShaderLibrary& shaders,
 }
 
 void MirrorPass::draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
-                      const HabitatFrame& view) const
+                      const HabitatFrame& view, const Mat4d& model) const
 {
+    const gpu::PlacementUniforms placement{
+        .model = Mat4f(glm::translate(Mat4d(1.0), -view.camera) * model)};
     SDL_BindGPUGraphicsPipeline(pass, pipeline_.get());
     SDL_PushGPUVertexUniformData(commands, 0, view.frame, sizeof(gpu::FrameUniforms));
     SDL_PushGPUVertexUniformData(commands, 1, view.habitat, sizeof(gpu::HabitatUniforms));
+    SDL_PushGPUVertexUniformData(commands, 2, &placement, sizeof(placement));
     pushHabitatFragmentUniforms(commands, view);
     SDL_DrawGPUPrimitives(pass, static_cast<std::uint32_t>(gpu::kMaxSunBeams) * kVerticesPerQuad, 1,
                           0, 0);

@@ -69,8 +69,9 @@ class MirrorPass
 public:
     MirrorPass(SDL_GPUDevice* device, const ShaderLibrary& shaders, const SceneFormats& formats);
 
-    void draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
-              const HabitatFrame& view) const;
+    /// model: from the mirrors' habitat into our habitat frame (identity for our own mirrors).
+    void draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, const HabitatFrame& view,
+              const Mat4d& model) const;
 
 private:
     GpuGraphicsPipeline pipeline_;

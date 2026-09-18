@@ -11,29 +11,59 @@
 
 #include <SDL3/SDL_gpu.h>
 
+#include "StarshipSimulator/core/assets/assets.h"
 #include "StarshipSimulator/core/camera.h"
 #include "StarshipSimulator/core/gpu_abi/uniforms.h"
+#include "StarshipSimulator/core/math.h"
+#include "StarshipSimulator/core/procgen/mesh.h"
 #include "StarshipSimulator/core/procgen/star_field.h"
 #include "StarshipSimulator/render/gpu_device.h"
 #include "StarshipSimulator/render/gpu_world.h"
 #include "StarshipSimulator/render/passes/marker_pass.h"
+#include "StarshipSimulator/render/passes/sky_passes.h"
 #include "StarshipSimulator/render/render_targets.h"
 #include "StarshipSimulator/render/shader_library.h"
+#include "StarshipSimulator/render/upload.h"
 
 struct ImDrawData;
 
 namespace StarshipSimulator
 {
 
+enum class BodyTextures : std::uint8_t
+{
+    Earth,
+    Moon,
+};
+
+/// Earth or the Moon, and which images to draw it with.
+struct BodyDraw
+{
+    gpu::BodyUniforms uniforms;
+    BodyTextures      textures = BodyTextures::Earth;
+};
+
 /// What to draw this frame.
 struct SceneView
 {
-    Camera                  camera;
-    const GpuWorld*         world = nullptr;  // the habitat; nothing but stars and markers if null
-    gpu::HabitatUniforms    habitat;
-    gpu::SkyUniforms        sky;
-    std::span<const Marker> markers;
-    float                   exposure = 1.0F;
+    Camera                    camera;
+    const GpuWorld*           world = nullptr;  // the habitat; nothing but the sky if null
+    gpu::HabitatUniforms      habitat;
+    gpu::SkyUniforms          sky;
+    gpu::PlanetUniforms       planets;
+    std::span<const BodyDraw> bodies;   // farthest first
+    std::optional<Mat4d>      partner;  // the partner cylinder: its frame -> the habitat frame
+    std::span<const Marker>   markers;
+    float                     exposure = 1.0F;
+};
+
+/// The sky's images, decoded on the CPU. Missing ones keep their placeholders.
+struct SkyImages
+{
+    std::optional<assets::HalfImage> milkyWay;
+    std::optional<assets::Image8>    earthDay;
+    std::optional<assets::Image8>    earthNight;
+    std::optional<assets::Image8>    moon;
 };
 
 struct FrameOptions
@@ -70,6 +100,13 @@ public:
     /// Rebuilds all pipelines from the shaders on disk. On failure the old pipelines stay in use.
     std::expected<void, std::string> reloadShaders();
 
+    /// Replaces the stars (e.g. the placeholder field with the real catalog).
+    void setStars(std::vector<GpuStar> stars);
+    /// Uploads the sky's images. Throws std::runtime_error if the GPU cannot take them.
+    void setSkyImages(const SkyImages& images);
+    /// The outside of the habitat, drawn for the partner cylinder.
+    void setHull(const CpuMesh& hull);
+
     [[nodiscard]] const SceneFormats&          sceneFormats() const { return targets_.formats(); }
     [[nodiscard]] const std::filesystem::path& shaderDirectory() const
     {
@@ -92,6 +129,8 @@ private:
     std::vector<GpuStar>    stars_;
     ShaderLibrary           shaders_;
     RenderTargets           targets_;
+    SkyTextures             skyTextures_;
+    GpuMesh                 hull_;
     std::unique_ptr<Passes> passes_;
 };
 

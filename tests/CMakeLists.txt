@@ -1,6 +1,8 @@
 # Unit tests link only the core library, so they run anywhere (no window or GPU needed).
 add_executable(StarshipSimulator_tests
     app_options_test.cpp
+    assets_test.cpp
+    astro_test.cpp
     camera_test.cpp
     habitat_mesher_test.cpp
     habitat_test.cpp
@@ -10,13 +12,16 @@ add_executable(StarshipSimulator_tests
     scenario_test.cpp
     sim_clock_test.cpp
     spirv_reflect_test.cpp
+    star_catalog_test.cpp
     uniforms_test.cpp)
 target_link_libraries(StarshipSimulator_tests PRIVATE StarshipSimulator::core GTest::gtest_main)
 # spirv_reflect_test checks every compiled shader against SDL_GPU's binding rules.
 add_dependencies(StarshipSimulator_tests StarshipSimulator_shaders)
 target_compile_definitions(StarshipSimulator_tests PRIVATE
     STARSHIPSIMULATOR_SHADER_DIR="${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders"
-    STARSHIPSIMULATOR_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
+    STARSHIPSIMULATOR_DATA_DIR="${PROJECT_SOURCE_DIR}/data"
+    # Downloaded star catalog and sky maps; the tests that use them skip when they are missing.
+    STARSHIPSIMULATOR_SKY_DATA_DIR="${STARSHIPSIMULATOR_SKY_DATA_DIR}")
 StarshipSimulator_configure_target(StarshipSimulator_tests)
 
 include(GoogleTest)

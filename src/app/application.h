@@ -12,6 +12,10 @@
 #include <SDL3/SDL_video.h>
 
 #include "StarshipSimulator/core/app_options.h"
+#include "StarshipSimulator/core/astro/astro_time.h"
+#include "StarshipSimulator/core/astro/ephemeris.h"
+#include "StarshipSimulator/core/astro/sky_objects.h"
+#include "StarshipSimulator/core/astro/star_catalog.h"
 #include "StarshipSimulator/core/camera.h"
 #include "StarshipSimulator/core/gpu_abi/uniforms.h"
 #include "StarshipSimulator/core/habitat/habitat_geometry.h"
@@ -19,6 +23,7 @@
 #include "StarshipSimulator/core/physics/player_controller.h"
 #include "StarshipSimulator/core/physics/rotating_frame.h"
 #include "StarshipSimulator/core/procgen/habitat_mesher.h"
+#include "StarshipSimulator/core/procgen/mesh.h"
 #include "StarshipSimulator/core/scenario/scenario.h"
 #include "StarshipSimulator/core/sim_clock.h"
 #include "StarshipSimulator/render/gpu_device.h"
@@ -28,6 +33,7 @@
 #include "StarshipSimulator/render/renderer.h"
 #include "hud.h"
 #include "sdl_input.h"
+#include "sky_loader.h"
 
 struct ImDrawData;
 
@@ -51,6 +57,7 @@ struct GeneratedWorld
 {
     std::shared_ptr<const HabitatGeometry> geometry;
     HabitatMeshes                          meshes;
+    CpuMesh                                hull;  // seen from outside, for the partner cylinder
     std::string                            error;
     double                                 seconds = 0.0;
 };
@@ -99,10 +106,30 @@ private:
     void applyView(std::string_view name);
     void applyCameraPose(const CameraPose& pose);
 
+    // The sky and the clock
+    void                                  startSkyLoad();
+    void                                  pollSky();
+    void                                  adoptSky(SkyData data);
+    void                                  advanceClock(double realSeconds);
+    void                                  updateSky();
+    void                                  setTime(astro::SimTime time);
+    void                                  stepTimeScale(int steps);
+    void                                  identify();
+    void                                  lookAtBody(astro::Body body);
+    void                                  lookAtPartner();
+    void                                  lookAtName(std::string_view name);
+    void                                  lookOut(Vec3d directionEqj, std::string_view name);
+    [[nodiscard]] double                  mirrorAngle() const;  // radians
+    [[nodiscard]] double                  autoExposure() const;
+    [[nodiscard]] SkyModel                skyModel() const;
+    [[nodiscard]] std::optional<SkyLabel> skyLabel() const;
+    [[nodiscard]] std::vector<BodyDraw>   bodyDraws(const gpu::LightingSettings& lighting) const;
+
     // Frames
     void                     updateStats(double realSeconds);
     [[nodiscard]] HudActions drawUi();
     void                     applyInput(const InputFrame& input, const HudActions& actions);
+    void                     applySkyInput(const InputFrame& input, const HudActions& actions);
     void                     simulate(const MoveIntent& intent, double realSeconds);
     void                     throwBall();
     [[nodiscard]] std::vector<Marker> markers() const;
@@ -124,6 +151,16 @@ private:
     HabitatMetrics                         metrics_;
     std::future<GeneratedWorld>            pending_;
     bool                                   placeWhenReady_ = false;
+
+    std::future<SkyData>              pendingSky_;
+    std::optional<astro::StarCatalog> catalog_;
+    std::string                       skyStatus_;
+    astro::SimTime                    simTime_;
+    astro::SkyState                   sky_;
+    Mat3d                             habitatFromSky_{1.0};  // EQJ -> the spinning habitat frame
+    std::optional<astro::Identified>  identified_;
+    std::optional<std::string>        pendingLookAt_;  // a star to look at once the catalog loads
+    double                            identifiedAge_ = 0.0;  // seconds since it was named
 
     PlayerController          player_;
     LookRig                   look_;
