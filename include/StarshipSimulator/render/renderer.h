@@ -16,11 +16,15 @@
 #include "StarshipSimulator/core/gpu_abi/uniforms.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/procgen/mesh.h"
+#include "StarshipSimulator/core/procgen/props.h"
 #include "StarshipSimulator/core/procgen/star_field.h"
 #include "StarshipSimulator/render/gpu_device.h"
 #include "StarshipSimulator/render/gpu_landscape.h"
+#include "StarshipSimulator/render/gpu_props.h"
+#include "StarshipSimulator/render/gpu_settlements.h"
 #include "StarshipSimulator/render/gpu_trees.h"
 #include "StarshipSimulator/render/gpu_world.h"
+#include "StarshipSimulator/render/passes/habitat_passes.h"
 #include "StarshipSimulator/render/passes/marker_pass.h"
 #include "StarshipSimulator/render/passes/sky_passes.h"
 #include "StarshipSimulator/render/render_targets.h"
@@ -49,20 +53,23 @@ struct BodyDraw
 /// What to draw this frame.
 struct SceneView
 {
-    Camera                    camera;
-    const GpuWorld*           world     = nullptr;  // the habitat; nothing but the sky if null
-    GpuLandscape*             landscape = nullptr;  // its terrain (patches picked per frame)
-    const GpuTrees*           trees     = nullptr;  // its trees
-    gpu::ShadowUniforms       shadow;               // the trees' shadow map (params.x = 0: none)
-    gpu::HabitatUniforms      habitat;
-    gpu::SkyUniforms          sky;
-    gpu::PlanetUniforms       planets;
-    std::span<const BodyDraw> bodies;   // farthest first
-    std::optional<Mat4d>      partner;  // the partner cylinder: its frame -> the habitat frame
-    std::span<const Marker>   markers;
-    float                     exposure         = 1.0F;
-    float                     grade            = 1.0F;  // strength of the painterly colour grade
-    double                    animationSeconds = 0.0;   // real time, for ripples and the like
+    Camera                         camera;
+    const GpuWorld*                world     = nullptr;  // the habitat; nothing but the sky if null
+    GpuLandscape*                  landscape = nullptr;  // its terrain (patches picked per frame)
+    const GpuTrees*                trees     = nullptr;  // its trees
+    const GpuSettlements*          settlements = nullptr;  // its towns and farms
+    GpuProps*                      props = nullptr;  // loose props (instances picked per frame)
+    std::span<const PropPlacement> propPoses;        // where each prop is now
+    gpu::ShadowUniforms            shadow;           // the trees' shadow map (params.x = 0: none)
+    gpu::HabitatUniforms           habitat;
+    gpu::SkyUniforms               sky;
+    gpu::PlanetUniforms            planets;
+    std::span<const BodyDraw>      bodies;   // farthest first
+    std::optional<Mat4d>           partner;  // the partner cylinder: its frame -> the habitat frame
+    std::span<const Marker>        markers;
+    float                          exposure = 1.0F;
+    float                          grade    = 1.0F;  // strength of the painterly colour grade
+    double                         animationSeconds = 0.0;  // real time, for ripples and the like
 };
 
 /// The sky's images, decoded on the CPU. Missing ones keep their placeholders.
@@ -127,22 +134,27 @@ private:
     [[nodiscard]] std::unique_ptr<Passes> createPasses() const;
     void drawScene(SDL_GPUCommandBuffer* commands, const SceneView& view, std::uint32_t width,
                    std::uint32_t height, FrameResult& result);
-    void drawShadows(SDL_GPUCommandBuffer* commands, const SceneView& view,
-                     const gpu::FrameUniforms& frame);
+    /// The inside of the habitat: terrain, buildings, props and trees.
+    DrawStats drawLand(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
+                       const SceneView& view, const HabitatFrame& habitatFrame);
+    void      drawShadows(SDL_GPUCommandBuffer* commands, const SceneView& view,
+                          const gpu::FrameUniforms& frame);
     void drawDisplay(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* target, const SceneView& view,
                      ImDrawData* ui);
     [[nodiscard]] std::expected<std::filesystem::path, std::string> captureAndSubmit(
         SDL_GPUCommandBuffer* commands, const SceneView& view, const std::filesystem::path& path,
         ImDrawData* ui, std::uint32_t width, std::uint32_t height);
 
-    GpuDevice*              device_;
-    std::vector<GpuStar>    stars_;
-    ShaderLibrary           shaders_;
-    RenderTargets           targets_;
-    SkyTextures             skyTextures_;
-    ShadowMap               shadowMap_;
-    GpuMesh                 hull_;
-    std::unique_ptr<Passes> passes_;
+    GpuDevice*           device_;
+    std::vector<GpuStar> stars_;
+    ShaderLibrary        shaders_;
+    RenderTargets        targets_;
+    SkyTextures          skyTextures_;
+    ShadowMap            shadowMap_;
+    GpuMesh              hull_;
+    // Bound for the landscape when there are no settlements (an empty ground-map atlas).
+    std::unique_ptr<GpuSettlements> noSettlements_;
+    std::unique_ptr<Passes>         passes_;
 };
 
 }  // namespace StarshipSimulator

@@ -1,7 +1,8 @@
 # StarshipSimulator
 
 A walk-around simulator for space habitats (O'Neill cylinders, Bishop rings, starships) under an accurate sky.
-C++23, CMake presets + Ninja, GoogleTest, SDL3 + SDL_GPU (Vulkan), Dear ImGui. Linux, GCC and Clang.
+C++23, CMake presets + Ninja, GoogleTest, SDL3 + SDL_GPU (Vulkan), Dear ImGui, Jolt Physics. Linux, GCC and
+Clang.
 Roadmap and design decisions: `~/.claude/plans/i-want-to-create-compressed-wreath.md` (M0 foundation → M10).
 
 ## Commands
@@ -22,7 +23,7 @@ Each builds into `build/<preset>/`; never edit anything under `build/`.
 ## Checking visuals yourself
 The app can render and save a screenshot without interaction, then exit:
 `build/clang-debug/bin/StarshipSimulator --size 1280x720 --view lookup [--mirror 30] --capture out.png [--capture-ui]`
-Views: valley, river, lake, lookup, window, endcap, ramp, sunward, axis, overview (or `--camera x,y,z,yaw,pitch` in the
+Views: valley, river, lake, town, street, rooftops, lookup, window, endcap, ramp, sunward, axis, overview (or `--camera x,y,z,yaw,pitch` in the
 habitat frame; `--scenario data/presets/coriolis_playground.toml` for the small habitat). Write captures to the
 scratchpad and inspect them with the Read tool before reporting visual work as done. The window opens briefly
 on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
@@ -31,8 +32,10 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
   `--fov 2.5` to zoom in. Captures step a fixed 1/60 s per frame and load the sky data synchronously, so they
   are repeatable; keep the window size small (e.g. 960x540), the compositor may resize large windows
 - Performance: `build/clang-release/bin/StarshipSimulator --size 1920x1080 --no-vsync --no-gpu-debug --benchmark`
-  prints average/p99 frame times over a fixed tour (M3 on the RTX A1000: ~6 ms average, ~13 ms p99; the goal is
-  p99 < 20 ms). The log reports the terrain and tree GPU memory at startup
+  prints average/p99 frame times over a fixed tour and per view (M3 on the RTX A1000: ~6 ms average, ~13 ms
+  p99; towns and physics in M4 added about 1 ms; the goal is p99 < 20 ms). Another app instance running
+  (uncapped, in mailbox mode) halves the GPU and ruins the numbers: check `nvidia-smi` first. The log
+  reports the terrain, tree and town GPU memory at startup
 - ASan build of the app:
   `LSAN_OPTIONS=suppressions=tools/lsan.supp:fast_unwind_on_malloc=0 build/asan/bin/StarshipSimulator --no-gpu-debug ...`
   (system libraries such as libdbus leak on purpose; the Vulkan validation layer leaks a few hundred bytes of its
@@ -41,8 +44,8 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
 
 ## Layout
 - `include/StarshipSimulator/<module>/`: public headers; `src/<module>/`: sources
-- `core` (`StarshipSimulator_core`): everything that can be unit tested without a GPU. **No SDL, ImGui or
-  render includes**: the `layering` test (`cmake/CheckLayering.cmake`) fails otherwise. Unit tests link only core
+- `core` (`StarshipSimulator_core`): everything that can be unit tested without a GPU. **No SDL, ImGui, Jolt,
+  physics or render includes**: the `layering` test (`cmake/CheckLayering.cmake`) fails otherwise
   - `habitat/`: `OneillCylinderSpec` (the shareable description), `metrics` (spin, gravity, air, hull strength),
     `MeridianProfile` (the revolved cross-section), `HabitatGeometry` (regions, terrain, ground queries, water,
     forest density), `landscape` (rivers, lakes, shore shaping, woodland), `mirror_optics` (where the sun
@@ -52,22 +55,40 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
     `sky_objects` (phases, naming what the crosshair points at)
   - `assets/`: file reading, gzip/zlib, a minimal OpenEXR reader (NASA's Milky Way map), JPEG/PNG via stb
   - `physics/`: `RotatingFrame` (centrifugal + Coriolis, exact free flight, `stepFreeBody`), `PlayerController`
+    (walk/fly logic; collisions through a `CharacterMover`, or the bare analytic terrain without one),
+    `colliders.h` (static boxes and hulls as plain data, `floorOrientation`)
   - `procgen/`: deterministic noise, `terrain_grid` (the valley floor and endcaps sampled into a height field
     and land-cover map, the GPU's source), `terrain_lod` (CDLOD quadtree: patches and morph ranges),
     `trees` (procedural species meshes, planting in tiles), `habitat_mesher` (chunked meshes; the app
     meshes only the glass and end walls, the landscape pass draws the land), `hull_mesh` (the outside, for the
-    partner cylinder, and `partnerTransform`), placeholder star field, mesh primitives
-  - The terrain sources are compiled with `-O2` even in Debug (`src/core/CMakeLists.txt`), or world generation
-    takes several seconds
+    partner cylinder, and `partnerTransform`), placeholder star field, mesh primitives,
+    `settlements` (towns and farms planned on the unrolled floor: streets that follow the river, lots,
+    houses, square, bridge, river front, props, town trees, 1 m ground maps; `stampSettlements` marks them
+    in the cover map), `buildings` (their meshes and colliders; facades are packed into
+    `Vertex::material` and drawn by the shader), `props` (balls, crates, barrels, bales, cafe furniture:
+    meshes and collision parts)
+  - The terrain and settlement sources are compiled with `-O2` even in Debug (`src/core/CMakeLists.txt`),
+    or world generation takes several seconds
   - `scenario/`: TOML habitat files (toml++, used only in `scenario.cpp`; bump `kGeneratorVersion` when
-    generation changes); `gpu_abi/`: uniform structs, SPIR-V reflection, `color_grade` (the grading LUT); plus
-    camera, frustum, sim clock, app options
+    generation changes); `gpu_abi/`: uniform structs, SPIR-V reflection, `color_grade` (the grading LUT),
+    `ground_atlas` (the towns' ground maps packed for the landscape shader); plus camera, frustum, sim
+    clock, app options
+- `physics` (`StarshipSimulator_physics`): `PhysicsWorld`, Jolt Physics v5.6.0 in double precision behind a
+  pimpl (Jolt is linked PRIVATE: its target exports `-mavx2` and its config defines). Jolt's gravity is
+  zero: the `SpinFrame` step listener gives moving bodies the centrifugal kick and turns their velocity for
+  Coriolis (leapfrog: launched bodies get a half kick), plus buoyancy in water. Terrain collision is
+  built from the terrain grid in tiles (the drawn triangles) around the player and moving props, tree
+  trunks per tree tile near the player; the player is a `CharacterVirtual` stood along the local up
+  every step. No SDL or render includes (layering test). Include Jolt only through `src/physics/jolt.h`
+  (Jolt.h must come first). Jolt is built with `-O2` even in Debug. Unit tests link core and physics
 - `render` (`StarshipSimulator_render`): SDL_GPU device, shader library, `GpuWorld` (all habitat chunks in one
   vertex/index buffer), `GpuLandscape` (height, cover and profile textures, the instanced CDLOD patch mesh),
   `GpuTrees` (instances by tile, two detail levels), `ShadowMap` (trees, along the dominant mirror beam),
-  `DynamicBuffer` (per-frame storage uploads), passes (Milky Way, stars, planets, Earth/Moon, partner hull,
-  terrain disks, landscape, trees, mirrors, markers, water, glass, tonemap with the grade LUT; drawn in that
-  order after the shadow pass), `texture.h` (2D uploads with GPU mipmaps), `pipeline.h` helper, ImGui layer
+  `DynamicBuffer` (per-frame storage uploads), `GpuSettlements` (town meshes, ground-map atlas), `GpuProps`
+  (prop meshes, per-frame instances), passes (Milky Way, stars, planets, Earth/Moon, partner hull, terrain
+  disks, landscape, trees, buildings, props, mirrors, markers, water, glass, tonemap with the grade LUT; drawn
+  in that order after the shadow pass, which holds trees, buildings and props), `texture.h` (2D uploads with
+  GPU mipmaps), `pipeline.h` helper, ImGui layer
 - `src/app/`: the `StarshipSimulator` executable (main loop, input, HUD, sky data loading on a worker thread);
   its headers are private
 - `third_party/`: vendored C code (Astronomy Engine, stb) in their own targets, never reformatted
@@ -76,7 +97,9 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
 - `shaders/`: GLSL, compiled by glslc to `build/<preset>/bin/shaders/*.spv` (`cmake/Shaders.cmake`);
   `include/habitat.glsl` holds the shared air (aerial perspective) and sunlight (mirror beams) models;
   `include/landscape.glsl` the height field and terrain shadow march, `include/shadow.glsl` the tree shadow
-  lookup, `include/terrain_colors.glsl` the fields, meadows and shore colours
+  lookup, `include/terrain_colors.glsl` the fields, meadows, shore and town colours, `include/lit.glsl` the
+  light on buildings and props (hill and shadow-map shadows, lights at night), `include/town_ground.glsl`
+  the ground-map lookup (take screen derivatives before calling: it samples in divergent control flow)
 - `data/presets/*.toml`: scenario presets, copied to `build/<preset>/bin/data` at build time
 - `tests/`: GoogleTest files, named `*_test.cpp`, all in `StarshipSimulator_tests`
 - `cmake/ProjectOptions.cmake`: `StarshipSimulator_configure_target()` (warnings, sanitizers, coverage, tidy)
@@ -103,6 +126,7 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
   compare `GREATER`
 - Logging: `core/log.h` (`log::info/warn/error`, std::format). No printf-style varargs anywhere: for ImGui text
   use `ui::text/field/textWrapped(std::format(...))` from `render/imgui_layer.h`, never `ImGui::Text("%...")`
+  (the one exception is Jolt's `Trace` callback, which only logs its format string)
 - `SDL_Event` is a union: read it only inside `SdlInput::handleEvent` (`src/app/sdl_input.cpp`, NOLINT region)
 - SDL_GPU create-info structs use designated initializers naming only the fields that matter (the render target
   disables the missing-field warning for this)

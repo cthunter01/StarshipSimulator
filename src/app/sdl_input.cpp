@@ -60,6 +60,9 @@ void SdlInput::handleKey(SDL_Keycode key, InputFrame& frame, ImGuiLayer& imgui)
         case SDLK_G:
             frame.throwBall = true;
             break;
+        case SDLK_E:
+            frame.kick = true;
+            break;
         case SDLK_TAB:
             frame.toggleEditor = true;
             break;

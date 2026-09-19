@@ -5,7 +5,7 @@ add_executable(StarshipSimulator
     main.cpp
     sdl_input.cpp
     sky_loader.cpp)
-target_link_libraries(StarshipSimulator PRIVATE StarshipSimulator::render)
+target_link_libraries(StarshipSimulator PRIVATE StarshipSimulator::render StarshipSimulator::physics)
 add_dependencies(StarshipSimulator StarshipSimulator_data)
 # Where to find the downloaded sky data when it is not installed next to the executable.
 target_compile_definitions(StarshipSimulator PRIVATE

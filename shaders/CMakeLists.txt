@@ -6,6 +6,7 @@ StarshipSimulator_add_shaders(StarshipSimulator_shaders
     SOURCES
         body.frag
         body.vert
+        building.frag
         fullscreen.vert
         glass.frag
         habitat.frag
@@ -18,6 +19,8 @@ StarshipSimulator_add_shaders(StarshipSimulator_shaders
         mirror.frag
         mirror.vert
         planets.vert
+        prop.frag
+        prop.vert
         shadow.frag
         stars.frag
         stars.vert

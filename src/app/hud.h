@@ -67,9 +67,14 @@ struct HudModel
     std::uint32_t              chunksDrawn    = 0;
     std::uint64_t              trianglesDrawn = 0;
     std::string                title;
-    const HabitatGeometry*     geometry      = nullptr;
-    const HabitatMetrics*      metrics       = nullptr;
-    std::size_t                trees         = 0;
+    const HabitatGeometry*     geometry    = nullptr;
+    const HabitatMetrics*      metrics     = nullptr;
+    std::size_t                trees       = 0;
+    std::size_t                towns       = 0;
+    std::size_t                farms       = 0;
+    std::size_t                buildings   = 0;
+    std::size_t                movingProps = 0;
+    std::string                place;  // the town (or farm) you are in or near
     const PlayerController*    player        = nullptr;
     bool                       mouseCaptured = false;
     bool                       generating    = false;

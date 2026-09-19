@@ -11,6 +11,7 @@ add_library(StarshipSimulator_core STATIC
     frustum.cpp
     sim_clock.cpp
     gpu_abi/color_grade.cpp
+    gpu_abi/ground_atlas.cpp
     gpu_abi/spirv_reflect.cpp
     gpu_abi/uniforms.cpp
     habitat/day_schedule.cpp
@@ -20,12 +21,16 @@ add_library(StarshipSimulator_core STATIC
     habitat/meridian_profile.cpp
     habitat/metrics.cpp
     habitat/mirror_optics.cpp
+    physics/colliders.cpp
     physics/player_controller.cpp
     physics/rotating_frame.cpp
+    procgen/buildings.cpp
     procgen/habitat_mesher.cpp
     procgen/hull_mesh.cpp
     procgen/mesh.cpp
     procgen/noise.cpp
+    procgen/props.cpp
+    procgen/settlements.cpp
     procgen/star_field.cpp
     procgen/terrain_grid.cpp
     procgen/terrain_lod.cpp
@@ -50,5 +55,6 @@ StarshipSimulator_configure_target(StarshipSimulator_core)
 # builds, or the app would take half a minute to start.
 set_source_files_properties(
     habitat/habitat_geometry.cpp habitat/landscape.cpp habitat/meridian_profile.cpp
-    procgen/noise.cpp procgen/terrain_grid.cpp procgen/terrain_lod.cpp procgen/trees.cpp
+    procgen/noise.cpp procgen/settlements.cpp procgen/terrain_grid.cpp procgen/terrain_lod.cpp
+    procgen/trees.cpp
     PROPERTIES COMPILE_OPTIONS "$<$<CONFIG:Debug>:-O2>")

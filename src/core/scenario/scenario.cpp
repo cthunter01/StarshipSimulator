@@ -262,7 +262,8 @@ void readHabitat(const toml::table& table, OneillCylinderSpec& spec,
     TableReader habitat(table, "habitat", error);
     habitat.allowOnly({"type", "radius_m", "length_m", "surface_gravity_g", "strip_pairs",
                        "window_fraction", "population_density_per_km2", "sunward_endcap",
-                       "antisunward_endcap", "mirrors", "partner", "atmosphere", "terrain"});
+                       "antisunward_endcap", "mirrors", "partner", "atmosphere", "terrain",
+                       "settlements"});
     std::string type = "oneill_cylinder";
     habitat.read("type", type);
     if (type != "oneill_cylinder" && !error)
@@ -318,6 +319,14 @@ void readHabitat(const toml::table& table, OneillCylinderSpec& spec,
         reader.read("lakes_per_valley", spec.terrain.lakesPerValley);
         reader.read("lake_radius_m", spec.terrain.lakeRadiusM);
         reader.read("forest_cover", spec.terrain.forestCover);
+    }
+    if (const toml::table* settlements = habitat.table("settlements"))
+    {
+        TableReader reader(*settlements, "habitat.settlements", error);
+        reader.allowOnly({"towns_per_valley", "town_radius_m", "farms_per_valley"});
+        reader.read("towns_per_valley", spec.settlements.townsPerValley);
+        reader.read("town_radius_m", spec.settlements.townRadiusM);
+        reader.read("farms_per_valley", spec.settlements.farmsPerValley);
     }
 }
 
@@ -528,6 +537,11 @@ std::string serializeScenario(const Scenario& scenario)
         terrain.seed, number(terrain.hillHeightM), number(terrain.mountainHeightM),
         number(terrain.featureSizeM), number(terrain.riverWidthM), terrain.lakesPerValley,
         number(terrain.lakeRadiusM), number(terrain.forestCover));
+    const SettlementSpec& settlements = spec.settlements;
+    out += std::format(
+        "\n[habitat.settlements]\ntowns_per_valley = {}\ntown_radius_m = {}\n"
+        "farms_per_valley = {}\n",
+        settlements.townsPerValley, number(settlements.townRadiusM), settlements.farmsPerValley);
     out +=
         std::format("\n[start]\nvalley = {}\nz_m = {}\nheading_deg = {}\n", scenario.start.valley,
                     number(scenario.start.zM), number(scenario.start.headingDeg));

@@ -105,6 +105,48 @@ double TerrainGrid::height(std::uint32_t column, std::uint32_t row) const
            (static_cast<double>(value) / 65535.0 * static_cast<double>(heightRange));
 }
 
+double TerrainGrid::heightAt(double column, double row) const
+{
+    const auto   c0      = static_cast<std::int64_t>(std::floor(column));
+    const double r       = std::clamp(row, 0.0, static_cast<double>(layout.cells));
+    const auto   r0      = std::min(static_cast<std::uint32_t>(r), layout.cells - 1);
+    const double fc      = column - static_cast<double>(c0);
+    const double fr      = r - r0;
+    const auto   columns = static_cast<std::int64_t>(layout.columns);
+    const auto   x0      = static_cast<std::uint32_t>(((c0 % columns) + columns) % columns);
+    const auto   x1      = (x0 + 1) % layout.columns;
+    // Split along the same diagonal as the drawn triangles, from (column + 1, row) to (column,
+    // row + 1), so this is exactly the drawn surface.
+    const double h00 = height(x0, r0);
+    const double h10 = height(x1, r0);
+    const double h01 = height(x0, r0 + 1);
+    const double h11 = height(x1, r0 + 1);
+    if (fc + fr <= 1.0)
+    {
+        return h00 + ((h10 - h00) * fc) + ((h01 - h00) * fr);
+    }
+    return h11 + ((h01 - h11) * (1.0 - fc)) + ((h10 - h11) * (1.0 - fr));
+}
+
+Vec2d TerrainGrid::cellAt(double z, double theta) const
+{
+    const double t = std::clamp((z - static_cast<double>(zMin)) /
+                                    (static_cast<double>(zMax) - static_cast<double>(zMin)),
+                                0.0, 1.0) *
+                     static_cast<double>(arcByZ.size() - 1);
+    const auto   i = std::min(static_cast<std::size_t>(t), arcByZ.size() - 2);
+    const double u = std::lerp(static_cast<double>(arcByZ[i]), static_cast<double>(arcByZ[i + 1]),
+                               t - static_cast<double>(i));
+    const double wrapped = std::fmod(std::fmod(theta, 2.0 * kPi) + (2.0 * kPi), 2.0 * kPi);
+    return {wrapped / (2.0 * kPi) * layout.columns, u / layout.cellU};
+}
+
+double TerrainGrid::groundHeight(double z, double theta) const
+{
+    const Vec2d cell = cellAt(z, theta);
+    return heightAt(cell.x, cell.y);
+}
+
 TerrainGrid sampleTerrain(const HabitatGeometry& geometry, double targetCellM, unsigned threads)
 {
     TerrainGrid            grid;

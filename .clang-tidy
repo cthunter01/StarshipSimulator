@@ -27,8 +27,8 @@ HeaderFilterRegex: '(include|src|tests)/'
 ExcludeHeaderFilterRegex: '_deps/'
 FormatStyle: file
 CheckOptions:
-  # GLM and SDL are used through umbrella/facade headers (core/math.h, SDL3/SDL_*.h): don't ask for
-  # their internal headers.
-  misc-include-cleaner.IgnoreHeaders: 'glm/.*;SDL3/.*;toml\+\+/.*'
+  # GLM, SDL and Jolt are used through umbrella/facade headers (core/math.h, SDL3/SDL_*.h,
+  # src/physics/jolt.h): don't ask for their internal headers.
+  misc-include-cleaner.IgnoreHeaders: 'glm/.*;SDL3/.*;toml\+\+/.*;Jolt/.*'
   # GoogleTest assertions are macros full of branches; count only the code we wrote.
   readability-function-cognitive-complexity.IgnoreMacros: true

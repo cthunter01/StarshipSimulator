@@ -16,6 +16,7 @@
 #include "StarshipSimulator/core/procgen/trees.h"
 #include "StarshipSimulator/render/gpu_handles.h"
 #include "StarshipSimulator/render/gpu_landscape.h"
+#include "StarshipSimulator/render/gpu_settlements.h"
 #include "StarshipSimulator/render/gpu_trees.h"
 #include "StarshipSimulator/render/gpu_world.h"
 #include "StarshipSimulator/render/pipeline.h"
@@ -129,20 +130,24 @@ LandscapePass::LandscapePass(SDL_GPUDevice* device, const ShaderLibrary& shaders
 }
 
 DrawStats LandscapePass::draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
-                              const GpuLandscape& landscape, const HabitatFrame& view) const
+                              const GpuLandscape& landscape, const GpuSettlements& settlements,
+                              const HabitatFrame& view) const
 {
     const std::uint32_t patches = landscape.patchCount();
     if (patches == 0)
     {
         return {};
     }
-    const std::array<SDL_GPUTextureSamplerBinding, 5> samplers{{
+    const std::array<SDL_GPUTextureSamplerBinding, 6> samplers{{
         {.texture = landscape.heights(), .sampler = landscape.surfaceSampler()},
         {.texture = landscape.profile(), .sampler = landscape.profileSampler()},
         {.texture = landscape.cover(), .sampler = landscape.surfaceSampler()},
         {.texture = landscape.arcByZ(), .sampler = landscape.profileSampler()},
         {.texture = view.shadowMap, .sampler = view.shadowSampler},
+        {.texture = settlements.groundAtlas(), .sampler = settlements.groundSampler()},
     }};
+    // SDL takes SDL_GPUBuffer* const*, so the pointee cannot be const.
+    SDL_GPUBuffer* const townMaps = settlements.groundMaps();  // NOLINT(misc-const-correctness)
     // SDL takes SDL_GPUBuffer* const*, so the pointee cannot be const.
     SDL_GPUBuffer* const       patchBuffer = landscape.patches();  // NOLINT(misc-const-correctness)
     const SDL_GPUBufferBinding vertices{.buffer = landscape.gridVertices(), .offset = 0};
@@ -155,6 +160,7 @@ DrawStats LandscapePass::draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass*
     SDL_BindGPUVertexSamplers(pass, 0, samplers.data(), 2);
     SDL_BindGPUVertexStorageBuffers(pass, 0, &patchBuffer, 1);
     SDL_BindGPUFragmentSamplers(pass, 0, samplers.data(), static_cast<Uint32>(samplers.size()));
+    SDL_BindGPUFragmentStorageBuffers(pass, 0, &townMaps, 1);
     SDL_PushGPUVertexUniformData(commands, 0, view.frame, sizeof(gpu::FrameUniforms));
     SDL_PushGPUVertexUniformData(commands, 1, view.habitat, sizeof(gpu::HabitatUniforms));
     SDL_PushGPUVertexUniformData(commands, 2, &uniforms, sizeof(uniforms));

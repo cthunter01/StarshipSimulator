@@ -1,21 +1,25 @@
-# Unit tests link only the core library, so they run anywhere (no window or GPU needed).
+# Unit tests link the core and physics libraries, so they run anywhere (no window or GPU needed).
 add_executable(StarshipSimulator_tests
     app_options_test.cpp
     assets_test.cpp
     astro_test.cpp
+    buildings_test.cpp
     camera_test.cpp
     habitat_mesher_test.cpp
     habitat_test.cpp
     mesh_test.cpp
     physics_test.cpp
+    physics_world_test.cpp
     procgen_test.cpp
     scenario_test.cpp
+    settlements_test.cpp
     sim_clock_test.cpp
     spirv_reflect_test.cpp
     star_catalog_test.cpp
     terrain_test.cpp
     uniforms_test.cpp)
-target_link_libraries(StarshipSimulator_tests PRIVATE StarshipSimulator::core GTest::gtest_main)
+target_link_libraries(StarshipSimulator_tests
+    PRIVATE StarshipSimulator::core StarshipSimulator::physics GTest::gtest_main)
 # spirv_reflect_test checks every compiled shader against SDL_GPU's binding rules.
 add_dependencies(StarshipSimulator_tests StarshipSimulator_shaders)
 target_compile_definitions(StarshipSimulator_tests PRIVATE

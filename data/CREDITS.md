@@ -26,4 +26,7 @@ falls back to placeholder stars and plain-coloured Earth and Moon.
 Positions are checked against JPL Horizons (DE441) in `tests/astro_test.cpp`: within one arcminute for the
 Moon, Mars, Jupiter and Earth from 1900 to 2100.
 
+The physics (collisions, the walking character, loose props) is Jolt Physics v5.6.0 by Jorrit Rouwe,
+https://github.com/jrouwe/JoltPhysics, MIT license, downloaded at configure time.
+
 Other libraries (SDL3, Dear ImGui, GLM, toml++, GoogleTest) are listed in `cmake/Dependencies.cmake`.

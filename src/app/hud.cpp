@@ -102,6 +102,10 @@ void drawLocation(const HudModel& model, HudSettings& settings, PlayerSettings& 
     }
     ui::field("Where", std::format("{}, {:.2f} km along, {:.0f} deg around", where, eye.z / 1000.0,
                                    radiansToDegrees(HabitatGeometry::angleOf(eye))));
+    if (!model.place.empty())
+    {
+        ui::field("Place", model.place);
+    }
     ui::field("Height",
               std::format("{:.1f} m above ground, {:.0f} m from the axis",
                           std::max(0.0, ground.heightAboveGround - player.eyeHeight) + 0.0, r));
@@ -267,6 +271,7 @@ void drawCredits()
         "Moon: NASA SVS CGI Moon Kit, Lunar Reconnaissance Orbiter LROC (NASA/GSFC/ASU).");
     ui::textWrapped(
         "Positions: Astronomy Engine by Don Cross (MIT). Checked against JPL Horizons.");
+    ui::textWrapped("Physics: Jolt Physics by Jorrit Rouwe (MIT).");
 }
 
 /// The name of what the user identified, next to it in the sky, with a crosshair in the middle.
@@ -306,6 +311,8 @@ void drawMetrics(const HudModel& model)
     ui::field("Nature", std::format("{:.1f} million trees, {} lakes{}",
                                     static_cast<double>(model.trees) / 1e6, land.lakes().size(),
                                     land.hasRivers() ? ", a river in each valley" : ""));
+    ui::field("Towns", std::format("{} towns and {} farms, {} buildings", model.towns, model.farms,
+                                   model.buildings));
     ui::field("Axis air", std::format("{:.0f}% of floor pressure, {:.0f} K colder",
                                       100.0 * m.axisPressureRatio, m.axisTemperatureDropK));
     ui::field("Walking",
@@ -326,6 +333,7 @@ void drawRenderer(const HudModel& model)
     ui::field("Frame", std::format("{:.1f} fps, {:.2f} ms", model.fps, model.frameMs));
     ui::field("Drawn", std::format("{} chunks, {:.2f} M triangles", model.chunksDrawn,
                                    static_cast<double>(model.trianglesDrawn) / 1e6));
+    ui::field("Physics", std::format("{} props moving", model.movingProps));
 }
 
 void drawEditorShape(OneillCylinderSpec& spec)
@@ -368,6 +376,16 @@ void drawEditorShape(OneillCylinderSpec& spec)
         double kilopascals = spec.atmosphere.surfacePressurePa / 1000.0;
         sliderDouble("Air pressure (kPa)", kilopascals, 20.0, 110.0, "%.1f");
         spec.atmosphere.surfacePressurePa = kilopascals * 1000.0;
+    }
+    if (ImGui::CollapsingHeader("Water, woods and towns"))
+    {
+        sliderDouble("River width (m)", spec.terrain.riverWidthM, 0.0, 120.0, "%.0f");
+        ImGui::SliderInt("Lakes per valley", &spec.terrain.lakesPerValley, 0, 8);
+        sliderDouble("Lake size (m)", spec.terrain.lakeRadiusM, 10.0, 800.0, "%.0f");
+        sliderDouble("Woods", spec.terrain.forestCover, 0.0, 0.9, "%.2f");
+        ImGui::SliderInt("Towns per valley", &spec.settlements.townsPerValley, 0, 12);
+        sliderDouble("Town size (m)", spec.settlements.townRadiusM, 40.0, 800.0, "%.0f");
+        ImGui::SliderInt("Farms per valley", &spec.settlements.farmsPerValley, 0, 60);
     }
 }
 
@@ -440,7 +458,7 @@ void drawHelp(const HudModel& model, HudSettings& settings)
         ui::textMuted(model.mouseCaptured ? "Mouse captured: Esc to release"
                                           : "Click the view to look around");
         ui::textMuted("WASD move, Shift run, Space jump (fly: rise), Ctrl descend");
-        ui::textMuted("F walk/fly, G throw, C comfort, wheel fly speed");
+        ui::textMuted("F walk/fly, G throw a ball, E kick, C comfort, wheel fly speed");
         ui::textMuted("I identify, B binoculars, P pause time, comma/period slower/faster");
         ui::textMuted("Tab editor, F1 HUD, F12 screenshot");
     }

@@ -70,6 +70,36 @@ void validateEndcap(const EndcapSpec& endcap, const char* which, double radiusM,
     }
 }
 
+/// The terrain, water, woods and settlements.
+void validateLand(const OneillCylinderSpec& spec, std::vector<std::string>& problems)
+{
+    if (spec.terrain.featureSizeM < 50.0 || spec.terrain.hillHeightM < 0.0 ||
+        spec.terrain.mountainHeightM < 0.0)
+    {
+        problems.emplace_back(
+            "terrain needs a feature size of at least 50 m and non-negative heights");
+    }
+    const TerrainSpec& terrain = spec.terrain;
+    if (terrain.riverWidthM < 0.0 || terrain.riverWidthM > 300.0 || terrain.lakesPerValley < 0 ||
+        terrain.lakesPerValley > 8 || terrain.lakeRadiusM < 10.0 || terrain.lakeRadiusM > 3000.0)
+    {
+        problems.emplace_back(
+            "water needs a river width of 0..300 m, 0..8 lakes per valley and lakes of 10..3000 m");
+    }
+    if (terrain.forestCover < 0.0 || terrain.forestCover > 0.9)
+    {
+        problems.emplace_back("forest cover must be between 0 and 0.9");
+    }
+    const SettlementSpec& settlements = spec.settlements;
+    if (settlements.townsPerValley < 0 || settlements.townsPerValley > 12 ||
+        settlements.townRadiusM < 40.0 || settlements.townRadiusM > 800.0 ||
+        settlements.farmsPerValley < 0 || settlements.farmsPerValley > 60)
+    {
+        problems.emplace_back(
+            "settlements need 0..12 towns per valley of 40..800 m and 0..60 farms per valley");
+    }
+}
+
 }  // namespace
 
 std::vector<std::string> validate(const OneillCylinderSpec& spec)
@@ -104,23 +134,7 @@ std::vector<std::string> validate(const OneillCylinderSpec& spec)
     {
         problems.emplace_back("atmosphere needs at least 1 kPa and a temperature of 150..400 K");
     }
-    if (spec.terrain.featureSizeM < 50.0 || spec.terrain.hillHeightM < 0.0 ||
-        spec.terrain.mountainHeightM < 0.0)
-    {
-        problems.emplace_back(
-            "terrain needs a feature size of at least 50 m and non-negative heights");
-    }
-    const TerrainSpec& terrain = spec.terrain;
-    if (terrain.riverWidthM < 0.0 || terrain.riverWidthM > 300.0 || terrain.lakesPerValley < 0 ||
-        terrain.lakesPerValley > 8 || terrain.lakeRadiusM < 10.0 || terrain.lakeRadiusM > 3000.0)
-    {
-        problems.emplace_back(
-            "water needs a river width of 0..300 m, 0..8 lakes per valley and lakes of 10..3000 m");
-    }
-    if (terrain.forestCover < 0.0 || terrain.forestCover > 0.9)
-    {
-        problems.emplace_back("forest cover must be between 0 and 0.9");
-    }
+    validateLand(spec, problems);
     if (spec.partner.enabled && spec.partner.separationM < minimumPartnerSeparation(spec))
     {
         problems.push_back(std::format(

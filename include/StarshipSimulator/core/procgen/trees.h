@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 #include "StarshipSimulator/core/habitat/habitat_geometry.h"
@@ -72,6 +73,8 @@ struct TreeSettings
     double                spacingM = 7.0;  // between trees in dense woods
     unsigned              threads  = 0;    // 0: all cores
     std::vector<Clearing> clearings;
+    // Where no wild trees grow (towns, farmyards): called with (z, theta), from several threads.
+    std::function<bool(double, double)> keepOff;
 };
 
 /// Plants trees on the terrain grid (woods from its land cover, heights from its height field).

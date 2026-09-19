@@ -37,4 +37,12 @@ struct CpuMesh
 /// A UV sphere centred on the origin with outward normals.
 [[nodiscard]] CpuMesh makeSphere(float radius, int segments, std::uint32_t material = 0);
 
+/// A closed cylinder along Y centred on the origin: flat-shaded caps, smooth sides. The sides' uv
+/// runs around (0..1) and up (0..1); the caps' uv is the position in the cap plane.
+[[nodiscard]] CpuMesh makeCylinder(float radius, float halfHeight, int sides,
+                                   std::uint32_t material = 0);
+
+/// Appends `from`, transformed (positions by `transform`, normals by its inverse transpose).
+void appendMesh(CpuMesh& to, const CpuMesh& from, const Mat4d& transform);
+
 }  // namespace StarshipSimulator

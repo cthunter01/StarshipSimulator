@@ -67,6 +67,14 @@ struct TerrainSpec
     double        forestCover     = 0.35;   // share of the valley floors under woods
 };
 
+/// Towns and farms: villages of houses along the rivers, farmsteads out in the fields.
+struct SettlementSpec
+{
+    int    townsPerValley = 4;
+    double townRadiusM    = 260.0;  // typical half-length of a town along its main street
+    int    farmsPerValley = 14;
+};
+
 /// An O'Neill cylinder: a spinning cylinder with land strips alternating with window strips.
 /// Coordinates: spin axis +Z, the sun toward +Z, the cylinder section from z = -L/2 to +L/2.
 struct OneillCylinderSpec
@@ -82,6 +90,7 @@ struct OneillCylinderSpec
     PartnerSpec    partner;
     AtmosphereSpec atmosphere;
     TerrainSpec    terrain;
+    SettlementSpec settlements;
     double         populationDensityPerKm2 = 5000.0;  // of land
 };
 

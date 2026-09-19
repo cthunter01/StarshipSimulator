@@ -353,7 +353,8 @@ TEST(Trees, WoodsRiverbanksAndLoneTrees)
     const HabitatGeometry& geometry = islandThree();
     const TerrainGrid&     grid     = coarseIslandThreeGrid();
     const TreeLayer        layer =
-        plantTrees(geometry, grid, TreeSettings{.spacingM = 20.0, .threads = 0, .clearings = {}});
+        plantTrees(geometry, grid,
+                   TreeSettings{.spacingM = 20.0, .threads = 0, .clearings = {}, .keepOff = {}});
     ASSERT_FALSE(layer.tiles.empty());
     std::array<std::size_t, kTreeSpeciesCount> bySpecies{};
     for (const TreeTile& tile : layer.tiles)
@@ -387,9 +388,11 @@ TEST(Trees, PlantingDoesNotDependOnTheThreadCount)
     const HabitatGeometry geometry(playgroundSpec());
     const TerrainGrid     grid = sampleTerrain(geometry, 2.0);
     const TreeLayer       one =
-        plantTrees(geometry, grid, TreeSettings{.spacingM = 4.0, .threads = 1, .clearings = {}});
+        plantTrees(geometry, grid,
+                   TreeSettings{.spacingM = 4.0, .threads = 1, .clearings = {}, .keepOff = {}});
     const TreeLayer many =
-        plantTrees(geometry, grid, TreeSettings{.spacingM = 4.0, .threads = 6, .clearings = {}});
+        plantTrees(geometry, grid,
+                   TreeSettings{.spacingM = 4.0, .threads = 6, .clearings = {}, .keepOff = {}});
     ASSERT_EQ(one.instances.size(), many.instances.size());
     for (std::size_t i = 0; i < one.instances.size(); ++i)
     {

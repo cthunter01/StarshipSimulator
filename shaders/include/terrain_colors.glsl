@@ -99,3 +99,42 @@ vec3 shoreAlbedo(vec3 land, vec2 uv, float depth)
     vec3 bed = mix(SAND, SILT, smoothstep(0.05, 0.7, depth)) * (0.85 + 0.3 * valueNoise(uv / 3.0));
     return mix(land, bed, smoothstep(-0.18, 0.02, depth));
 }
+
+// Towns: lawns and gardens instead of fields; cobbled streets and stone-flagged squares.
+// town: from townGround() (town_ground.glsl).
+const vec3 LAWN   = vec3(0.070, 0.145, 0.038);
+const vec3 COBBLE = vec3(0.150, 0.138, 0.120);
+const vec3 FLAGS  = vec3(0.250, 0.232, 0.205);
+
+// footprint: metres per pixel (length(fwidth(uv)), taken in uniform control flow).
+vec3 townAlbedo(vec3 land, vec2 uv, vec4 town, float footprint)
+{
+    vec3  lawn      = LAWN * (0.85 + 0.3 * valueNoise(uv / 7.0)) *
+                (1.0 + 0.25 * detail(footprint, 0.5) * (valueNoise(uv / 0.4) - 0.5));
+    vec3 color = mix(land, lawn, smoothstep(0.15, 0.7, town.z));
+
+    float edge  = max(0.05, 0.75 * footprint);
+    float paved = 1.0 - smoothstep(-edge, edge, town.x);
+    if (paved <= 0.0)
+    {
+        return color;
+    }
+    // Cobbles in the streets: small stones in staggered rows.
+    vec2  cobbles = uv / vec2(0.24, 0.2);
+    cobbles.x += 0.5 * mod(floor(cobbles.y), 2.0);
+    float joint   = detail(footprint, 0.2) *
+                  max(1.0 - smoothstep(0.0, 0.12, fract(cobbles.x)), 1.0 - smoothstep(0.0, 0.14, fract(cobbles.y)));
+    vec3  street  = COBBLE * (0.8 + 0.4 * mix(0.5, hash12(floor(cobbles)), detail(footprint, 0.25))) *
+                  (1.0 - 0.45 * joint);
+    // Flagstones on the squares and the river front.
+    vec2  slabs  = uv / vec2(0.9, 0.6);
+    slabs.x += 0.37 * mod(floor(slabs.y), 2.0);
+    float seam   = detail(footprint, 0.6) *
+                 max(1.0 - smoothstep(0.0, 0.03, fract(slabs.x)), 1.0 - smoothstep(0.0, 0.045, fract(slabs.y)));
+    vec3  stone  = FLAGS * (0.85 + 0.25 * mix(0.5, hash12(floor(slabs)), detail(footprint, 0.8))) *
+                 (1.0 - 0.35 * seam);
+    vec3 paving = mix(street, stone, smoothstep(0.3, 0.7, town.y));
+    // A kerb along street edges.
+    paving *= 1.0 - 0.3 * (1.0 - smoothstep(0.3, 0.7, town.y)) * smoothstep(-0.45, -0.15, town.x);
+    return mix(color, paving, paved);
+}

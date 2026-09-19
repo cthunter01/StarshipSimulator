@@ -11,6 +11,7 @@
 #include "StarshipSimulator/core/procgen/star_field.h"
 #include "StarshipSimulator/render/gpu_handles.h"
 #include "StarshipSimulator/render/gpu_landscape.h"
+#include "StarshipSimulator/render/gpu_settlements.h"
 #include "StarshipSimulator/render/gpu_trees.h"
 #include "StarshipSimulator/render/gpu_world.h"
 #include "StarshipSimulator/render/render_targets.h"
@@ -56,14 +57,16 @@ private:
     std::uint32_t       count_ = 0;
 };
 
-/// The land: the level-of-detail terrain over the whole habitat surface.
+/// The land: the level-of-detail terrain over the whole habitat surface, with the towns' streets
+/// and gardens from their ground maps.
 class LandscapePass
 {
 public:
     LandscapePass(SDL_GPUDevice* device, const ShaderLibrary& shaders, const SceneFormats& formats);
 
     DrawStats draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
-                   const GpuLandscape& landscape, const HabitatFrame& view) const;
+                   const GpuLandscape& landscape, const GpuSettlements& settlements,
+                   const HabitatFrame& view) const;
 
 private:
     GpuGraphicsPipeline pipeline_;

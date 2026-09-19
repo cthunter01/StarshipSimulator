@@ -194,21 +194,6 @@ Vec2d coverAt(const TerrainGrid& grid, double column, double row)
                     glm::mix(at(c0, r0 + 1), at(c0 + 1, r0 + 1), fc), fr);
 }
 
-/// Height at fractional grid coordinates, bilinear.
-double heightAt(const TerrainGrid& grid, double column, double row)
-{
-    const auto   c0      = static_cast<std::int64_t>(std::floor(column));
-    const double r       = std::clamp(row, 0.0, static_cast<double>(grid.layout.cells));
-    const auto   r0      = std::min(static_cast<std::uint32_t>(r), grid.layout.cells - 1);
-    const double fc      = column - static_cast<double>(c0);
-    const double fr      = r - r0;
-    const auto   columns = static_cast<std::int64_t>(grid.layout.columns);
-    const auto   x0      = static_cast<std::uint32_t>(((c0 % columns) + columns) % columns);
-    const auto   x1      = (x0 + 1) % grid.layout.columns;
-    return std::lerp(std::lerp(grid.height(x0, r0), grid.height(x1, r0), fc),
-                     std::lerp(grid.height(x0, r0 + 1), grid.height(x1, r0 + 1), fc), fr);
-}
-
 struct PlantedTile
 {
     TreeTile                                                 tile;
@@ -258,14 +243,14 @@ std::optional<Growth> growthAt(const HabitatGeometry& geometry, const TerrainGri
     }
 
     // Dry, not too steep ground.
-    const double h = heightAt(grid, column, row);
+    const double h = grid.heightAt(column, row);
     if (h < kWaterLevelM + 0.3)
     {
         return std::nullopt;
     }
-    const double around = (heightAt(grid, column + 1.0, row) - heightAt(grid, column - 1.0, row)) /
+    const double around = (grid.heightAt(column + 1.0, row) - grid.heightAt(column - 1.0, row)) /
                           (2.0 * layout.cellArcM * at.y / layout.radiusM);
-    const double along  = (heightAt(grid, column, row + 1.0) - heightAt(grid, column, row - 1.0)) /
+    const double along  = (grid.heightAt(column, row + 1.0) - grid.heightAt(column, row - 1.0)) /
                           (2.0 * layout.cellU);
     if (std::hypot(around, along) > kSteepest)
     {
@@ -328,7 +313,9 @@ PlantedTile plantTile(const HabitatGeometry& geometry, const TerrainGrid& grid,
                 std::ranges::any_of(settings.clearings, [&](const Clearing& clearing) {
                     return glm::distance(clearing.centre, grow->position) < clearing.radiusM;
                 });
-            if (cleared)
+            if (cleared ||
+                (settings.keepOff &&
+                 settings.keepOff(grow->position.z, HabitatGeometry::angleOf(grow->position))))
             {
                 continue;
             }

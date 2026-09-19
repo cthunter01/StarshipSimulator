@@ -57,6 +57,41 @@ target_include_directories(StarshipSimulator_imgui SYSTEM PUBLIC ${imgui_SOURCE_
 target_compile_definitions(StarshipSimulator_imgui PUBLIC IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
 target_link_libraries(StarshipSimulator_imgui PUBLIC SDL3::SDL3)
 
+# Jolt Physics: rigid bodies, collisions and the walking character, in double precision so bodies
+# stay precise kilometres from the origin. Always built from source (an installed Jolt would have
+# its own configuration). Only StarshipSimulator_physics links it, PRIVATE: Jolt's target passes
+# CPU flags (-mavx2 ...) and its configuration defines on to everything that links it.
+# Its options are plain variables (policy CMP0077), so they don't clutter our cache.
+set(DOUBLE_PRECISION ON)
+set(OVERRIDE_CXX_FLAGS OFF)                  # keep our build type's flags
+set(INTERPROCEDURAL_OPTIMIZATION OFF)
+set(GENERATE_DEBUG_SYMBOLS OFF)
+set(ENABLE_ALL_WARNINGS OFF)                 # its own -Wall -Werror
+set(FLOATING_POINT_EXCEPTIONS_ENABLED OFF)
+set(CPP_RTTI_ENABLED ON)                     # we derive from its interfaces in RTTI-enabled code
+set(CPP_EXCEPTIONS_ENABLED ON)
+set(DEBUG_RENDERER_IN_DEBUG_AND_RELEASE OFF)
+set(PROFILER_IN_DEBUG_AND_RELEASE OFF)
+set(ENABLE_OBJECT_STREAM OFF)
+set(ENABLE_INSTALL OFF)
+set(JPH_USE_DX12 OFF)                        # its GPU compute backends: not used
+set(JPH_USE_VK OFF)
+set(JPH_USE_MTL OFF)
+set(JPH_USE_CPU_COMPUTE OFF)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(USE_ASSERTS ON)
+endif()
+FetchContent_Declare(JoltPhysics
+    GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
+    GIT_TAG        v5.6.0
+    GIT_SHALLOW    TRUE
+    SOURCE_SUBDIR  Build
+    SYSTEM
+    EXCLUDE_FROM_ALL)
+FetchContent_MakeAvailable(JoltPhysics)
+# Unoptimized, Jolt is too slow for the character and terrain tiles even in Debug builds.
+target_compile_options(Jolt PRIVATE $<$<CONFIG:Debug>:-O2>)
+
 if(STARSHIPSIMULATOR_BUILD_TESTS)
     set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
     FetchContent_Declare(googletest

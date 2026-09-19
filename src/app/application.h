@@ -22,15 +22,21 @@
 #include "StarshipSimulator/core/habitat/metrics.h"
 #include "StarshipSimulator/core/physics/player_controller.h"
 #include "StarshipSimulator/core/physics/rotating_frame.h"
+#include "StarshipSimulator/core/procgen/buildings.h"
 #include "StarshipSimulator/core/procgen/habitat_mesher.h"
 #include "StarshipSimulator/core/procgen/mesh.h"
+#include "StarshipSimulator/core/procgen/props.h"
+#include "StarshipSimulator/core/procgen/settlements.h"
 #include "StarshipSimulator/core/procgen/terrain_grid.h"
 #include "StarshipSimulator/core/procgen/terrain_lod.h"
 #include "StarshipSimulator/core/procgen/trees.h"
 #include "StarshipSimulator/core/scenario/scenario.h"
 #include "StarshipSimulator/core/sim_clock.h"
+#include "StarshipSimulator/physics/physics_world.h"
 #include "StarshipSimulator/render/gpu_device.h"
 #include "StarshipSimulator/render/gpu_landscape.h"
+#include "StarshipSimulator/render/gpu_props.h"
+#include "StarshipSimulator/render/gpu_settlements.h"
 #include "StarshipSimulator/render/gpu_trees.h"
 #include "StarshipSimulator/render/gpu_world.h"
 #include "StarshipSimulator/render/imgui_layer.h"
@@ -63,18 +69,20 @@ struct GeneratedWorld
     std::shared_ptr<const HabitatGeometry> geometry;
     HabitatMeshes                          meshes;
     CpuMesh                                hull;  // seen from outside, for the partner cylinder
-    TerrainGrid                            terrain;
+    std::shared_ptr<TerrainGrid>           terrain;
     std::optional<TerrainLod>              lod;
-    TreeLayer                              trees;
+    std::shared_ptr<TreeLayer>             trees;
+    Settlements                            settlements;
+    std::vector<SettlementMesh>            settlementMeshes;
+    std::unique_ptr<PhysicsWorld>          physics;
     std::string                            error;
     double                                 seconds = 0.0;
 };
 
-/// A ball thrown by the player, with its predicted path and the same throw without spin.
+/// The latest ball thrown by the player: its predicted path, and the same throw without spin. (The
+/// ball itself is a prop in the physics world.)
 struct ThrownBall
 {
-    BodyState          state;
-    bool               resting = false;
     std::vector<Vec3d> path;
     std::vector<Vec3d> ghostPath;
     ThrowReport        report;
@@ -86,6 +94,7 @@ struct Benchmark
     std::size_t         view        = 0;
     double              viewSeconds = 0.0;
     std::vector<double> frameMs;
+    std::vector<double> viewMs;  // this view's frames
 };
 
 /// The StarshipSimulator application: window, GPU, habitat, player, HUD.
@@ -104,15 +113,21 @@ private:
     };
 
     // Habitats
-    void adoptWorld(GeneratedWorld world, bool placeAtStart);
-    void startGeneration(const OneillCylinderSpec& spec, bool placeAtStart);
-    void pollGeneration();
-    void loadScenarioFile(const std::filesystem::path& path);
-    void saveDraft();
-    void refreshScenarioList();
-    void placeAtStart();
-    void applyView(std::string_view name);
-    void applyCameraPose(const CameraPose& pose);
+    void                 adoptWorld(GeneratedWorld world, bool placeAtStart);
+    void                 startGeneration(const OneillCylinderSpec& spec, bool placeAtStart);
+    void                 pollGeneration();
+    void                 loadScenarioFile(const std::filesystem::path& path);
+    void                 saveDraft();
+    void                 refreshScenarioList();
+    void                 placeAtStart();
+    void                 applyView(std::string_view name);
+    void                 applyWaterView(std::string_view name);
+    void                 applyTownView(std::string_view name);
+    void                 walkTo(double z, double theta, double yawDeg, double pitchDeg);
+    void                 flyTo(const Vec3d& eye, double yawDeg, double pitchDeg);
+    [[nodiscard]] int    startValley() const;
+    [[nodiscard]] double startViewZ() const;
+    void                 applyCameraPose(const CameraPose& pose);
 
     // The sky and the clock
     void                                  startSkyLoad();
@@ -134,12 +149,14 @@ private:
     [[nodiscard]] std::vector<BodyDraw>   bodyDraws(const gpu::LightingSettings& lighting) const;
 
     // Frames
-    void                     updateStats(double realSeconds);
-    [[nodiscard]] HudActions drawUi();
-    void                     applyInput(const InputFrame& input, const HudActions& actions);
-    void                     applySkyInput(const InputFrame& input, const HudActions& actions);
-    void                     simulate(const MoveIntent& intent, double realSeconds);
-    void                     throwBall();
+    void                      updateStats(double realSeconds);
+    [[nodiscard]] HudActions  drawUi();
+    void                      applyInput(const InputFrame& input, const HudActions& actions);
+    void                      applySkyInput(const InputFrame& input, const HudActions& actions);
+    void                      simulate(const MoveIntent& intent, double realSeconds);
+    void                      throwBall();
+    void                      kick();
+    [[nodiscard]] std::string placeName() const;
     [[nodiscard]] std::vector<Marker> markers() const;
     [[nodiscard]] Camera              camera() const;
     [[nodiscard]] std::optional<int>  render(int frame, bool screenshotRequested, ImDrawData* ui);
@@ -158,6 +175,13 @@ private:
     std::unique_ptr<GpuWorld>              world_;
     std::unique_ptr<GpuLandscape>          landscape_;
     std::unique_ptr<GpuTrees>              trees_;
+    std::shared_ptr<const TerrainGrid>     terrain_;
+    std::shared_ptr<const Settlements>     settlements_;
+    std::unique_ptr<GpuSettlements>        gpuSettlements_;
+    std::unique_ptr<GpuProps>              gpuProps_;
+    std::unique_ptr<PhysicsWorld>          physics_;
+    std::vector<std::size_t>               thrown_;     // props: the balls thrown, oldest first
+    std::vector<PropPlacement>             propPoses_;  // where the props are, for drawing
     HabitatMetrics                         metrics_;
     std::future<GeneratedWorld>            pending_;
     bool                                   placeWhenReady_ = false;

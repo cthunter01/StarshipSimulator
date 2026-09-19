@@ -33,7 +33,8 @@ TEST(Scenario, RoundTripsThroughToml)
     original.habitat.mirrors.openingAngleDeg        = 33.3;
     original.habitat.atmosphere.surfacePressurePa   = 50662.5;
     original.habitat.terrain.seed                   = 123456789012345ULL;
-    original.start                       = {.valley = 2, .zM = -123.25, .headingDeg = 45.0};
+    original.habitat.settlements = {.townsPerValley = 2, .townRadiusM = 180.5, .farmsPerValley = 9};
+    original.start               = {.valley = 2, .zM = -123.25, .headingDeg = 45.0};
     original.habitat.partner.separationM = 90000.0;
     original.sky.location                = astro::Location::SunMarsL4;
     original.sky.start                   = astro::parseIsoTime("2061-07-28T18:45:30Z").value();
@@ -56,6 +57,9 @@ TEST(Scenario, RoundTripsThroughToml)
     EXPECT_EQ(copy.habitat.mirrors.openingAngleDeg, 33.3);
     EXPECT_DOUBLE_EQ(copy.habitat.atmosphere.surfacePressurePa, 50662.5);
     EXPECT_EQ(copy.habitat.terrain.seed, 123456789012345ULL);
+    EXPECT_EQ(copy.habitat.settlements.townsPerValley, 2);
+    EXPECT_EQ(copy.habitat.settlements.townRadiusM, 180.5);
+    EXPECT_EQ(copy.habitat.settlements.farmsPerValley, 9);
     EXPECT_EQ(copy.start.valley, 2);
     EXPECT_EQ(copy.start.zM, -123.25);
     EXPECT_TRUE(copy.habitat.partner.enabled);

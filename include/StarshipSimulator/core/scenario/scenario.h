@@ -36,8 +36,9 @@ struct SkySpec
 /// A shareable habitat file: everything needed to regenerate the same world.
 struct Scenario
 {
-    static constexpr int kFormatVersion    = 1;  // file layout
-    static constexpr int kGeneratorVersion = 2;  // terrain generation (2: rivers, lakes, woods)
+    static constexpr int kFormatVersion = 1;  // file layout
+    // World generation: 2 added rivers, lakes and woods; 3 towns and farms.
+    static constexpr int kGeneratorVersion = 3;
 
     int                formatVersion    = kFormatVersion;
     int                generatorVersion = kGeneratorVersion;

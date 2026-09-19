@@ -1,0 +1,38 @@
+#pragma once
+
+#include <vector>
+
+#include "StarshipSimulator/core/math.h"
+
+// Collision shapes of the things built in the habitat (buildings, bridges, street furniture), as
+// plain data for the physics library. Local axes: x across, y up (toward the spin axis), z along;
+// `orientation` turns them into the habitat frame.
+namespace StarshipSimulator
+{
+
+struct StaticBox
+{
+    Vec3d centre{0.0};
+    Quatd orientation{1.0, 0.0, 0.0, 0.0};
+    Vec3d halfExtents{0.5};
+};
+
+/// A convex shape: the hull of its points (local, relative to `origin`).
+struct StaticHull
+{
+    Vec3d              origin{0.0};
+    Quatd              orientation{1.0, 0.0, 0.0, 0.0};
+    std::vector<Vec3f> points;
+};
+
+struct StaticColliders
+{
+    std::vector<StaticBox>  boxes;
+    std::vector<StaticHull> hulls;
+};
+
+/// The rotation that takes local axes (x across, y up, z along) to the habitat frame at a point on
+/// the floor: y toward the spin axis, z along it (+Z), turned by `yaw` (radians) about y.
+[[nodiscard]] Quatd floorOrientation(const Vec3d& position, double yaw = 0.0);
+
+}  // namespace StarshipSimulator

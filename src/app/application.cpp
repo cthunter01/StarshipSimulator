@@ -14,6 +14,7 @@
 #include <format>
 #include <functional>
 #include <future>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <print>
@@ -46,16 +47,23 @@
 #include "StarshipSimulator/core/habitat/mirror_optics.h"
 #include "StarshipSimulator/core/log.h"
 #include "StarshipSimulator/core/math.h"
+#include "StarshipSimulator/core/physics/colliders.h"
 #include "StarshipSimulator/core/physics/player_controller.h"
 #include "StarshipSimulator/core/physics/rotating_frame.h"
+#include "StarshipSimulator/core/procgen/buildings.h"
 #include "StarshipSimulator/core/procgen/habitat_mesher.h"
 #include "StarshipSimulator/core/procgen/hull_mesh.h"
+#include "StarshipSimulator/core/procgen/props.h"
+#include "StarshipSimulator/core/procgen/settlements.h"
 #include "StarshipSimulator/core/procgen/star_field.h"
 #include "StarshipSimulator/core/procgen/terrain_grid.h"
 #include "StarshipSimulator/core/procgen/trees.h"
 #include "StarshipSimulator/core/scenario/scenario.h"
+#include "StarshipSimulator/physics/physics_world.h"
 #include "StarshipSimulator/render/gpu_device.h"
 #include "StarshipSimulator/render/gpu_landscape.h"
+#include "StarshipSimulator/render/gpu_props.h"
+#include "StarshipSimulator/render/gpu_settlements.h"
 #include "StarshipSimulator/render/gpu_trees.h"
 #include "StarshipSimulator/render/gpu_world.h"
 #include "StarshipSimulator/render/passes/marker_pass.h"
@@ -82,14 +90,16 @@ constexpr int           kDefaultHeight        = 900;
 constexpr std::size_t   kStarCount            = 9000;
 constexpr std::uint64_t kStarSeed             = 20260918;
 constexpr double        kThrowSpeed           = 12.0;  // m/s
-constexpr double        kBallRadius           = 0.11;  // m
+constexpr double        kBallRadius           = 0.12;  // m (PropKind::Ball)
+constexpr std::size_t   kMaxThrownBalls       = 12;    // older ones vanish
+constexpr double        kKickReach            = 2.5;   // m
 constexpr double        kPathStep             = 0.05;  // s between trajectory dots
 constexpr double        kMaxFlightTime        = 60.0;  // s
 constexpr double        kBenchmarkViewSeconds = 3.0;
 constexpr double        kBenchmarkWarmup      = 0.5;
 constexpr double        kBenchmarkPanRate     = degreesToRadians(20.0);  // per second
-constexpr std::array<std::string_view, 8> kBenchmarkViews{
-    "valley", "river", "lookup", "window", "ramp", "sunward", "axis", "overview"};
+constexpr std::array<std::string_view, 9> kBenchmarkViews{
+    "valley", "river", "town", "lookup", "window", "ramp", "sunward", "axis", "overview"};
 constexpr Vec3d  kNorth(0.0, 0.0, 1.0);       // the "north" of the look rig: toward the sunward end
 constexpr double kStarMagnitudeLimit = 7.5;   // a little fainter than the naked eye in a dark sky
 constexpr double kMilkyWayScale      = 0.02;  // NASA's map (0..1) to scene radiance
@@ -204,11 +214,28 @@ GeneratedWorld generateWorld(const OneillCylinderSpec& spec, const StartSpec& vi
         world.hull = buildHullMesh(*world.geometry);
         // The terrain on a grid of about 4 m for Island Three (about 6000 cells around).
         const double terrainCell = 2.0 * kPi * spec.radiusM / 6144.0;
-        world.terrain            = sampleTerrain(*world.geometry, terrainCell);
-        world.lod.emplace(world.terrain, *world.geometry, 50.0 * world.terrain.layout.cellArcM);
+        world.terrain = std::make_shared<TerrainGrid>(sampleTerrain(*world.geometry, terrainCell));
+        world.lod.emplace(*world.terrain, *world.geometry, 50.0 * world.terrain->layout.cellArcM);
+        // Towns and farms, then the woods around them.
+        world.settlements = planSettlements(*world.geometry, *world.terrain);
+        stampSettlements(*world.terrain, world.settlements);
+        const TreeSettings trees{
+            .clearings = startClearings(*world.geometry, visitStart),
+            .keepOff   = [&settlements = world.settlements](double z, double theta) {
+                return settlements.keepsTreesOff(z, theta);
+            }};
         world.trees =
-            plantTrees(*world.geometry, world.terrain,
-                       TreeSettings{.clearings = startClearings(*world.geometry, visitStart)});
+            std::make_shared<TreeLayer>(plantTrees(*world.geometry, *world.terrain, trees));
+        addStandingTrees(*world.trees, world.settlements);
+        world.settlementMeshes = buildSettlementMeshes(world.settlements);
+        // The physics: what the towns built, and everything lying about in them.
+        world.physics = std::make_unique<PhysicsWorld>(world.geometry, world.terrain);
+        world.physics->addColliders(settlementColliders(world.settlements));
+        world.physics->setTrees(world.trees);
+        for (const PropPlacement& prop : world.settlements.props)
+        {
+            world.physics->addProp(prop);
+        }
     }
     catch (const std::exception& e)
     {
@@ -358,8 +385,14 @@ void Application::adoptWorld(GeneratedWorld world, bool placeAtStartPoint)
     }
     auto gpuWorld = std::make_unique<GpuWorld>(device_.get(), world.meshes);
     auto gpuLandscape =
-        std::make_unique<GpuLandscape>(device_.get(), world.terrain, std::move(*world.lod));
-    auto gpuTrees = std::make_unique<GpuTrees>(device_.get(), world.trees);
+        std::make_unique<GpuLandscape>(device_.get(), *world.terrain, std::move(*world.lod));
+    auto gpuTrees = std::make_unique<GpuTrees>(device_.get(), *world.trees);
+    auto gpuSettlements =
+        std::make_unique<GpuSettlements>(device_.get(), world.settlementMeshes, world.settlements);
+    if (!gpuProps_)
+    {
+        gpuProps_ = std::make_unique<GpuProps>(device_.get());
+    }
     renderer_.setHull(world.hull);
     const Vec3d eye      = player_.eyePosition();
     const bool  hadWorld = geometry_ != nullptr;
@@ -367,13 +400,30 @@ void Application::adoptWorld(GeneratedWorld world, bool placeAtStartPoint)
     world_               = std::move(gpuWorld);
     landscape_           = std::move(gpuLandscape);
     trees_               = std::move(gpuTrees);
-    metrics_             = computeMetrics(geometry_->spec());
+    gpuSettlements_      = std::move(gpuSettlements);
+    terrain_             = std::move(world.terrain);
+    settlements_         = std::make_shared<const Settlements>(std::move(world.settlements));
+    physics_             = std::move(world.physics);
+    player_.setMover(&physics_->character());
+    metrics_ = computeMetrics(geometry_->spec());
     ball_.reset();
-    status_ = std::format("Generated {} in {:.1f} s: {:.1f} M trees", scenario_.title,
-                          world.seconds, static_cast<double>(trees_->treeCount()) / 1e6);
+    thrown_.clear();
+    const auto counted = [](std::size_t n, std::string_view one, std::string_view many) {
+        return std::format("{} {}", n, n == 1 ? one : many);
+    };
+    const auto trees = static_cast<double>(trees_->treeCount());
+    status_          = std::format(
+        "Generated {} in {:.1f} s: {} and {} ({}), {}", scenario_.title, world.seconds,
+        counted(settlements_->townCount(), "town", "towns"),
+        counted(settlements_->places.size() - settlements_->townCount(), "farm", "farms"),
+        counted(settlements_->buildings.size(), "building", "buildings"),
+        trees >= 1e6 ? std::format("{:.1f} million trees", trees / 1e6)
+                     : counted(trees_->treeCount(), "tree", "trees"));
     log::info("{}", status_);
-    log::info("Terrain and trees use about {:.0f} MB of GPU memory",
-              static_cast<double>(landscape_->memoryBytes() + trees_->memoryBytes()) / 1e6);
+    log::info("Terrain, trees and towns use about {:.0f} MB of GPU memory",
+              static_cast<double>(landscape_->memoryBytes() + trees_->memoryBytes() +
+                                  gpuSettlements_->memoryBytes()) /
+                  1e6);
 
     if (placeAtStartPoint || !hadWorld)
     {
@@ -486,89 +536,171 @@ void Application::placeAtStart()
     look_.setAngles(degreesToRadians(scenario_.start.headingDeg), 0.0);
 }
 
+void Application::walkTo(double z, double theta, double yawDeg, double pitchDeg)
+{
+    player_.setLocomotion(Locomotion::Walk);
+    player_.placeOnGround(*geometry_, z, theta);
+    look_.setFrame(player_.viewUp(), kNorth);
+    look_.setAngles(degreesToRadians(yawDeg), degreesToRadians(pitchDeg));
+}
+
+void Application::flyTo(const Vec3d& eye, double yawDeg, double pitchDeg)
+{
+    player_.setLocomotion(Locomotion::Fly);
+    player_.teleport(eye);
+    look_.setFrame(player_.viewUp(), kNorth);
+    look_.setAngles(degreesToRadians(yawDeg), degreesToRadians(pitchDeg));
+}
+
+int Application::startValley() const
+{
+    const int strips = geometry_->stripCount();
+    return ((scenario_.start.valley % strips) + strips) % strips;
+}
+
+double Application::startViewZ() const
+{
+    // Keep viewpoints on the floor, away from its ends (the margin shrinks for small habitats).
+    const HabitatGeometry& geometry = *geometry_;
+    const double margin = std::min(500.0, 0.25 * (geometry.floorZMax() - geometry.floorZMin()));
+    return std::clamp(scenario_.start.zM, geometry.floorZMin() + margin,
+                      geometry.floorZMax() - margin);
+}
+
 void Application::applyView(std::string_view name)
 {
     const HabitatGeometry& geometry = *geometry_;
-    const int              strips   = geometry.stripCount();
-    const double           valley =
-        geometry.landCenter(((scenario_.start.valley % strips) + strips) % strips);
-    // Keep viewpoints on the floor, away from its ends (the margin shrinks for small habitats).
-    const double margin = std::min(500.0, 0.25 * (geometry.floorZMax() - geometry.floorZMin()));
-    const double startZ = std::clamp(scenario_.start.zM, geometry.floorZMin() + margin,
-                                     geometry.floorZMax() - margin);
-    const auto   walk   = [&](double z, double theta, double yawDeg, double pitchDeg) {
-        player_.setLocomotion(Locomotion::Walk);
-        player_.placeOnGround(geometry, z, theta);
-        look_.setFrame(player_.viewUp(), kNorth);
-        look_.setAngles(degreesToRadians(yawDeg), degreesToRadians(pitchDeg));
-    };
-    const auto fly = [&](const Vec3d& eye, double yawDeg, double pitchDeg) {
-        player_.setLocomotion(Locomotion::Fly);
-        player_.teleport(eye);
-        look_.setFrame(player_.viewUp(), kNorth);
-        look_.setAngles(degreesToRadians(yawDeg), degreesToRadians(pitchDeg));
-    };
-
-    if (name == "valley")
+    const double           valley   = geometry.landCenter(startValley());
+    const double           startZ   = startViewZ();
+    if (name == "river" || name == "lake")
     {
-        walk(startZ, valley, 0.0, 6.0);
+        applyWaterView(name);
     }
-    else if (name == "lookup")
+    else if (name == "town" || name == "rooftops" || name == "street")
     {
-        walk(startZ, valley, 0.0, 75.0);
+        applyTownView(name);
+    }
+    else if (name == "valley" || name == "lookup")
+    {
+        walkTo(startZ, valley, 0.0, name == "valley" ? 6.0 : 75.0);
     }
     else if (name == "window")
     {
         // Off the lattice ribs (every 80 m), looking down and ahead at the mirror.
-        walk(startZ + 37.0, geometry.windowCenter(0) + (19.0 / geometry.radius()), 0.0, -55.0);
+        walkTo(startZ + 37.0, geometry.windowCenter(0) + (19.0 / geometry.radius()), 0.0, -55.0);
     }
     else if (name == "endcap")
     {
-        walk(geometry.floorZMin() + 800.0, valley, 180.0, 10.0);
+        walkTo(geometry.floorZMin() + 800.0, valley, 180.0, 10.0);
     }
     else if (name == "ramp")
     {
-        walk(geometry.floorZMin() - 2500.0, valley, 180.0, 15.0);
+        walkTo(geometry.floorZMin() - 2500.0, valley, 180.0, 15.0);
     }
     else if (name == "sunward")
     {
-        walk(geometry.floorZMax() - 1500.0, valley, 0.0, 20.0);
+        walkTo(geometry.floorZMax() - 1500.0, valley, 0.0, 20.0);
     }
     else if (name == "axis")
     {
-        fly((radial(valley) * 20.0) + Vec3d(0.0, 0.0, geometry.walkableZMin() + 1500.0), 0.0, 0.0);
-    }
-    else if (name == "river" || name == "lake")
-    {
-        // On the bank (or the lake shore), looking along the water.
-        const Landscape& landscape   = geometry.landscape();
-        const int        valleyIndex = ((scenario_.start.valley % strips) + strips) % strips;
-        const auto       lake = std::ranges::find(landscape.lakes(), valleyIndex, &Lake::valley);
-        if (name == "lake" && lake != landscape.lakes().end())
-        {
-            const double z = lake->z - lake->halfLengthM - 25.0;
-            walk(z, lake->theta, 0.0, -2.0);
-        }
-        else
-        {
-            const double z = startZ + 300.0;
-            const double theta =
-                landscape.riverAngle(valleyIndex, z) +
-                (((0.5 * geometry.spec().terrain.riverWidthM) + 12.0) / geometry.radius());
-            walk(z, theta, 15.0, -4.0);
-        }
+        flyTo((radial(valley) * 20.0) + Vec3d(0.0, 0.0, geometry.walkableZMin() + 1500.0), 0.0,
+              0.0);
     }
     else if (name == "overview")
     {
-        fly((radial(valley) * (0.35 * geometry.radius())) +
-                Vec3d(0.0, 0.0, geometry.floorZMin() + 200.0),
-            0.0, -8.0);
+        flyTo((radial(valley) * (0.35 * geometry.radius())) +
+                  Vec3d(0.0, 0.0, geometry.floorZMin() + 200.0),
+              0.0, -8.0);
     }
     else
     {
         status_ = std::format("Unknown view '{}'", name);
         log::warn("{}", status_);
     }
+}
+
+void Application::applyWaterView(std::string_view name)
+{
+    // On the bank (or the lake shore), looking along the water.
+    const HabitatGeometry& geometry  = *geometry_;
+    const Landscape&       landscape = geometry.landscape();
+    const int              valley    = startValley();
+    const auto             lake      = std::ranges::find(landscape.lakes(), valley, &Lake::valley);
+    if (name == "lake" && lake != landscape.lakes().end())
+    {
+        walkTo(lake->z - lake->halfLengthM - 25.0, lake->theta, 0.0, -2.0);
+        return;
+    }
+    const double z     = startViewZ() + 300.0;
+    const double theta = landscape.riverAngle(valley, z) +
+                         (((0.5 * geometry.spec().terrain.riverWidthM) + 12.0) / geometry.radius());
+    walkTo(z, theta, 15.0, -4.0);
+}
+
+void Application::applyTownView(std::string_view name)
+{
+    if (!settlements_ || settlements_->townCount() == 0)
+    {
+        status_ = "There are no towns in this habitat";
+        return;
+    }
+    // The start valley's first town (or any): on its square facing the hall, on its main street,
+    // or above it.
+    const Settlements& plan = *settlements_;
+    std::size_t        town = 0;
+    for (std::size_t i = 0; i < plan.places.size(); ++i)
+    {
+        if (plan.places[i].kind == SettlementKind::Town && plan.places[i].valley == startValley())
+        {
+            town = i;
+            break;
+        }
+    }
+    const Settlement& place = plan.places[town];
+    Vec2d             square(0.0);
+    Vec2d             hall(0.0, 30.0);
+    for (const Furniture& item : plan.furniture)
+    {
+        square = item.settlement == town && item.kind == FurnitureKind::Fountain ? item.position
+                                                                                 : square;
+    }
+    for (const Building& b : plan.buildings)
+    {
+        hall = b.settlement == town && b.use == BuildingUse::Hall ? b.centre : hall;
+    }
+    const Vec2d away    = glm::normalize(square - hall);
+    const auto  yawFrom = [](const Vec2d& from, const Vec2d& to) {
+        // Yaw is measured from the axis (plan +y) toward the spin (plan +x).
+        return radiansToDegrees(std::atan2(to.x - from.x, to.y - from.y));
+    };
+    if (name == "rooftops")
+    {
+        const Vec2d over = square + (away * 160.0);
+        flyTo(place.plane.point(over, 70.0), yawFrom(over, square), -18.0);
+        return;
+    }
+    // On the main street (the widest), a little way from the square, looking along it.
+    const Street* main = nullptr;
+    for (const Street& street : place.streets)
+    {
+        const double d = glm::distance(0.5 * (street.from + street.to), square);
+        if (street.halfWidth > 5.0 && d > 40.0 &&
+            (main == nullptr || d < glm::distance(0.5 * (main->from + main->to), square)))
+        {
+            main = &street;
+        }
+    }
+    if (name == "street" && main != nullptr)
+    {
+        const Vec2d dir   = glm::normalize(main->to - main->from);
+        const Vec2d stand = main->from + (Vec2d(-dir.y, dir.x) * 2.0);
+        const bool  back  = glm::dot(dir, square - stand) > 0.0;  // away from the square
+        walkTo(place.plane.z(stand.y), place.plane.theta(stand.x),
+               yawFrom(stand, stand + (back ? -dir : dir)), 3.0);
+        return;
+    }
+    const Vec2d stand = square + (away * 11.0);
+    walkTo(place.plane.z(stand.y), place.plane.theta(stand.x), yawFrom(stand, hall), 6.0);
 }
 
 void Application::applyCameraPose(const CameraPose& pose)
@@ -930,12 +1062,17 @@ HudActions Application::drawUi()
         .geometry       = geometry_.get(),
         .metrics        = &metrics_,
         .trees          = trees_ ? trees_->treeCount() : 0,
-        .player         = &player_,
-        .mouseCaptured  = input_.mouseCaptured(),
-        .generating     = pending_.valid(),
-        .status         = status_,
-        .throwReport    = ball_ ? std::optional<ThrowReport>(ball_->report) : std::nullopt,
-        .sky            = skyModel(),
+        .towns          = settlements_ ? settlements_->townCount() : 0,
+        .farms         = settlements_ ? settlements_->places.size() - settlements_->townCount() : 0,
+        .buildings     = settlements_ ? settlements_->buildings.size() : 0,
+        .movingProps   = physics_ ? physics_->awakeProps() : 0,
+        .place         = placeName(),
+        .player        = &player_,
+        .mouseCaptured = input_.mouseCaptured(),
+        .generating    = pending_.valid(),
+        .status        = status_,
+        .throwReport   = ball_ ? std::optional<ThrowReport>(ball_->report) : std::nullopt,
+        .sky           = skyModel(),
     };
     return drawHud(model, hudSettings_, editor_, player_.settings);
 }
@@ -978,6 +1115,10 @@ void Application::applyInput(const InputFrame& input, const HudActions& actions)
     if (input.throwBall || actions.throwBall)
     {
         throwBall();
+    }
+    if (input.kick)
+    {
+        kick();
     }
     if (actions.regenerate)
     {
@@ -1032,25 +1173,15 @@ void Application::applySkyInput(const InputFrame& input, const HudActions& actio
 
 void Application::simulate(const MoveIntent& intent, double realSeconds)
 {
-    const int           steps = clock_.advance(realSeconds);
-    const double        dt    = clock_.stepSeconds();
-    const RotatingFrame frame(geometry_->omega());
+    const int    steps = clock_.advance(realSeconds);
+    const double dt    = clock_.stepSeconds();
     for (int step = 0; step < steps; ++step)
     {
         look_.setFrame(player_.viewUp(), kNorth);
         player_.step(intent, look_, *geometry_, dt);
-        spinPhase_ = std::fmod(spinPhase_ + (geometry_->omega() * dt), 2.0 * kPi);
-        if (ball_ && !ball_->resting)
-        {
-            stepFreeBody(ball_->state, frame, Vec3d(0.0), dt);
-            const GroundSample ground = geometry_->ground(ball_->state.position);
-            if (ground.heightAboveGround < kBallRadius)
-            {
-                const Vec3d up = HabitatGeometry::localUp(ball_->state.position);
-                ball_->state.position += up * (kBallRadius - ground.heightAboveGround);
-                ball_->resting = true;
-            }
-        }
+        spinPhase_      = std::fmod(spinPhase_ + (geometry_->omega() * dt), 2.0 * kPi);
+        const Vec3d eye = player_.eyePosition();
+        physics_->step(dt, eye - (HabitatGeometry::localUp(eye) * player_.settings.eyeHeight));
     }
 }
 
@@ -1065,7 +1196,6 @@ void Application::throwBall()
     const auto      impact = predictImpact(frame, geometry, start, kMaxFlightTime);
 
     ThrownBall ball;
-    ball.state = start;
     if (impact)
     {
         const auto steps = static_cast<int>(impact->time / kPathStep);
@@ -1101,6 +1231,74 @@ void Application::throwBall()
                                   .along      = glm::dot(difference, horizontal)};
     }
     ball_ = std::move(ball);
+
+    // The ball itself: a prop, flying (and bouncing, and rolling) in the physics world.
+    const Quatd upright = floorOrientation(start.position);
+    thrown_.push_back(
+        physics_->addProp({.kind        = PropKind::Ball,
+                           .position    = start.position - (upright * Vec3d(0.0, kBallRadius, 0.0)),
+                           .orientation = upright,
+                           .tint        = (static_cast<float>(thrown_.size() % 4) / 4.0F) + 0.1F},
+                          start.velocity));
+    while (thrown_.size() > kMaxThrownBalls)
+    {
+        physics_->removeProp(thrown_.front());
+        thrown_.erase(thrown_.begin());
+    }
+}
+
+void Application::kick()
+{
+    const Vec3d eye     = player_.eyePosition();
+    const Vec3d forward = look_.forward();
+    const auto  hit     = physics_->raycast(eye, forward, kKickReach);
+    if (!hit || !hit->prop)
+    {
+        status_ = "Nothing to kick: walk up to a ball, a crate or a chair and press E";
+        return;
+    }
+    const PropKind kind = physics_->props()[*hit->prop].kind;
+    // A kick is a quick push, a little upward: light things fly, heavy ones barely budge.
+    const Vec3d  up        = HabitatGeometry::localUp(eye);
+    const Vec3d  direction = glm::normalize(forward - (up * glm::dot(forward, up)) + (up * 0.35));
+    const double impulse   = std::min(static_cast<double>(propInfo(kind).massKg) * 9.0, 45.0);
+    physics_->push(*hit->prop, direction * impulse, hit->point);
+    status_ = std::format("You kick the {}", propKindName(kind));
+}
+
+std::string Application::placeName() const
+{
+    if (!settlements_)
+    {
+        return {};
+    }
+    const Vec3d  eye   = player_.eyePosition();
+    const double theta = HabitatGeometry::angleOf(eye);
+    std::string  near;
+    double       nearest = std::numeric_limits<double>::max();
+    for (const Settlement& place : settlements_->places)
+    {
+        const Vec2d  at       = place.plane.toPlan(eye.z, theta);
+        const double distance = glm::length(at);
+        if (place.kind == SettlementKind::Farm)
+        {
+            if (distance < 60.0)
+            {
+                return "at a farmstead";
+            }
+            continue;
+        }
+        if (place.ground.sample(at).z > 0.3)
+        {
+            return std::format("in {}, {} buildings", place.name, place.buildingCount);
+        }
+        if (distance < place.radiusM + 800.0 && distance < nearest)
+        {
+            nearest = distance;
+            near    = std::format("near {}, {:.1f} km away", place.name, distance / 1000.0);
+        }
+    }
+    return near;
 }
 
 std::vector<Marker> Application::markers() const
@@ -1126,11 +1324,6 @@ std::vector<Marker> Application::markers() const
                           .emission    = Vec3f(0.1F, 0.35F, 0.9F),
                           .shape       = MarkerShape::Sphere});
     }
-    result.push_back({.position    = ball_->state.position,
-                      .halfExtents = Vec3f(static_cast<float>(kBallRadius)),
-                      .color       = Vec3f(0.9F, 0.35F, 0.1F),
-                      .emission    = Vec3f(0.3F, 0.08F, 0.02F),
-                      .shape       = MarkerShape::Sphere});
     return result;
 }
 
@@ -1163,13 +1356,27 @@ std::optional<int> Application::render(int frame, bool screenshotRequested, ImDr
                                          beams.at(static_cast<std::size_t>(*beam)).towardSun, *beam,
                                          kShadowHalfExtentM, kShadowMapResolution);
     }
+    propPoses_.clear();
+    for (const PropState& prop : physics_->props())
+    {
+        if (!prop.removed)
+        {
+            propPoses_.push_back({.kind        = prop.kind,
+                                  .position    = prop.position,
+                                  .orientation = prop.orientation,
+                                  .tint        = prop.tint});
+        }
+    }
     const SceneView scene{
-        .camera    = camera(),
-        .world     = world_.get(),
-        .landscape = landscape_.get(),
-        .trees     = trees_.get(),
-        .shadow    = shadow,
-        .habitat   = gpu::makeHabitatUniforms(*geometry_, mirrorAngle(), lighting),
+        .camera      = camera(),
+        .world       = world_.get(),
+        .landscape   = landscape_.get(),
+        .trees       = trees_.get(),
+        .settlements = gpuSettlements_.get(),
+        .props       = gpuProps_.get(),
+        .propPoses   = propPoses_,
+        .shadow      = shadow,
+        .habitat     = gpu::makeHabitatUniforms(*geometry_, mirrorAngle(), lighting),
         .sky =
             gpu::makeSkyUniforms(habitatFromSky_, static_cast<double>(hudSettings_.starBrightness),
                                  kMilkyWayScale * static_cast<double>(hudSettings_.milkyWay)),
@@ -1225,11 +1432,26 @@ std::optional<int> Application::stepBenchmark(double realSeconds)
     if (benchmark.viewSeconds > kBenchmarkWarmup)
     {
         benchmark.frameMs.push_back(realSeconds * 1000.0);
+        benchmark.viewMs.push_back(realSeconds * 1000.0);
     }
     look_.applyLook(kBenchmarkPanRate * realSeconds, 0.0);
     if (benchmark.viewSeconds >= kBenchmarkViewSeconds)
     {
         benchmark.viewSeconds = 0.0;
+        if (!benchmark.viewMs.empty())
+        {
+            std::ranges::sort(benchmark.viewMs);
+            double sum = 0.0;
+            for (const double ms : benchmark.viewMs)
+            {
+                sum += ms;
+            }
+            std::println("  {:10} average {:5.2f} ms, p99 {:5.2f} ms",
+                         kBenchmarkViews.at(benchmark.view),
+                         sum / static_cast<double>(benchmark.viewMs.size()),
+                         benchmark.viewMs.at((benchmark.viewMs.size() - 1) * 99 / 100));
+            benchmark.viewMs.clear();
+        }
         if (++benchmark.view >= kBenchmarkViews.size())
         {
             printBenchmark(benchmark.frameMs, device_.info());

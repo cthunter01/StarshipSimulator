@@ -5,6 +5,7 @@
 #include "StarshipSimulator/core/camera.h"
 #include "StarshipSimulator/core/habitat/habitat_geometry.h"
 #include "StarshipSimulator/core/math.h"
+#include "StarshipSimulator/core/physics/character_mover.h"
 
 namespace StarshipSimulator
 {
@@ -43,9 +44,13 @@ struct PlayerSettings
 /// Moves the player through a spinning habitat. Everything is in the rotating habitat frame: while
 /// walking the ground carries you; once airborne you are a free body feeling centrifugal "gravity"
 /// and (unless in comfort mode) the Coriolis force, so jumps land slightly off to one side.
+/// Without a mover the player collides only with the bare terrain (HabitatGeometry); with one
+/// (the physics world's character) also with buildings and props.
 class PlayerController
 {
 public:
+    /// Uses `mover` (not owned; may be null) for collisions from now on.
+    void setMover(CharacterMover* mover) { mover_ = mover; }
     void step(const MoveIntent& intent, const LookRig& look, const HabitatGeometry& geometry,
               double dt);
 
@@ -71,16 +76,21 @@ private:
                       const HabitatGeometry& geometry, double dt);
     void stepFlying(const MoveIntent& intent, const LookRig& look, const HabitatGeometry& geometry,
                     double dt);
+    /// With a mover: moves the body from the eye's position at `velocity`, then puts the eye on
+    /// top of where it ended up.
+    CharacterMove moveBody(const Vec3d& velocity, const HabitatGeometry& geometry, double dt,
+                           MoveMode mode);
     /// Keeps the eye inside the habitat (above the ground, inside the ends). Returns true if the
     /// ground was touched.
     bool constrain(const HabitatGeometry& geometry);
     void updateViewUp(double dt);
 
-    Vec3d      eye_{-4000.0, 0.0, 0.0};
-    Vec3d      velocity_{0.0};
-    Vec3d      viewUp_{1.0, 0.0, 0.0};
-    Locomotion locomotion_ = Locomotion::Walk;
-    bool       grounded_   = false;
+    Vec3d           eye_{-4000.0, 0.0, 0.0};
+    Vec3d           velocity_{0.0};
+    Vec3d           viewUp_{1.0, 0.0, 0.0};
+    Locomotion      locomotion_ = Locomotion::Walk;
+    bool            grounded_   = false;
+    CharacterMover* mover_      = nullptr;
 };
 
 }  // namespace StarshipSimulator

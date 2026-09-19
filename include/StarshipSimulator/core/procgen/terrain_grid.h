@@ -56,6 +56,12 @@ struct TerrainGrid
 
     /// Decoded height at a grid point (metres, toward the axis).
     [[nodiscard]] double height(std::uint32_t column, std::uint32_t row) const;
+    /// Height at fractional grid coordinates, interpolated the way the GPU draws the terrain.
+    [[nodiscard]] double heightAt(double column, double row) const;
+    /// Fractional grid coordinates (column, row) of the surface point at (z, theta).
+    [[nodiscard]] Vec2d cellAt(double z, double theta) const;
+    /// Height of the ground at (z, theta), as drawn.
+    [[nodiscard]] double groundHeight(double z, double theta) const;
 };
 
 /// Samples heights (and land cover) over the whole surface on all cores. Deterministic.

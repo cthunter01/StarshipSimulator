@@ -5,7 +5,7 @@ the land overhead, and see an astronomically accurate sky. The goal: help people
 space that we could actually build, with the real physics of spin gravity (Coriolis drift, gravity that fades
 toward the axis) and real stars and planets outside.
 
-**Status: M3: a living valley.** Walk the valleys of Gerard O'Neill's Island Three, an 8 km wide, 32 km long
+**Status: M4: towns.** Walk the valleys of Gerard O'Neill's Island Three, an 8 km wide, 32 km long
 cylinder at the Earth-Moon L5 point: farmland curving up overhead through blue haze, three window strips, three
 mirrors bringing in the sunlight, mountain ramps at one end and a dome at the other. The physics is real:
 gravity comes from spin (and fades as you climb toward the axis), jumps and thrown balls drift from the Coriolis
@@ -21,8 +21,15 @@ editor lets you design your own cylinder and save it as a small TOML file.
 The valleys are alive: a river meanders down each one, widening into lakes, between patchwork fields, meadows
 and woods of 2.7 million trees (oaks, pines and riverside poplars) that cast soft shadows, as do the hills. The
 land stays sharp from your feet to the far side 8 km overhead without popping as you move, and a colour grade
-gives it the warm light of the 1970s habitat paintings (the "Painted colours" slider in the HUD). Next up, M4:
-towns.
+gives it the warm light of the 1970s habitat paintings (the "Painted colours" slider in the HUD).
+
+Towns line the rivers: a dozen villages of plastered houses under terracotta roofs, with shuttered windows,
+shops with striped awnings on tree-lined main streets, a square with a fountain and a hall with a bell tower,
+stone bridges and a lamp-lit river front; farmsteads stand out in the fields. At night the windows and street
+lamps light up. Everything is solid (Jolt Physics, in the habitat's spinning frame): you bump into walls and
+trees, climb kerbs and steps, and can kick (E) the balls, crates, barrels, hay bales and cafe chairs lying
+about; thrown balls bounce and roll, float on the water, and fall off course with the Coriolis force. Next up,
+M5: a living atmosphere.
 
 ## Requirements
 - Linux with a Vulkan GPU
@@ -36,8 +43,8 @@ sudo pacman -S --needed cmake ninja clang sdl3 glm shaderc tomlplusplus
 # optional: Vulkan validation layers (Debug builds), ccache, RenderDoc
 sudo pacman -S --needed vulkan-validation-layers ccache renderdoc
 ```
-Dear ImGui is downloaded at configure time; GoogleTest, SDL3, GLM and toml++ are used from the system when
-installed, otherwise downloaded too. The first configure also downloads the sky data (about 52 MB: star catalog,
+Dear ImGui and Jolt Physics (v5.6.0, built in double precision) are downloaded at configure time; GoogleTest,
+SDL3, GLM and toml++ are used from the system when installed, otherwise downloaded too. The first configure also downloads the sky data (about 52 MB: star catalog,
 Milky Way, Earth and Moon maps) into `build/_downloads/sky`; turn that off with
 `-DSTARSHIPSIMULATOR_DOWNLOAD_SKY_DATA=OFF` (the app then shows placeholder stars). See `data/CREDITS.md`.
 
@@ -49,7 +56,7 @@ cmake --workflow --preset dev          # configure + build + test, Clang Debug
 
 Controls: click the view to capture the mouse (Esc releases it). WASD to move, Shift to run, Space to jump
 (walk) or rise (fly), Ctrl to descend, F toggles walking/flying, G throws a ball (its path is compared with the
-same throw on a planet), C toggles comfort mode (no Coriolis force on you), mouse wheel sets fly speed, Tab opens
+same throw on a planet), E kicks whatever is in front of you, C toggles comfort mode (no Coriolis force on you), mouse wheel sets fly speed, Tab opens
 the habitat editor, I names the star, planet or moon under the crosshair, B toggles binoculars, P pauses time,
 comma and period slow down and speed up time (up to a day per second), F1 toggles the HUD, F5 reloads shaders,
 F12 saves a screenshot to
@@ -58,6 +65,7 @@ F12 saves a screenshot to
 Useful options (`--help` lists all):
 ```sh
 StarshipSimulator --view lookup                       # start looking up at the far side (or river, lake, ...)
+StarshipSimulator --view town                         # on a town square (or street, rooftops)
 StarshipSimulator --time 2045-06-15T23:00             # night (UTC; the habitat's day runs 06:00-20:00)
 StarshipSimulator --look-at earth                     # look out of a window at Earth (or moon, jupiter, Vega, partner)
 StarshipSimulator --time-scale 3600                   # an hour per second: watch the day go by
@@ -82,6 +90,7 @@ tests in one command. Separate steps: `cmake --preset <p>`, `cmake --build --pre
 ## Code layout
 - `src/core`: habitat geometry, spin physics, procedural generation, scenario files, astronomy (time, positions,
   star catalog) and data decoding; no graphics dependencies, fully unit tested
+- `src/physics`: rigid bodies and the player's body (Jolt Physics) in the habitat's spinning frame
 - `src/render`: the SDL_GPU renderer and the ImGui layer
 - `src/app`: the executable (main loop, input, HUD)
 - `shaders`: GLSL, compiled to SPIR-V at build time

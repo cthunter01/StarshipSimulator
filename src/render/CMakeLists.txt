@@ -3,6 +3,8 @@ add_library(StarshipSimulator_render STATIC
     dynamic_buffer.cpp
     gpu_device.cpp
     gpu_landscape.cpp
+    gpu_props.cpp
+    gpu_settlements.cpp
     gpu_trees.cpp
     gpu_world.cpp
     imgui_layer.cpp
@@ -16,7 +18,8 @@ add_library(StarshipSimulator_render STATIC
     passes/habitat_passes.cpp
     passes/marker_pass.cpp
     passes/sky_passes.cpp
-    passes/tonemap_pass.cpp)
+    passes/tonemap_pass.cpp
+    passes/town_passes.cpp)
 add_library(StarshipSimulator::render ALIAS StarshipSimulator_render)
 target_link_libraries(StarshipSimulator_render PUBLIC StarshipSimulator::core SDL3::SDL3 StarshipSimulator_imgui)
 add_dependencies(StarshipSimulator_render StarshipSimulator_shaders)

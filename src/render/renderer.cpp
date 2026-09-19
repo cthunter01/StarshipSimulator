@@ -10,6 +10,7 @@
 #include <format>
 #include <memory>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -25,15 +26,20 @@
 #include "StarshipSimulator/core/frustum.h"
 #include "StarshipSimulator/core/gpu_abi/uniforms.h"
 #include "StarshipSimulator/core/math.h"
+#include "StarshipSimulator/core/procgen/buildings.h"
 #include "StarshipSimulator/core/procgen/mesh.h"
+#include "StarshipSimulator/core/procgen/settlements.h"
 #include "StarshipSimulator/core/procgen/star_field.h"
 #include "StarshipSimulator/render/gpu_device.h"
 #include "StarshipSimulator/render/gpu_handles.h"
+#include "StarshipSimulator/render/gpu_props.h"
+#include "StarshipSimulator/render/gpu_settlements.h"
 #include "StarshipSimulator/render/gpu_trees.h"
 #include "StarshipSimulator/render/passes/habitat_passes.h"
 #include "StarshipSimulator/render/passes/marker_pass.h"
 #include "StarshipSimulator/render/passes/sky_passes.h"
 #include "StarshipSimulator/render/passes/tonemap_pass.h"
+#include "StarshipSimulator/render/passes/town_passes.h"
 #include "StarshipSimulator/render/render_targets.h"
 #include "StarshipSimulator/render/shadow_map.h"
 #include "StarshipSimulator/render/upload.h"
@@ -51,6 +57,8 @@ struct Renderer::Passes
     LandscapePass landscape;
     WaterPass     water;
     TreePass      trees;
+    BuildingPass  buildings;
+    PropPass      props;
     TerrainPass   terrain;
     MirrorPass    mirrors;
     GlassPass     glass;
@@ -62,6 +70,7 @@ namespace
 {
 
 constexpr std::uint32_t kBytesPerPixel = 4;
+constexpr double        kPropRange     = 400.0;  // m: props farther away are too small to see
 
 std::optional<SDL_PixelFormat> pixelFormatOf(SDL_GPUTextureFormat format)
 {
@@ -113,6 +122,8 @@ Renderer::Renderer(GpuDevice& device, std::filesystem::path shaderDirectory,
     targets_(device.get(), chooseSceneFormats(device.get(), SDL_GPU_SAMPLECOUNT_4)),
     skyTextures_(device.get()),
     shadowMap_(device.get(), kShadowMapResolution),
+    noSettlements_(std::make_unique<GpuSettlements>(device.get(), std::span<const SettlementMesh>(),
+                                                    Settlements{})),
     passes_(createPasses())
 {
 }
@@ -135,6 +146,8 @@ std::unique_ptr<Renderer::Passes> Renderer::createPasses() const
         .landscape = LandscapePass(device, shaders_, formats),
         .water     = WaterPass(device, shaders_, formats),
         .trees     = TreePass(device, shaders_, formats),
+        .buildings = BuildingPass(device, shaders_, formats),
+        .props     = PropPass(device, shaders_, formats),
         .terrain   = TerrainPass(device, shaders_, formats),
         .mirrors   = MirrorPass(device, shaders_, formats),
         .glass     = GlassPass(device, shaders_, formats),
@@ -269,10 +282,17 @@ void Renderer::drawScene(SDL_GPUCommandBuffer* commands, const SceneView& view, 
         .stencil_store_op = SDL_GPU_STOREOP_DONT_CARE,
         .cycle            = true,
     };
-    if (view.landscape != nullptr)
+    if (view.landscape != nullptr || view.props != nullptr)
     {
         SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
-        view.landscape->prepare(copy, view.camera.position, frustum);
+        if (view.landscape != nullptr)
+        {
+            view.landscape->prepare(copy, view.camera.position, frustum);
+        }
+        if (view.props != nullptr)
+        {
+            view.props->prepare(copy, view.camera.position, view.propPoses, kPropRange);
+        }
         SDL_EndGPUCopyPass(copy);
     }
     drawShadows(commands, view, frame);
@@ -300,24 +320,7 @@ void Renderer::drawScene(SDL_GPUCommandBuffer* commands, const SceneView& view, 
     // Inside: the land, our mirrors seen through the windows, markers, then the window glass.
     if (view.world != nullptr)
     {
-        DrawStats terrain = passes_->terrain.draw(commands, pass, *view.world, habitatFrame);
-        if (view.landscape != nullptr)
-        {
-            const DrawStats land =
-                passes_->landscape.draw(commands, pass, *view.landscape, habitatFrame);
-            terrain.chunks += land.chunks;
-            terrain.triangles += land.triangles;
-        }
-        if (view.trees != nullptr)
-        {
-            const TreeRanges            ranges;
-            const std::vector<TreeDraw> draws =
-                view.trees->select(view.camera.position, frustum, ranges);
-            const DrawStats forest =
-                passes_->trees.draw(commands, pass, *view.trees, draws, ranges, habitatFrame);
-            terrain.chunks += forest.chunks;
-            terrain.triangles += forest.triangles;
-        }
+        const DrawStats terrain = drawLand(commands, pass, view, habitatFrame);
         passes_->mirrors.draw(commands, pass, habitatFrame, Mat4d(1.0));
         passes_->markers.draw(commands, pass, viewProjection, view.camera.position, view.markers);
         if (view.landscape != nullptr)
@@ -335,6 +338,35 @@ void Renderer::drawScene(SDL_GPUCommandBuffer* commands, const SceneView& view, 
     SDL_EndGPURenderPass(pass);
 }
 
+DrawStats Renderer::drawLand(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
+                             const SceneView& view, const HabitatFrame& habitatFrame)
+{
+    DrawStats  stats = passes_->terrain.draw(commands, pass, *view.world, habitatFrame);
+    const auto add   = [&](const DrawStats& more) {
+        stats.chunks += more.chunks;
+        stats.triangles += more.triangles;
+    };
+    const GpuSettlements& settlements =
+        view.settlements != nullptr ? *view.settlements : *noSettlements_;
+    if (view.landscape != nullptr)
+    {
+        add(passes_->landscape.draw(commands, pass, *view.landscape, settlements, habitatFrame));
+        add(passes_->buildings.draw(commands, pass, settlements, *view.landscape, habitatFrame));
+        if (view.props != nullptr)
+        {
+            add(passes_->props.draw(commands, pass, *view.props, *view.landscape, habitatFrame));
+        }
+    }
+    if (view.trees != nullptr)
+    {
+        const TreeRanges            ranges;
+        const std::vector<TreeDraw> draws =
+            view.trees->select(view.camera.position, *habitatFrame.frustum, ranges);
+        add(passes_->trees.draw(commands, pass, *view.trees, draws, ranges, habitatFrame));
+    }
+    return stats;
+}
+
 void Renderer::drawShadows(SDL_GPUCommandBuffer* commands, const SceneView& view,
                            const gpu::FrameUniforms& frame)
 {
@@ -349,14 +381,28 @@ void Renderer::drawShadows(SDL_GPUCommandBuffer* commands, const SceneView& view
         .cycle            = true,
     };
     SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, nullptr, 0, &target);
-    if (view.trees != nullptr && view.shadow.params.x > 0.5F)
+    if (view.shadow.params.x > 0.5F)
     {
         gpu::FrameUniforms light = frame;
         light.viewProjection     = view.shadow.lightFromCameraRelative;
-        // Trees just outside the box can still throw shadows into it.
+        // Things just outside the box can still throw shadows into it.
         const double reach = static_cast<double>(view.shadow.params.z) * kShadowMapResolution;
-        passes_->trees.drawShadow(commands, pass, *view.trees,
-                                  view.trees->selectNear(view.camera.position, reach), light);
+        if (view.trees != nullptr)
+        {
+            passes_->trees.drawShadow(commands, pass, *view.trees,
+                                      view.trees->selectNear(view.camera.position, reach), light);
+        }
+        if (view.settlements != nullptr)
+        {
+            const Mat4d   lightMatrix(view.shadow.lightFromCameraRelative);
+            const Frustum lightFrustum(lightMatrix);
+            passes_->buildings.drawShadow(commands, pass, *view.settlements, lightMatrix,
+                                          lightFrustum, view.camera.position, reach);
+        }
+        if (view.props != nullptr)
+        {
+            passes_->props.drawShadow(commands, pass, *view.props, light);
+        }
     }
     SDL_EndGPURenderPass(pass);
 }

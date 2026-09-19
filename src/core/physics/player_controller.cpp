@@ -6,6 +6,7 @@
 #include "StarshipSimulator/core/camera.h"
 #include "StarshipSimulator/core/habitat/habitat_geometry.h"
 #include "StarshipSimulator/core/math.h"
+#include "StarshipSimulator/core/physics/character_mover.h"
 #include "StarshipSimulator/core/physics/rotating_frame.h"
 
 namespace StarshipSimulator
@@ -16,6 +17,9 @@ namespace
 
 constexpr double kAxisZoneRadius = 30.0;  // m: inside this, "up" is held steady
 constexpr double kUpResponseTime = 0.4;   // s: how fast the view re-aligns after leaving the axis
+// With a mover the body stands on the collision terrain, which can differ from the analytic ground
+// by a few centimetres: the analytic ground only catches a fall through the world.
+constexpr double kFallThroughM = 1.0;
 
 /// Limits a direction built from stick inputs to unit length, so diagonals are not faster.
 Vec3d clampLength(const Vec3d& v)
@@ -113,6 +117,13 @@ void PlayerController::stepWalking(const MoveIntent& intent, const LookRig& look
         stepAirborne({}, look, geometry, dt);
         return;
     }
+    if (mover_ != nullptr)
+    {
+        const CharacterMove moved = moveBody(walk, geometry, dt, MoveMode::Walk);
+        velocity_                 = removeComponent(moved.velocity, HabitatGeometry::localUp(eye_));
+        grounded_                 = moved.supported;  // walked off an edge: falling
+        return;
+    }
 
     const GroundSample here     = geometry.ground(eye_);
     Vec3d              proposed = eye_ + (walk * dt);
@@ -153,6 +164,23 @@ void PlayerController::stepAirborne(const MoveIntent& intent, const LookRig& loo
                          settings.airThrust;
     BodyState   state{.position = eye_, .velocity = velocity_};
     stepFreeBody(state, RotatingFrame(geometry.omega()), thrust, dt, !settings.comfortMode);
+    if (mover_ != nullptr)
+    {
+        // The exact free flight decides where the body wants to go; the mover what's in the way.
+        const CharacterMove moved =
+            moveBody((state.position - eye_) / dt, geometry, dt, MoveMode::Free);
+        const Vec3d landingUp = HabitatGeometry::localUp(eye_);
+        if (moved.supported && glm::dot(state.velocity, landingUp) <= 0.0)
+        {
+            grounded_ = true;
+            velocity_ = removeComponent(state.velocity, landingUp);
+        }
+        else
+        {
+            velocity_ = moved.blocked ? moved.velocity : state.velocity;
+        }
+        return;
+    }
     eye_      = state.position;
     velocity_ = state.velocity;
     if (constrain(geometry))
@@ -169,12 +197,29 @@ void PlayerController::stepFlying(const MoveIntent& intent, const LookRig& look,
     const Vec3d  direction = clampLength((look.forward() * intent.forward) +
                                          (look.right() * intent.right) + (look.up() * intent.up));
     velocity_ += ((direction * speed) - velocity_) * responseFactor(dt, settings.responseTime);
+    if (mover_ != nullptr)
+    {
+        velocity_ = moveBody(velocity_, geometry, dt, MoveMode::Free).velocity;
+        return;
+    }
     eye_ += velocity_ * dt;
     if (constrain(geometry))
     {
         const Vec3d up = HabitatGeometry::localUp(eye_);
         velocity_ -= std::min(0.0, glm::dot(velocity_, up)) * up;  // no pushing into the ground
     }
+}
+
+CharacterMove PlayerController::moveBody(const Vec3d& velocity, const HabitatGeometry& geometry,
+                                         double dt, MoveMode mode)
+{
+    const Vec3d         up      = HabitatGeometry::localUp(eye_);
+    const double        gravity = geometry.gravityAt(std::hypot(eye_.x, eye_.y));
+    const CharacterMove moved =
+        mover_->move(eye_ - (up * settings.eyeHeight), velocity, up, gravity, dt, mode);
+    eye_ = moved.feet + (HabitatGeometry::localUp(moved.feet) * settings.eyeHeight);
+    constrain(geometry);
+    return moved;
 }
 
 bool PlayerController::constrain(const HabitatGeometry& geometry)
@@ -185,7 +230,8 @@ bool PlayerController::constrain(const HabitatGeometry& geometry)
         velocity_.z = 0.0;
     }
     const GroundSample ground = geometry.ground(eye_);
-    if (ground.heightAboveGround >= settings.eyeHeight)
+    const double       slack  = mover_ != nullptr ? kFallThroughM : 0.0;
+    if (ground.heightAboveGround >= settings.eyeHeight - slack)
     {
         return false;
     }

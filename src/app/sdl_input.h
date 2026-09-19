@@ -25,6 +25,7 @@ struct InputFrame
     bool       screenshot       = false;
     bool       toggleComfort    = false;
     bool       throwBall        = false;
+    bool       kick             = false;  // push whatever is in front of you
     bool       toggleEditor     = false;
     bool       identify         = false;  // name what is under the crosshair
     bool       toggleZoom       = false;  // binoculars

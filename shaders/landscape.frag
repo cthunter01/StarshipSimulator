@@ -12,13 +12,17 @@
 #define SHADOW_UNIFORM 3
 #define SHADOW_SAMPLER 4
 #include "shadow.glsl"
+#include "lit.glsl"
+#define TOWN_ATLAS_BINDING 5
+#define TOWN_RECORDS_BINDING 6
+#include "town_ground.glsl"
 
 layout(location = 0) in vec2 inCell;
 layout(location = 1) in vec3 inCameraRelative;
 
 layout(set = 2, binding = 0) uniform sampler2D heightMap;
 layout(set = 2, binding = 1) uniform sampler2D profileMap;  // z, radius, inward normal (z, r)
-layout(set = 2, binding = 2) uniform sampler2D coverMap;    // woods, wetness
+layout(set = 2, binding = 2) uniform sampler2D coverMap;    // woods, wetness, near a town
 layout(set = 2, binding = 3) uniform sampler2D arcMap;      // profile arc length u by z
 
 layout(location = 0) out vec4 outColor;
@@ -56,7 +60,18 @@ void main()
     vec4  cover = texture(coverMap, heightUv(inCell));
     vec2  uv    = vec2(theta * landscape.heights.w, inCell.y * cellU);  // metres: around, along
     vec3  albedo = onFloor ? valleyAlbedo(uv, p, cover.r, cover.g) : endcapAlbedo(p, n, cover.r);
-    albedo       = shoreAlbedo(albedo, uv, landscape.heights.z - h);
+    // Towns: streets, squares and gardens (only looked up where the cover map marks a town).
+    vec2 plan      = vec2(theta * landscape.heights.w, profile.x);
+    vec2 planDx    = dFdx(plan);
+    vec2 planDy    = dFdy(plan);
+    float metres   = length(fwidth(uv));
+    vec4 town      = vec4(4.0, 0.0, 0.0, 0.0);
+    if (onFloor && cover.b > 0.0)
+    {
+        town   = townGround(profile.x, theta, planDx, planDy);
+        albedo = townAlbedo(albedo, uv, town, metres);
+    }
+    albedo = shoreAlbedo(albedo, uv, landscape.heights.z - h);
 
     // Sunlight, shadowed by hills and mountains. The march starts from the height field's own
     // surface (the patch mesh can differ from it by metres far away).
@@ -73,7 +88,8 @@ void main()
         }
         direct += beam;
     }
-    vec3 color = albedo * (direct + ambientLight(p, n));
+    vec3 lamps = LAMPLIGHT * 0.015 * town.w * lightsOn();  // pools of light under street lamps
+    vec3 color = albedo * (direct + ambientLight(p, n) + lamps);
     Haze haze  = aerialPerspective(frame.cameraPosition.xyz, p);
     outColor   = vec4(color * haze.transmittance + haze.inscatter, 1.0);
 }
