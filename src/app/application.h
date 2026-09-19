@@ -24,9 +24,14 @@
 #include "StarshipSimulator/core/physics/rotating_frame.h"
 #include "StarshipSimulator/core/procgen/habitat_mesher.h"
 #include "StarshipSimulator/core/procgen/mesh.h"
+#include "StarshipSimulator/core/procgen/terrain_grid.h"
+#include "StarshipSimulator/core/procgen/terrain_lod.h"
+#include "StarshipSimulator/core/procgen/trees.h"
 #include "StarshipSimulator/core/scenario/scenario.h"
 #include "StarshipSimulator/core/sim_clock.h"
 #include "StarshipSimulator/render/gpu_device.h"
+#include "StarshipSimulator/render/gpu_landscape.h"
+#include "StarshipSimulator/render/gpu_trees.h"
 #include "StarshipSimulator/render/gpu_world.h"
 #include "StarshipSimulator/render/imgui_layer.h"
 #include "StarshipSimulator/render/passes/marker_pass.h"
@@ -58,6 +63,9 @@ struct GeneratedWorld
     std::shared_ptr<const HabitatGeometry> geometry;
     HabitatMeshes                          meshes;
     CpuMesh                                hull;  // seen from outside, for the partner cylinder
+    TerrainGrid                            terrain;
+    std::optional<TerrainLod>              lod;
+    TreeLayer                              trees;
     std::string                            error;
     double                                 seconds = 0.0;
 };
@@ -148,6 +156,8 @@ private:
     Scenario                               scenario_;
     std::shared_ptr<const HabitatGeometry> geometry_;
     std::unique_ptr<GpuWorld>              world_;
+    std::unique_ptr<GpuLandscape>          landscape_;
+    std::unique_ptr<GpuTrees>              trees_;
     HabitatMetrics                         metrics_;
     std::future<GeneratedWorld>            pending_;
     bool                                   placeWhenReady_ = false;

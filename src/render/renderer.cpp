@@ -29,11 +29,13 @@
 #include "StarshipSimulator/core/procgen/star_field.h"
 #include "StarshipSimulator/render/gpu_device.h"
 #include "StarshipSimulator/render/gpu_handles.h"
+#include "StarshipSimulator/render/gpu_trees.h"
 #include "StarshipSimulator/render/passes/habitat_passes.h"
 #include "StarshipSimulator/render/passes/marker_pass.h"
 #include "StarshipSimulator/render/passes/sky_passes.h"
 #include "StarshipSimulator/render/passes/tonemap_pass.h"
 #include "StarshipSimulator/render/render_targets.h"
+#include "StarshipSimulator/render/shadow_map.h"
 #include "StarshipSimulator/render/upload.h"
 
 namespace StarshipSimulator
@@ -41,16 +43,19 @@ namespace StarshipSimulator
 
 struct Renderer::Passes
 {
-    MilkyWayPass milkyWay;
-    StarPass     stars;
-    PlanetPass   planets;
-    BodyPass     bodies;
-    HullPass     hull;
-    TerrainPass  terrain;
-    MirrorPass   mirrors;
-    GlassPass    glass;
-    MarkerPass   markers;
-    TonemapPass  tonemap;
+    MilkyWayPass  milkyWay;
+    StarPass      stars;
+    PlanetPass    planets;
+    BodyPass      bodies;
+    HullPass      hull;
+    LandscapePass landscape;
+    WaterPass     water;
+    TreePass      trees;
+    TerrainPass   terrain;
+    MirrorPass    mirrors;
+    GlassPass     glass;
+    MarkerPass    markers;
+    TonemapPass   tonemap;
 };
 
 namespace
@@ -107,6 +112,7 @@ Renderer::Renderer(GpuDevice& device, std::filesystem::path shaderDirectory,
     shaders_(device.get(), std::move(shaderDirectory)),
     targets_(device.get(), chooseSceneFormats(device.get(), SDL_GPU_SAMPLECOUNT_4)),
     skyTextures_(device.get()),
+    shadowMap_(device.get(), kShadowMapResolution),
     passes_(createPasses())
 {
 }
@@ -121,16 +127,19 @@ std::unique_ptr<Renderer::Passes> Renderer::createPasses() const
     SDL_GPUDevice*      device  = device_->get();
     const SceneFormats& formats = targets_.formats();
     return std::make_unique<Passes>(Passes{
-        .milkyWay = MilkyWayPass(device, shaders_, formats),
-        .stars    = StarPass(device, shaders_, formats, stars_),
-        .planets  = PlanetPass(device, shaders_, formats),
-        .bodies   = BodyPass(device, shaders_, formats),
-        .hull     = HullPass(device, shaders_, formats),
-        .terrain  = TerrainPass(device, shaders_, formats),
-        .mirrors  = MirrorPass(device, shaders_, formats),
-        .glass    = GlassPass(device, shaders_, formats),
-        .markers  = MarkerPass(device, shaders_, formats),
-        .tonemap  = TonemapPass(device, shaders_, device_->swapchainFormat()),
+        .milkyWay  = MilkyWayPass(device, shaders_, formats),
+        .stars     = StarPass(device, shaders_, formats, stars_),
+        .planets   = PlanetPass(device, shaders_, formats),
+        .bodies    = BodyPass(device, shaders_, formats),
+        .hull      = HullPass(device, shaders_, formats),
+        .landscape = LandscapePass(device, shaders_, formats),
+        .water     = WaterPass(device, shaders_, formats),
+        .trees     = TreePass(device, shaders_, formats),
+        .terrain   = TerrainPass(device, shaders_, formats),
+        .mirrors   = MirrorPass(device, shaders_, formats),
+        .glass     = GlassPass(device, shaders_, formats),
+        .markers   = MarkerPass(device, shaders_, formats),
+        .tonemap   = TonemapPass(device, shaders_, device_->swapchainFormat()),
     });
 }
 
@@ -227,15 +236,19 @@ FrameResult Renderer::renderFrame(const SceneView& view, const FrameOptions& opt
 void Renderer::drawScene(SDL_GPUCommandBuffer* commands, const SceneView& view, std::uint32_t width,
                          std::uint32_t height, FrameResult& result)
 {
-    const gpu::FrameUniforms frame          = gpu::makeFrameUniforms(view.camera, width, height);
-    const Mat4d              viewProjection = cameraRelativeViewProjection(
+    const gpu::FrameUniforms frame =
+        gpu::makeFrameUniforms(view.camera, width, height, view.animationSeconds);
+    const Mat4d viewProjection = cameraRelativeViewProjection(
         view.camera, static_cast<double>(width) / static_cast<double>(height));
     const Frustum      frustum(viewProjection);
     const HabitatFrame habitatFrame{.frame          = &frame,
                                     .habitat        = &view.habitat,
                                     .viewProjection = viewProjection,
                                     .camera         = view.camera.position,
-                                    .frustum        = &frustum};
+                                    .frustum        = &frustum,
+                                    .shadow         = &view.shadow,
+                                    .shadowMap      = shadowMap_.texture(),
+                                    .shadowSampler  = shadowMap_.sampler()};
 
     const bool                   msaa = targets_.multisampled();
     const SDL_GPUColorTargetInfo color{
@@ -256,6 +269,13 @@ void Renderer::drawScene(SDL_GPUCommandBuffer* commands, const SceneView& view, 
         .stencil_store_op = SDL_GPU_STOREOP_DONT_CARE,
         .cycle            = true,
     };
+    if (view.landscape != nullptr)
+    {
+        SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
+        view.landscape->prepare(copy, view.camera.position, frustum);
+        SDL_EndGPUCopyPass(copy);
+    }
+    drawShadows(commands, view, frame);
     SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &color, 1, &depth);
 
     // Outside, from far to near: the sky at infinity, then the partner cylinder.
@@ -280,9 +300,30 @@ void Renderer::drawScene(SDL_GPUCommandBuffer* commands, const SceneView& view, 
     // Inside: the land, our mirrors seen through the windows, markers, then the window glass.
     if (view.world != nullptr)
     {
-        const DrawStats terrain = passes_->terrain.draw(commands, pass, *view.world, habitatFrame);
+        DrawStats terrain = passes_->terrain.draw(commands, pass, *view.world, habitatFrame);
+        if (view.landscape != nullptr)
+        {
+            const DrawStats land =
+                passes_->landscape.draw(commands, pass, *view.landscape, habitatFrame);
+            terrain.chunks += land.chunks;
+            terrain.triangles += land.triangles;
+        }
+        if (view.trees != nullptr)
+        {
+            const TreeRanges            ranges;
+            const std::vector<TreeDraw> draws =
+                view.trees->select(view.camera.position, frustum, ranges);
+            const DrawStats forest =
+                passes_->trees.draw(commands, pass, *view.trees, draws, ranges, habitatFrame);
+            terrain.chunks += forest.chunks;
+            terrain.triangles += forest.triangles;
+        }
         passes_->mirrors.draw(commands, pass, habitatFrame, Mat4d(1.0));
         passes_->markers.draw(commands, pass, viewProjection, view.camera.position, view.markers);
+        if (view.landscape != nullptr)
+        {
+            passes_->water.draw(commands, pass, *view.landscape, habitatFrame);
+        }
         const DrawStats glass = passes_->glass.draw(commands, pass, *view.world, habitatFrame);
         result.chunksDrawn    = terrain.chunks + glass.chunks + partner.chunks;
         result.trianglesDrawn = terrain.triangles + glass.triangles + partner.triangles;
@@ -290,6 +331,32 @@ void Renderer::drawScene(SDL_GPUCommandBuffer* commands, const SceneView& view, 
     else
     {
         passes_->markers.draw(commands, pass, viewProjection, view.camera.position, view.markers);
+    }
+    SDL_EndGPURenderPass(pass);
+}
+
+void Renderer::drawShadows(SDL_GPUCommandBuffer* commands, const SceneView& view,
+                           const gpu::FrameUniforms& frame)
+{
+    // Always cleared, so receivers can sample it even when no trees cast shadows.
+    const SDL_GPUDepthStencilTargetInfo target{
+        .texture          = shadowMap_.texture(),
+        .clear_depth      = 1.0F,
+        .load_op          = SDL_GPU_LOADOP_CLEAR,
+        .store_op         = SDL_GPU_STOREOP_STORE,
+        .stencil_load_op  = SDL_GPU_LOADOP_DONT_CARE,
+        .stencil_store_op = SDL_GPU_STOREOP_DONT_CARE,
+        .cycle            = true,
+    };
+    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, nullptr, 0, &target);
+    if (view.trees != nullptr && view.shadow.params.x > 0.5F)
+    {
+        gpu::FrameUniforms light = frame;
+        light.viewProjection     = view.shadow.lightFromCameraRelative;
+        // Trees just outside the box can still throw shadows into it.
+        const double reach = static_cast<double>(view.shadow.params.z) * kShadowMapResolution;
+        passes_->trees.drawShadow(commands, pass, *view.trees,
+                                  view.trees->selectNear(view.camera.position, reach), light);
     }
     SDL_EndGPURenderPass(pass);
 }
@@ -303,7 +370,7 @@ void Renderer::drawDisplay(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* targe
         .store_op = SDL_GPU_STOREOP_STORE,
     };
     SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &color, 1, nullptr);
-    passes_->tonemap.draw(commands, pass, targets_.resolved(), view.exposure);
+    passes_->tonemap.draw(commands, pass, targets_.resolved(), view.exposure, view.grade);
     if (ui != nullptr)
     {
         ImGui_ImplSDLGPU3_RenderDrawData(ui, commands, pass);

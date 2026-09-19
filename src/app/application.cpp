@@ -41,6 +41,7 @@
 #include "StarshipSimulator/core/habitat/day_schedule.h"
 #include "StarshipSimulator/core/habitat/habitat_geometry.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
+#include "StarshipSimulator/core/habitat/landscape.h"
 #include "StarshipSimulator/core/habitat/metrics.h"
 #include "StarshipSimulator/core/habitat/mirror_optics.h"
 #include "StarshipSimulator/core/log.h"
@@ -50,12 +51,17 @@
 #include "StarshipSimulator/core/procgen/habitat_mesher.h"
 #include "StarshipSimulator/core/procgen/hull_mesh.h"
 #include "StarshipSimulator/core/procgen/star_field.h"
+#include "StarshipSimulator/core/procgen/terrain_grid.h"
+#include "StarshipSimulator/core/procgen/trees.h"
 #include "StarshipSimulator/core/scenario/scenario.h"
 #include "StarshipSimulator/render/gpu_device.h"
+#include "StarshipSimulator/render/gpu_landscape.h"
+#include "StarshipSimulator/render/gpu_trees.h"
 #include "StarshipSimulator/render/gpu_world.h"
 #include "StarshipSimulator/render/passes/marker_pass.h"
 #include "StarshipSimulator/render/renderer.h"
 #include "StarshipSimulator/render/shader_library.h"
+#include "StarshipSimulator/render/shadow_map.h"
 #include "hud.h"
 #include "sdl_input.h"
 #include "sky_loader.h"
@@ -82,8 +88,8 @@ constexpr double        kMaxFlightTime        = 60.0;  // s
 constexpr double        kBenchmarkViewSeconds = 3.0;
 constexpr double        kBenchmarkWarmup      = 0.5;
 constexpr double        kBenchmarkPanRate     = degreesToRadians(20.0);  // per second
-constexpr std::array<std::string_view, 7> kBenchmarkViews{"valley",  "lookup", "window",  "ramp",
-                                                          "sunward", "axis",   "overview"};
+constexpr std::array<std::string_view, 8> kBenchmarkViews{
+    "valley", "river", "lookup", "window", "ramp", "sunward", "axis", "overview"};
 constexpr Vec3d  kNorth(0.0, 0.0, 1.0);       // the "north" of the look rig: toward the sunward end
 constexpr double kStarMagnitudeLimit = 7.5;   // a little fainter than the naked eye in a dark sky
 constexpr double kMilkyWayScale      = 0.02;  // NASA's map (0..1) to scene radiance
@@ -93,6 +99,7 @@ constexpr double kLabelFadeSeconds   = 2.0;
 constexpr float  kBinocularsFovDeg   = 8.0F;
 constexpr float  kNormalFovDeg       = 70.0F;
 constexpr double kCaptureStepSeconds = 1.0 / 60.0;
+constexpr double kShadowHalfExtentM  = 300.0;  // the trees' shadows reach this far around you
 
 SDL_Window* createWindow(const AppOptions& options)
 {
@@ -159,8 +166,27 @@ Scenario loadInitialScenario(const AppOptions& options)
     return fallback;
 }
 
+/// Places kept free of trees: where the visit starts and the viewpoints near it.
+std::vector<Clearing> startClearings(const HabitatGeometry& geometry, const StartSpec& start)
+{
+    const int             strips = geometry.stripCount();
+    const int             valley = ((start.valley % strips) + strips) % strips;
+    const double          theta  = geometry.landCenter(valley);
+    const double          z      = std::clamp(start.zM, geometry.floorZMin(), geometry.floorZMax());
+    std::vector<Clearing> clearings{{.centre = geometry.surfacePoint(z, theta), .radiusM = 25.0}};
+    if (geometry.landscape().hasRivers())
+    {
+        const double riverZ = z + 300.0;  // the "river" view
+        const double bank =
+            geometry.landscape().riverAngle(valley, riverZ) +
+            (((0.5 * geometry.spec().terrain.riverWidthM) + 12.0) / geometry.radius());
+        clearings.push_back({.centre = geometry.surfacePoint(riverZ, bank), .radiusM = 20.0});
+    }
+    return clearings;
+}
+
 /// Builds geometry and meshes; safe to run on a worker thread.
-GeneratedWorld generateWorld(const OneillCylinderSpec& spec)
+GeneratedWorld generateWorld(const OneillCylinderSpec& spec, const StartSpec& visitStart)
 {
     const auto     start = std::chrono::steady_clock::now();
     GeneratedWorld world;
@@ -173,8 +199,16 @@ GeneratedWorld generateWorld(const OneillCylinderSpec& spec)
             buildHabitatMeshes(*world.geometry, MeshingSettings{.cellSizeM      = cell,
                                                                 .chunkSizeM     = 40.0 * cell,
                                                                 .glassCellSizeM = 20.0 * cell,
-                                                                .threads        = 0});
+                                                                .threads        = 0,
+                                                                .terrain        = false});
         world.hull = buildHullMesh(*world.geometry);
+        // The terrain on a grid of about 4 m for Island Three (about 6000 cells around).
+        const double terrainCell = 2.0 * kPi * spec.radiusM / 6144.0;
+        world.terrain            = sampleTerrain(*world.geometry, terrainCell);
+        world.lod.emplace(world.terrain, *world.geometry, 50.0 * world.terrain.layout.cellArcM);
+        world.trees =
+            plantTrees(*world.geometry, world.terrain,
+                       TreeSettings{.clearings = startClearings(*world.geometry, visitStart)});
     }
     catch (const std::exception& e)
     {
@@ -286,7 +320,7 @@ Application::Application(AppOptions options)
     setSaveName(editor_, scenario_.title);
     refreshScenarioList();
 
-    GeneratedWorld world = generateWorld(scenario_.habitat);
+    GeneratedWorld world = generateWorld(scenario_.habitat, scenario_.start);
     if (!world.geometry)
     {
         throw std::runtime_error(std::format("Cannot build the habitat: {}", world.error));
@@ -318,17 +352,28 @@ Application::Application(AppOptions options)
 
 void Application::adoptWorld(GeneratedWorld world, bool placeAtStartPoint)
 {
+    if (!world.lod)
+    {
+        throw std::runtime_error("the habitat's terrain was not generated");
+    }
     auto gpuWorld = std::make_unique<GpuWorld>(device_.get(), world.meshes);
+    auto gpuLandscape =
+        std::make_unique<GpuLandscape>(device_.get(), world.terrain, std::move(*world.lod));
+    auto gpuTrees = std::make_unique<GpuTrees>(device_.get(), world.trees);
     renderer_.setHull(world.hull);
     const Vec3d eye      = player_.eyePosition();
     const bool  hadWorld = geometry_ != nullptr;
     geometry_            = std::move(world.geometry);
     world_               = std::move(gpuWorld);
+    landscape_           = std::move(gpuLandscape);
+    trees_               = std::move(gpuTrees);
     metrics_             = computeMetrics(geometry_->spec());
     ball_.reset();
-    status_ = std::format("Generated {} in {:.1f} s: {:.2f} M triangles", scenario_.title,
-                          world.seconds, static_cast<double>(world_->triangleCount()) / 1e6);
+    status_ = std::format("Generated {} in {:.1f} s: {:.1f} M trees", scenario_.title,
+                          world.seconds, static_cast<double>(trees_->treeCount()) / 1e6);
     log::info("{}", status_);
+    log::info("Terrain and trees use about {:.0f} MB of GPU memory",
+              static_cast<double>(landscape_->memoryBytes() + trees_->memoryBytes()) / 1e6);
 
     if (placeAtStartPoint || !hadWorld)
     {
@@ -351,7 +396,7 @@ void Application::startGeneration(const OneillCylinderSpec& spec, bool placeAtSt
         return;  // one at a time
     }
     placeWhenReady_ = placeAtStartPoint;
-    pending_        = std::async(std::launch::async, generateWorld, spec);
+    pending_        = std::async(std::launch::async, generateWorld, spec, scenario_.start);
     status_         = "Generating the habitat...";
 }
 
@@ -492,6 +537,26 @@ void Application::applyView(std::string_view name)
     else if (name == "axis")
     {
         fly((radial(valley) * 20.0) + Vec3d(0.0, 0.0, geometry.walkableZMin() + 1500.0), 0.0, 0.0);
+    }
+    else if (name == "river" || name == "lake")
+    {
+        // On the bank (or the lake shore), looking along the water.
+        const Landscape& landscape   = geometry.landscape();
+        const int        valleyIndex = ((scenario_.start.valley % strips) + strips) % strips;
+        const auto       lake = std::ranges::find(landscape.lakes(), valleyIndex, &Lake::valley);
+        if (name == "lake" && lake != landscape.lakes().end())
+        {
+            const double z = lake->z - lake->halfLengthM - 25.0;
+            walk(z, lake->theta, 0.0, -2.0);
+        }
+        else
+        {
+            const double z = startZ + 300.0;
+            const double theta =
+                landscape.riverAngle(valleyIndex, z) +
+                (((0.5 * geometry.spec().terrain.riverWidthM) + 12.0) / geometry.radius());
+            walk(z, theta, 15.0, -4.0);
+        }
     }
     else if (name == "overview")
     {
@@ -864,6 +929,7 @@ HudActions Application::drawUi()
         .title          = scenario_.title,
         .geometry       = geometry_.get(),
         .metrics        = &metrics_,
+        .trees          = trees_ ? trees_->treeCount() : 0,
         .player         = &player_,
         .mouseCaptured  = input_.mouseCaptured(),
         .generating     = pending_.valid(),
@@ -1088,10 +1154,22 @@ std::optional<int> Application::render(int frame, bool screenshotRequested, ImDr
     const std::vector<Marker>   shapes = markers();
     const std::vector<BodyDraw> bodies = bodyDraws(lighting);
     const OneillCylinderSpec&   spec   = geometry_->spec();
-    const SceneView             scene{
-        .camera  = camera(),
-        .world   = world_.get(),
-        .habitat = gpu::makeHabitatUniforms(*geometry_, mirrorAngle(), lighting),
+    // The trees' shadows, along the beam that lights the ground here.
+    gpu::ShadowUniforms shadow;
+    if (const auto beam = dominantBeam(*geometry_, mirrorAngle(), player_.eyePosition()))
+    {
+        const auto beams = sunBeams(*geometry_, mirrorAngle());
+        shadow = gpu::makeShadowUniforms(player_.eyePosition(),
+                                         beams.at(static_cast<std::size_t>(*beam)).towardSun, *beam,
+                                         kShadowHalfExtentM, kShadowMapResolution);
+    }
+    const SceneView scene{
+        .camera    = camera(),
+        .world     = world_.get(),
+        .landscape = landscape_.get(),
+        .trees     = trees_.get(),
+        .shadow    = shadow,
+        .habitat   = gpu::makeHabitatUniforms(*geometry_, mirrorAngle(), lighting),
         .sky =
             gpu::makeSkyUniforms(habitatFromSky_, static_cast<double>(hudSettings_.starBrightness),
                                  kMilkyWayScale * static_cast<double>(hudSettings_.milkyWay)),
@@ -1102,6 +1180,7 @@ std::optional<int> Application::render(int frame, bool screenshotRequested, ImDr
                                          : std::nullopt,
         .markers  = shapes,
         .exposure = static_cast<float>(static_cast<double>(hudSettings_.exposure) * autoExposure()),
+        .grade    = hudSettings_.grade,
     };
     const FrameResult result = renderer_.renderFrame(scene, frameOptions);
     if (result.presented)

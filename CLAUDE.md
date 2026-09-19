@@ -22,7 +22,7 @@ Each builds into `build/<preset>/`; never edit anything under `build/`.
 ## Checking visuals yourself
 The app can render and save a screenshot without interaction, then exit:
 `build/clang-debug/bin/StarshipSimulator --size 1280x720 --view lookup [--mirror 30] --capture out.png [--capture-ui]`
-Views: valley, lookup, window, endcap, ramp, sunward, axis, overview (or `--camera x,y,z,yaw,pitch` in the
+Views: valley, river, lake, lookup, window, endcap, ramp, sunward, axis, overview (or `--camera x,y,z,yaw,pitch` in the
 habitat frame; `--scenario data/presets/coriolis_playground.toml` for the small habitat). Write captures to the
 scratchpad and inspect them with the Read tool before reporting visual work as done. The window opens briefly
 on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
@@ -31,37 +31,52 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
   `--fov 2.5` to zoom in. Captures step a fixed 1/60 s per frame and load the sky data synchronously, so they
   are repeatable; keep the window size small (e.g. 960x540), the compositor may resize large windows
 - Performance: `build/clang-release/bin/StarshipSimulator --size 1920x1080 --no-vsync --no-gpu-debug --benchmark`
-  prints average/p99 frame times over a fixed tour (M2 on the RTX A1000: ~5 ms average, ~9 ms p99)
-- ASan build of the app: `LSAN_OPTIONS=suppressions=tools/lsan.supp build/asan/bin/StarshipSimulator --no-gpu-debug ...`
+  prints average/p99 frame times over a fixed tour (M3 on the RTX A1000: ~6 ms average, ~13 ms p99; the goal is
+  p99 < 20 ms). The log reports the terrain and tree GPU memory at startup
+- ASan build of the app:
+  `LSAN_OPTIONS=suppressions=tools/lsan.supp:fast_unwind_on_malloc=0 build/asan/bin/StarshipSimulator --no-gpu-debug ...`
   (system libraries such as libdbus leak on purpose; the Vulkan validation layer leaks a few hundred bytes of its
-  own bookkeeping, so leave GPU debug off for leak checks)
+  own bookkeeping, so leave GPU debug off for leak checks; the NVIDIA driver keeps a few bytes per pipeline, which
+  only the slow unwinder can attribute)
 
 ## Layout
 - `include/StarshipSimulator/<module>/`: public headers; `src/<module>/`: sources
 - `core` (`StarshipSimulator_core`): everything that can be unit tested without a GPU. **No SDL, ImGui or
   render includes**: the `layering` test (`cmake/CheckLayering.cmake`) fails otherwise. Unit tests link only core
   - `habitat/`: `OneillCylinderSpec` (the shareable description), `metrics` (spin, gravity, air, hull strength),
-    `MeridianProfile` (the revolved cross-section), `HabitatGeometry` (regions, terrain, ground queries),
-    `mirror_optics` (where the sun appears, day/night), `day_schedule` (mirror angle by local time)
+    `MeridianProfile` (the revolved cross-section), `HabitatGeometry` (regions, terrain, ground queries, water,
+    forest density), `landscape` (rivers, lakes, shore shaping, woodland), `mirror_optics` (where the sun
+    appears, day/night, which beam lights a point), `day_schedule` (mirror angle by local time)
   - `astro/`: `SimTime` (int64 microseconds since J2000, UT), `ephemeris` (Astronomy Engine: bodies, Lagrange
     point locations, `computeSky`, `habitatFromEqj`: the spin axis points at the Sun), `star_catalog` (HYG),
     `sky_objects` (phases, naming what the crosshair points at)
   - `assets/`: file reading, gzip/zlib, a minimal OpenEXR reader (NASA's Milky Way map), JPEG/PNG via stb
   - `physics/`: `RotatingFrame` (centrifugal + Coriolis, exact free flight, `stepFreeBody`), `PlayerController`
-  - `procgen/`: deterministic noise, `habitat_mesher` (chunked meshes), `hull_mesh` (the outside, for the
+  - `procgen/`: deterministic noise, `terrain_grid` (the valley floor and endcaps sampled into a height field
+    and land-cover map, the GPU's source), `terrain_lod` (CDLOD quadtree: patches and morph ranges),
+    `trees` (procedural species meshes, planting in tiles), `habitat_mesher` (chunked meshes; the app
+    meshes only the glass and end walls, the landscape pass draws the land), `hull_mesh` (the outside, for the
     partner cylinder, and `partnerTransform`), placeholder star field, mesh primitives
-  - `scenario/`: TOML habitat files (toml++, used only in `scenario.cpp`); `gpu_abi/`: uniform structs, SPIR-V
-    reflection; plus camera, frustum, sim clock, app options
+  - The terrain sources are compiled with `-O2` even in Debug (`src/core/CMakeLists.txt`), or world generation
+    takes several seconds
+  - `scenario/`: TOML habitat files (toml++, used only in `scenario.cpp`; bump `kGeneratorVersion` when
+    generation changes); `gpu_abi/`: uniform structs, SPIR-V reflection, `color_grade` (the grading LUT); plus
+    camera, frustum, sim clock, app options
 - `render` (`StarshipSimulator_render`): SDL_GPU device, shader library, `GpuWorld` (all habitat chunks in one
-  vertex/index buffer), passes (Milky Way, stars, planets, Earth/Moon, partner hull, terrain, mirrors, markers,
-  glass, tonemap; drawn in that order), `texture.h` (uploads with GPU mipmaps), `pipeline.h` helper, ImGui layer
+  vertex/index buffer), `GpuLandscape` (height, cover and profile textures, the instanced CDLOD patch mesh),
+  `GpuTrees` (instances by tile, two detail levels), `ShadowMap` (trees, along the dominant mirror beam),
+  `DynamicBuffer` (per-frame storage uploads), passes (Milky Way, stars, planets, Earth/Moon, partner hull,
+  terrain disks, landscape, trees, mirrors, markers, water, glass, tonemap with the grade LUT; drawn in that
+  order after the shadow pass), `texture.h` (2D uploads with GPU mipmaps), `pipeline.h` helper, ImGui layer
 - `src/app/`: the `StarshipSimulator` executable (main loop, input, HUD, sky data loading on a worker thread);
   its headers are private
 - `third_party/`: vendored C code (Astronomy Engine, stb) in their own targets, never reformatted
 - `cmake/SkyData.cmake`: downloads the star catalog and sky maps (~52 MB, SHA-256 checked) once into
   `build/_downloads/sky`; off when `CI` is set. Tests using them skip when missing. Credits: `data/CREDITS.md`
 - `shaders/`: GLSL, compiled by glslc to `build/<preset>/bin/shaders/*.spv` (`cmake/Shaders.cmake`);
-  `include/habitat.glsl` holds the shared air (aerial perspective) and sunlight (mirror beams) models
+  `include/habitat.glsl` holds the shared air (aerial perspective) and sunlight (mirror beams) models;
+  `include/landscape.glsl` the height field and terrain shadow march, `include/shadow.glsl` the tree shadow
+  lookup, `include/terrain_colors.glsl` the fields, meadows and shore colours
 - `data/presets/*.toml`: scenario presets, copied to `build/<preset>/bin/data` at build time
 - `tests/`: GoogleTest files, named `*_test.cpp`, all in `StarshipSimulator_tests`
 - `cmake/ProjectOptions.cmake`: `StarshipSimulator_configure_target()` (warnings, sanitizers, coverage, tidy)

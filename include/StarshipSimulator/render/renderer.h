@@ -18,11 +18,14 @@
 #include "StarshipSimulator/core/procgen/mesh.h"
 #include "StarshipSimulator/core/procgen/star_field.h"
 #include "StarshipSimulator/render/gpu_device.h"
+#include "StarshipSimulator/render/gpu_landscape.h"
+#include "StarshipSimulator/render/gpu_trees.h"
 #include "StarshipSimulator/render/gpu_world.h"
 #include "StarshipSimulator/render/passes/marker_pass.h"
 #include "StarshipSimulator/render/passes/sky_passes.h"
 #include "StarshipSimulator/render/render_targets.h"
 #include "StarshipSimulator/render/shader_library.h"
+#include "StarshipSimulator/render/shadow_map.h"
 #include "StarshipSimulator/render/upload.h"
 
 struct ImDrawData;
@@ -47,14 +50,19 @@ struct BodyDraw
 struct SceneView
 {
     Camera                    camera;
-    const GpuWorld*           world = nullptr;  // the habitat; nothing but the sky if null
+    const GpuWorld*           world     = nullptr;  // the habitat; nothing but the sky if null
+    GpuLandscape*             landscape = nullptr;  // its terrain (patches picked per frame)
+    const GpuTrees*           trees     = nullptr;  // its trees
+    gpu::ShadowUniforms       shadow;               // the trees' shadow map (params.x = 0: none)
     gpu::HabitatUniforms      habitat;
     gpu::SkyUniforms          sky;
     gpu::PlanetUniforms       planets;
     std::span<const BodyDraw> bodies;   // farthest first
     std::optional<Mat4d>      partner;  // the partner cylinder: its frame -> the habitat frame
     std::span<const Marker>   markers;
-    float                     exposure = 1.0F;
+    float                     exposure         = 1.0F;
+    float                     grade            = 1.0F;  // strength of the painterly colour grade
+    double                    animationSeconds = 0.0;   // real time, for ripples and the like
 };
 
 /// The sky's images, decoded on the CPU. Missing ones keep their placeholders.
@@ -119,6 +127,8 @@ private:
     [[nodiscard]] std::unique_ptr<Passes> createPasses() const;
     void drawScene(SDL_GPUCommandBuffer* commands, const SceneView& view, std::uint32_t width,
                    std::uint32_t height, FrameResult& result);
+    void drawShadows(SDL_GPUCommandBuffer* commands, const SceneView& view,
+                     const gpu::FrameUniforms& frame);
     void drawDisplay(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* target, const SceneView& view,
                      ImDrawData* ui);
     [[nodiscard]] std::expected<std::filesystem::path, std::string> captureAndSubmit(
@@ -130,6 +140,7 @@ private:
     ShaderLibrary           shaders_;
     RenderTargets           targets_;
     SkyTextures             skyTextures_;
+    ShadowMap               shadowMap_;
     GpuMesh                 hull_;
     std::unique_ptr<Passes> passes_;
 };

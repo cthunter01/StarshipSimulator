@@ -29,3 +29,10 @@ vec3 linearToSrgb(vec3 linear)
     vec3 high = 1.055 * pow(linear, vec3(1.0 / 2.4)) - 0.055;
     return mix(low, high, step(vec3(0.0031308), linear));
 }
+
+vec3 srgbToLinear(vec3 srgb)
+{
+    vec3 low  = srgb / 12.92;
+    vec3 high = pow((srgb + 0.055) / 1.055, vec3(2.4));
+    return mix(low, high, step(vec3(0.04045), srgb));
+}

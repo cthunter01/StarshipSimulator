@@ -42,6 +42,7 @@ struct MeshingSettings
     double   chunkSizeM     = 1000.0;  // approximate chunk edge length
     double   glassCellSizeM = 500.0;   // along the axis; glass is flat
     unsigned threads        = 0;       // 0: one per hardware thread
+    bool     terrain        = true;    // false: glass and end walls only (the GPU draws the land)
 };
 
 struct HabitatMeshes

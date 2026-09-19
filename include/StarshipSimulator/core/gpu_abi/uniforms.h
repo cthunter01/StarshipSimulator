@@ -3,11 +3,14 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 #include "StarshipSimulator/core/astro/ephemeris.h"
 #include "StarshipSimulator/core/camera.h"
 #include "StarshipSimulator/core/habitat/habitat_geometry.h"
 #include "StarshipSimulator/core/math.h"
+#include "StarshipSimulator/core/procgen/terrain_grid.h"
+#include "StarshipSimulator/core/procgen/terrain_lod.h"
 
 // C++ mirrors of the std140 uniform blocks in shaders/include/*.glsl. Only vec4 and mat4 members
 // (and arrays of them), so C++ and GLSL layouts agree without padding rules. Keep both sides in
@@ -22,8 +25,9 @@ struct alignas(16) FrameUniforms
     Mat4f inverseViewProjection{1.0F};  // for reconstructing view rays from NDC
     Vec4f cameraPosition{0.0F};         // xyz: camera in the habitat frame, w: near plane (m)
     Vec4f viewport{0.0F};               // xy: size in pixels, zw: 1 / size
+    Vec4f time{0.0F};  // x: seconds for animation (ripples, leaves), wraps every hour
 };
-static_assert(sizeof(FrameUniforms) == 160);
+static_assert(sizeof(FrameUniforms) == 176);
 static_assert(offsetof(FrameUniforms, cameraPosition) == 128);
 
 inline constexpr std::size_t kMaxSunBeams = 6;
@@ -82,6 +86,40 @@ struct alignas(16) PlacementUniforms
 };
 static_assert(sizeof(PlacementUniforms) == 64);
 
+inline constexpr std::size_t kMaxTerrainLevels = 12;
+
+/// The level-of-detail terrain (shaders/include/landscape.glsl, block "Landscape").
+struct alignas(16) LandscapeUniforms
+{
+    // x: columns, y: rows (along the profile), z: metres per row, w: 2 pi / columns
+    Vec4f grid{0.0F};
+    // x: height at texel value 0, y: at 1 (the UNORM range), z: water level, w: floor radius
+    Vec4f heights{0.0F};
+    // Per level: x: morph start (m), y: morph end, z: 1 / (end - start)
+    std::array<Vec4f, kMaxTerrainLevels> morph{};
+    Vec4f mode{0.0F};    // x: 0 = ground, 1 = water surface; y: water pass (0 dims, 1 adds)
+    Vec4f extent{0.0F};  // x, y: z range of the profile (for the arc-by-z table)
+};
+static_assert(sizeof(LandscapeUniforms) == 16 * (4 + kMaxTerrainLevels));
+
+/// The trees' shadow map (shaders/include/shadow.glsl, block "Shadow"): an orthographic view along
+/// one mirror's beam, centred on the camera.
+struct alignas(16) ShadowUniforms
+{
+    Mat4f lightFromCameraRelative{1.0F};  // camera-relative position -> shadow clip space (0..1 z)
+    Vec4f params{0.0F};  // x: 1 = in use, y: the window whose beam it is for, z: texel (m), w: bias
+};
+static_assert(sizeof(ShadowUniforms) == 80);
+
+/// Per-draw data for instanced trees (shaders/tree.vert, block "TreeDraw").
+struct alignas(16) TreeDrawUniforms
+{
+    Vec4f origin{0.0F};  // xyz: the tile's origin relative to the camera
+    Vec4f lod{0.0F};     // x: 1 = detailed mesh, y: detail end (m), z: blend (m), w: far end (m)
+    Vec4f fade{0.0F};    // x: fade-out length (m)
+};
+static_assert(sizeof(TreeDrawUniforms) == 48);
+
 /// Per-draw data for meshes (shaders/mesh.vert, block "Draw").
 struct alignas(16) DrawUniforms
 {
@@ -101,13 +139,13 @@ static_assert(sizeof(MaterialUniforms) == 32);
 /// Tonemapping (shaders/tonemap.frag, block "Tonemap").
 struct alignas(16) TonemapUniforms
 {
-    Vec4f params{1.0F, 1.0F, 0.0F, 0.0F};  // x: exposure, y: 1 = encode sRGB (UNORM target)
+    Vec4f params{1.0F, 1.0F, 0.0F, 0.0F};  // x: exposure, y: 1 = encode sRGB, z: grade strength
 };
 static_assert(sizeof(TonemapUniforms) == 16);
 
 /// Builds the per-frame uniforms for a camera and a render target size in pixels.
 [[nodiscard]] FrameUniforms makeFrameUniforms(const Camera& camera, std::uint32_t width,
-                                              std::uint32_t height);
+                                              std::uint32_t height, double animationSeconds = 0.0);
 
 /// Artistic lighting controls on top of the physical model.
 struct LightingSettings
@@ -126,6 +164,17 @@ struct LightingSettings
 /// (see astro::habitatFromEqj).
 [[nodiscard]] SkyUniforms makeSkyUniforms(const Mat3d& habitatFromInertial, double starBrightness,
                                           double milkyWayBrightness);
+
+/// The terrain grid and its level-of-detail morph distances.
+[[nodiscard]] LandscapeUniforms makeLandscapeUniforms(const TerrainGrid&               grid,
+                                                      const std::vector<TerrainMorph>& morphs);
+
+/// A shadow map box of 2 * halfExtentM across, centred on the camera and looking along the beam
+/// toward the sun image; snapped to whole texels in the habitat frame so shadows do not crawl as
+/// the camera moves.
+[[nodiscard]] ShadowUniforms makeShadowUniforms(const Vec3d& cameraPosition, const Vec3d& towardSun,
+                                                int window, double halfExtentM,
+                                                std::uint32_t resolution);
 
 /// Earth or the Moon as seen from the habitat. Sunlight is in the same scene units as the light
 /// in the habitat (LightingSettings::sunIntensity).

@@ -278,7 +278,7 @@ TEST(SpirvReflect, AllBuiltShadersFollowTheSdlGpuLayout)
     EXPECT_GE(checked, 5);
 }
 
-TEST(SpirvReflect, TonemapShaderHasOneTextureAndOneUniformBlock)
+TEST(SpirvReflect, TonemapShaderHasTwoTexturesAndOneUniformBlock)
 {
     const std::filesystem::path path =
         std::filesystem::path(STARSHIPSIMULATOR_SHADER_DIR) / "tonemap.frag.spv";
@@ -290,7 +290,7 @@ TEST(SpirvReflect, TonemapShaderHasOneTextureAndOneUniformBlock)
     const auto reflection = gpu::reflectSpirv(gpu::spirvWordsFromBytes(bytes).value());
     ASSERT_TRUE(reflection.has_value());
     EXPECT_EQ(reflection->stage, gpu::ShaderStage::Fragment);
-    EXPECT_EQ(reflection->counts().samplers, 1U);
+    EXPECT_EQ(reflection->counts().samplers, 2U);  // the scene and the colour grade
     EXPECT_EQ(reflection->counts().uniformBuffers, 1U);
 }
 

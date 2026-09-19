@@ -5,7 +5,7 @@ the land overhead, and see an astronomically accurate sky. The goal: help people
 space that we could actually build, with the real physics of spin gravity (Coriolis drift, gravity that fades
 toward the axis) and real stars and planets outside.
 
-**Status: M2: the real sky.** Walk the valleys of Gerard O'Neill's Island Three, an 8 km wide, 32 km long
+**Status: M3: a living valley.** Walk the valleys of Gerard O'Neill's Island Three, an 8 km wide, 32 km long
 cylinder at the Earth-Moon L5 point: farmland curving up overhead through blue haze, three window strips, three
 mirrors bringing in the sunlight, mountain ramps at one end and a dome at the other. The physics is real:
 gravity comes from spin (and fades as you climb toward the axis), jumps and thrown balls drift from the Coriolis
@@ -16,7 +16,13 @@ the planets, and Earth (two degrees across, with its phases, clouds and city lig
 at their true positions, sweeping past as the habitat turns every two minutes. The mirrors swing through a day
 schedule: morning, noon, sunset, and a night with the stars. Alongside flies the counter-rotating partner
 cylinder, 80 km away. Press I to name the star or planet under the crosshair, B for binoculars. A habitat
-editor lets you design your own cylinder and save it as a small TOML file. Next up, M3: a living valley.
+editor lets you design your own cylinder and save it as a small TOML file.
+
+The valleys are alive: a river meanders down each one, widening into lakes, between patchwork fields, meadows
+and woods of 2.7 million trees (oaks, pines and riverside poplars) that cast soft shadows, as do the hills. The
+land stays sharp from your feet to the far side 8 km overhead without popping as you move, and a colour grade
+gives it the warm light of the 1970s habitat paintings (the "Painted colours" slider in the HUD). Next up, M4:
+towns.
 
 ## Requirements
 - Linux with a Vulkan GPU
@@ -51,7 +57,7 @@ F12 saves a screenshot to
 
 Useful options (`--help` lists all):
 ```sh
-StarshipSimulator --view lookup                       # start looking up at the far side
+StarshipSimulator --view lookup                       # start looking up at the far side (or river, lake, ...)
 StarshipSimulator --time 2045-06-15T23:00             # night (UTC; the habitat's day runs 06:00-20:00)
 StarshipSimulator --look-at earth                     # look out of a window at Earth (or moon, jupiter, Vega, partner)
 StarshipSimulator --time-scale 3600                   # an hour per second: watch the day go by

@@ -13,6 +13,7 @@ add_executable(StarshipSimulator_tests
     sim_clock_test.cpp
     spirv_reflect_test.cpp
     star_catalog_test.cpp
+    terrain_test.cpp
     uniforms_test.cpp)
 target_link_libraries(StarshipSimulator_tests PRIVATE StarshipSimulator::core GTest::gtest_main)
 # spirv_reflect_test checks every compiled shader against SDL_GPU's binding rules.

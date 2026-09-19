@@ -61,6 +61,10 @@ struct TerrainSpec
     double        hillHeightM     = 40.0;   // rolling hills on the valley floors
     double        mountainHeightM = 120.0;  // extra relief on the endcaps
     double        featureSizeM    = 800.0;  // typical hill spacing
+    double        riverWidthM     = 40.0;   // a meandering river along each valley; 0 for none
+    int           lakesPerValley  = 2;      // shallow lakes on the river's course
+    double        lakeRadiusM     = 300.0;  // typical lake half-width across the valley
+    double        forestCover     = 0.35;   // share of the valley floors under woods
 };
 
 /// An O'Neill cylinder: a spinning cylinder with land strips alternating with window strips.

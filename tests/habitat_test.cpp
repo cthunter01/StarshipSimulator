@@ -7,6 +7,7 @@
 #include "StarshipSimulator/core/habitat/day_schedule.h"
 #include "StarshipSimulator/core/habitat/habitat_geometry.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
+#include "StarshipSimulator/core/habitat/landscape.h"
 #include "StarshipSimulator/core/habitat/meridian_profile.h"
 #include "StarshipSimulator/core/habitat/metrics.h"
 #include "StarshipSimulator/core/habitat/mirror_optics.h"
@@ -24,6 +25,8 @@ OneillCylinderSpec flatIslandThree()
     OneillCylinderSpec spec;
     spec.terrain.hillHeightM     = 0.0;
     spec.terrain.mountainHeightM = 0.0;
+    spec.terrain.riverWidthM     = 0.0;
+    spec.terrain.lakesPerValley  = 0;
     return spec;
 }
 
@@ -150,10 +153,12 @@ TEST(HabitatGeometry, WindowsAreFlatGlassAndLandHasHills)
     for (int i = 0; i < 200; ++i)
     {
         const double z = -8000.0 + (80.0 * i);
-        const double h = geometry.terrainHeight(z, kPi);
+        const double h = geometry.naturalHeight(z, kPi);
         EXPECT_GE(h, 0.0);
         EXPECT_LE(h, geometry.spec().terrain.hillHeightM + 1e-9);
         highest = std::max(highest, h);
+        // Rivers and lakes cut into it, down to wading depth.
+        EXPECT_GE(geometry.terrainHeight(z, kPi), kWaterLevelM - kWaterDepthM - 1e-9);
     }
     EXPECT_GT(highest, 5.0);
 }

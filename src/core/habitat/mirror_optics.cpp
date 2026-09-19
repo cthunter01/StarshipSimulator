@@ -1,7 +1,9 @@
 #include "StarshipSimulator/core/habitat/mirror_optics.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <optional>
 #include <vector>
 
 #include "StarshipSimulator/core/habitat/habitat_geometry.h"
@@ -70,6 +72,52 @@ std::vector<SunBeam> sunBeams(const HabitatGeometry& geometry, double openingAng
                          .intensity = intensity});
     }
     return beams;
+}
+
+double beamReach(const HabitatGeometry& geometry, const Vec3d& p, const SunBeam& beam)
+{
+    const Vec3d& s = beam.towardSun;
+    const double a = (s.x * s.x) + (s.y * s.y);
+    if (a < 1e-8)
+    {
+        return 0.0;
+    }
+    const double r    = geometry.radius();
+    const double b    = (p.x * s.x) + (p.y * s.y);
+    const double c    = (p.x * p.x) + (p.y * p.y) - (r * r);
+    const double disc = (b * b) - (a * c);
+    if (disc < 0.0)
+    {
+        return 0.0;
+    }
+    const Vec3d  exit   = p + (s * ((-b + std::sqrt(disc)) / a));
+    const double off    = HabitatGeometry::angularDistance(HabitatGeometry::angleOf(exit),
+                                                           geometry.windowCenter(beam.window));
+    const double half   = geometry.windowHalfAngle();
+    const double across = 1.0 - glm::smoothstep(half - 0.004, half, off);
+    const double along =
+        glm::smoothstep(geometry.floorZMin(), geometry.floorZMin() + 40.0, exit.z) *
+        (1.0 - glm::smoothstep(geometry.floorZMax() - 40.0, geometry.floorZMax(), exit.z));
+    return across * along;
+}
+
+std::optional<int> dominantBeam(const HabitatGeometry& geometry, double openingAngle,
+                                const Vec3d& p)
+{
+    const Vec3d        up = HabitatGeometry::localUp(p);
+    std::optional<int> best;
+    double             strongest = 0.0;
+    for (const SunBeam& beam : sunBeams(geometry, openingAngle))
+    {
+        const double light = beam.intensity * beamReach(geometry, p, beam) *
+                             std::max(glm::dot(up, beam.towardSun), 0.05);
+        if (light > strongest)
+        {
+            strongest = light;
+            best      = beam.window;
+        }
+    }
+    return best;
 }
 
 }  // namespace StarshipSimulator

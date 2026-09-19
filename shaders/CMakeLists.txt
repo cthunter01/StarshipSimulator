@@ -10,12 +10,18 @@ StarshipSimulator_add_shaders(StarshipSimulator_shaders
         glass.frag
         habitat.frag
         hull.frag
+        landscape.frag
+        landscape.vert
         marker.frag
         mesh.vert
         milkyway.frag
         mirror.frag
         mirror.vert
         planets.vert
+        shadow.frag
         stars.frag
         stars.vert
-        tonemap.frag)
+        tonemap.frag
+        tree.frag
+        tree.vert
+        water.frag)

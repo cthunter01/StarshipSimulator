@@ -63,6 +63,10 @@ SDL_GPUDepthStencilState depthState(DepthMode mode)
             return {.compare_op         = SDL_GPU_COMPAREOP_ALWAYS,
                     .enable_depth_test  = true,
                     .enable_depth_write = true};
+        case DepthMode::ShadowWrite:
+            return {.compare_op         = SDL_GPU_COMPAREOP_LESS,
+                    .enable_depth_test  = true,
+                    .enable_depth_write = true};
     }
     return {};
 }
@@ -106,7 +110,15 @@ GpuGraphicsPipeline createPipeline(SDL_GPUDevice* device, const PipelineDescript
          .offset      = offsetof(Vertex, material)},
     }};
     SDL_GPUVertexInputState                     vertexInput{};
-    if (description.meshVertices)
+    if (!description.vertexBuffers.empty())
+    {
+        vertexInput = {
+            .vertex_buffer_descriptions = description.vertexBuffers.data(),
+            .num_vertex_buffers         = static_cast<Uint32>(description.vertexBuffers.size()),
+            .vertex_attributes          = description.vertexAttributes.data(),
+            .num_vertex_attributes      = static_cast<Uint32>(description.vertexAttributes.size())};
+    }
+    else if (description.meshVertices)
     {
         vertexInput = {.vertex_buffer_descriptions = &vertexBuffer,
                        .num_vertex_buffers         = 1,
@@ -115,6 +127,9 @@ GpuGraphicsPipeline createPipeline(SDL_GPUDevice* device, const PipelineDescript
     }
 
     const bool hasDepth = description.depthFormat != SDL_GPU_TEXTUREFORMAT_INVALID;
+    const bool hasColor = description.colorFormat != SDL_GPU_TEXTUREFORMAT_INVALID;
+    const bool hasBias =
+        description.depthBiasConstant != 0.0F || description.depthBiasSlope != 0.0F;
     const SDL_GPUColorTargetDescription colorTarget{.format      = description.colorFormat,
                                                     .blend_state = blendState(description.blend)};
     const SDL_GPUGraphicsPipelineCreateInfo info{
@@ -122,15 +137,18 @@ GpuGraphicsPipeline createPipeline(SDL_GPUDevice* device, const PipelineDescript
         .fragment_shader    = description.fragmentShader,
         .vertex_input_state = vertexInput,
         .primitive_type     = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,
-        .rasterizer_state   = {.fill_mode         = SDL_GPU_FILLMODE_FILL,
-                               .cull_mode         = description.cull,
-                               .front_face        = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE,
-                               .enable_depth_clip = true},
+        .rasterizer_state   = {.fill_mode                  = SDL_GPU_FILLMODE_FILL,
+                               .cull_mode                  = description.cull,
+                               .front_face                 = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE,
+                               .depth_bias_constant_factor = description.depthBiasConstant,
+                               .depth_bias_slope_factor    = description.depthBiasSlope,
+                               .enable_depth_bias          = hasBias,
+                               .enable_depth_clip          = true},
         .multisample_state  = {.sample_count = description.samples},
         .depth_stencil_state =
             hasDepth ? depthState(description.depth) : SDL_GPUDepthStencilState{},
-        .target_info = {.color_target_descriptions = &colorTarget,
-                        .num_color_targets         = 1,
+        .target_info = {.color_target_descriptions = hasColor ? &colorTarget : nullptr,
+                        .num_color_targets         = hasColor ? 1U : 0U,
                         .depth_stencil_format      = description.depthFormat,
                         .has_depth_stencil_target  = hasDepth},
     };

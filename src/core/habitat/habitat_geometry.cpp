@@ -8,6 +8,7 @@
 #include <string>
 
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
+#include "StarshipSimulator/core/habitat/landscape.h"
 #include "StarshipSimulator/core/habitat/meridian_profile.h"
 #include "StarshipSimulator/core/habitat/metrics.h"
 #include "StarshipSimulator/core/math.h"
@@ -19,15 +20,16 @@ namespace StarshipSimulator
 namespace
 {
 
-constexpr double kWindowMarginM  = 30.0;   // flat walkway beside the glass
-constexpr double kWindowBlendM   = 200.0;  // terrain fades in over this distance
-constexpr double kHubBlendM      = 150.0;  // terrain fades out toward the hub
-constexpr double kMountainBlendM = 400.0;  // endcap relief fades in from the floor
-constexpr double kEndMarginM     = 1.0;    // keep off the end walls
-constexpr double kPoleRadiusM    = 5.0;    // dome poles: stop where the dome closes in
-constexpr double kNormalStepM    = 0.5;
-constexpr int    kHillOctaves    = 5;
-constexpr int    kRidgeOctaves   = 5;
+constexpr double kWindowMarginM    = 30.0;   // flat walkway beside the glass
+constexpr double kWindowBlendM     = 200.0;  // terrain fades in over this distance
+constexpr double kHubBlendM        = 150.0;  // terrain fades out toward the hub
+constexpr double kMountainBlendM   = 400.0;  // endcap relief fades in from the floor
+constexpr double kEndMarginM       = 1.0;    // keep off the end walls
+constexpr double kPoleRadiusM      = 5.0;    // dome poles: stop where the dome closes in
+constexpr double kNormalStepM      = 0.5;
+constexpr int    kHillOctaves      = 5;
+constexpr int    kRidgeOctaves     = 5;
+constexpr double kFloodplainReachM = 250.0;  // water shapes the land out to this distance
 
 OneillCylinderSpec validated(const OneillCylinderSpec& spec)
 {
@@ -104,7 +106,13 @@ HabitatGeometry::HabitatGeometry(const OneillCylinderSpec& spec)
     ridges_(hashSeed(spec_.terrain.seed, 2)),
     omega_(spinRate(spec_.radiusM, spec_.surfaceGravityG)),
     floorZMin_((-spec_.lengthM / 2.0) + endcapDepthInside(spec_.antisunwardEndcap, spec_.radiusM)),
-    floorZMax_((spec_.lengthM / 2.0) - endcapDepthInside(spec_.sunwardEndcap, spec_.radiusM))
+    floorZMax_((spec_.lengthM / 2.0) - endcapDepthInside(spec_.sunwardEndcap, spec_.radiusM)),
+    landscape_(spec_.terrain, LandscapeFrame{.radiusM         = spec_.radiusM,
+                                             .floorZMin       = floorZMin_,
+                                             .floorZMax       = floorZMax_,
+                                             .stripCount      = spec_.stripPairs,
+                                             .stripAngle      = stripAngle(),
+                                             .windowHalfAngle = windowHalfAngle()})
 {
     walkableZMin_ =
         std::max(profile_.zMin() + kEndMarginM, zWhereRadiusReaches(profile_, kPoleRadiusM, false));
@@ -190,6 +198,12 @@ double HabitatGeometry::distanceToWindow(double z, double theta, double radius) 
 
 double HabitatGeometry::terrainHeight(double z, double theta) const
 {
+    return Landscape::shapeNearWater(naturalHeight(z, theta),
+                                     landscape_.shoreDistance(z, theta, kFloodplainReachM));
+}
+
+double HabitatGeometry::naturalHeight(double z, double theta) const
+{
     const std::optional<double> baseRadius = profile_.radiusAt(z);
     if (!baseRadius)
     {
@@ -223,6 +237,30 @@ double HabitatGeometry::terrainHeight(double z, double theta) const
             terrain.mountainHeightM * mountainWeight * ridges_.ridged(q * 1.3, kRidgeOctaves);
     }
     return mask * (hills + mountains);
+}
+
+double HabitatGeometry::forestDensity(double z, double theta) const
+{
+    const std::optional<double> baseRadius = profile_.radiusAt(z);
+    if (!baseRadius || regionAt(z, theta).kind == RegionKind::Window)
+    {
+        return 0.0;
+    }
+    const double radius = *baseRadius;
+    // Not on the walkways beside the windows, nor in or right beside the water (meadows there).
+    const double walkway = glm::smoothstep(kWindowMarginM + 20.0, kWindowMarginM + 120.0,
+                                           distanceToWindow(z, theta, radius));
+    const double shore   = landscape_.shoreDistance(z, theta, kFloodplainReachM);
+    const double water   = glm::smoothstep(15.0, 90.0, shore);
+    // Woods thin out up the endcap mountains and stop near the hub.
+    const double beyondFloor = std::max({0.0, floorZMin_ - z, z - floorZMax_});
+    const double treeLine    = 1.0 - glm::smoothstep(0.35, 0.6, beyondFloor / spec_.radiusM);
+    return landscape_.woodland(z, theta) * walkway * water * treeLine;
+}
+
+double HabitatGeometry::waterDepth(double z, double theta) const
+{
+    return std::max(0.0, kWaterLevelM - terrainHeight(z, theta));
 }
 
 std::optional<double> HabitatGeometry::groundRadius(double z, double theta) const

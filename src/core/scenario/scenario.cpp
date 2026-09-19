@@ -308,11 +308,16 @@ void readHabitat(const toml::table& table, OneillCylinderSpec& spec,
     if (const toml::table* terrain = habitat.table("terrain"))
     {
         TableReader reader(*terrain, "habitat.terrain", error);
-        reader.allowOnly({"seed", "hill_height_m", "mountain_height_m", "feature_size_m"});
+        reader.allowOnly({"seed", "hill_height_m", "mountain_height_m", "feature_size_m",
+                          "river_width_m", "lakes_per_valley", "lake_radius_m", "forest_cover"});
         reader.read("seed", spec.terrain.seed);
         reader.read("hill_height_m", spec.terrain.hillHeightM);
         reader.read("mountain_height_m", spec.terrain.mountainHeightM);
         reader.read("feature_size_m", spec.terrain.featureSizeM);
+        reader.read("river_width_m", spec.terrain.riverWidthM);
+        reader.read("lakes_per_valley", spec.terrain.lakesPerValley);
+        reader.read("lake_radius_m", spec.terrain.lakeRadiusM);
+        reader.read("forest_cover", spec.terrain.forestCover);
     }
 }
 
@@ -515,11 +520,14 @@ std::string serializeScenario(const Scenario& scenario)
     out += std::format("\n[habitat.atmosphere]\nsurface_pressure_kpa = {}\ntemperature_k = {}\n",
                        number(spec.atmosphere.surfacePressurePa / 1000.0),
                        number(spec.atmosphere.temperatureK));
+    const TerrainSpec& terrain = spec.terrain;
     out += std::format(
         "\n[habitat.terrain]\nseed = {}\nhill_height_m = {}\nmountain_height_m = {}\n"
-        "feature_size_m = {}\n",
-        spec.terrain.seed, number(spec.terrain.hillHeightM), number(spec.terrain.mountainHeightM),
-        number(spec.terrain.featureSizeM));
+        "feature_size_m = {}\nriver_width_m = {}\nlakes_per_valley = {}\nlake_radius_m = {}\n"
+        "forest_cover = {}\n",
+        terrain.seed, number(terrain.hillHeightM), number(terrain.mountainHeightM),
+        number(terrain.featureSizeM), number(terrain.riverWidthM), terrain.lakesPerValley,
+        number(terrain.lakeRadiusM), number(terrain.forestCover));
     out +=
         std::format("\n[start]\nvalley = {}\nz_m = {}\nheading_deg = {}\n", scenario.start.valley,
                     number(scenario.start.zM), number(scenario.start.headingDeg));

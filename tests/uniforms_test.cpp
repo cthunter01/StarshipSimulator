@@ -8,6 +8,7 @@
 #include "StarshipSimulator/core/astro/astro_time.h"
 #include "StarshipSimulator/core/astro/ephemeris.h"
 #include "StarshipSimulator/core/camera.h"
+#include "StarshipSimulator/core/gpu_abi/color_grade.h"
 #include "StarshipSimulator/core/habitat/habitat_geometry.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
 #include "StarshipSimulator/core/math.h"
@@ -133,6 +134,45 @@ TEST(PlanetUniforms, CarriesTheSevenPlanets)
         EXPECT_NEAR(glm::length(StarshipSimulator::Vec3f(planets.stars.at(2 * i))), 1.0F, 1e-5F);
         EXPECT_GT(planets.stars.at((2 * i) + 1).y, 0.0F);
     }
+}
+
+TEST(ColorGrade, KeepsGreysNeutralAndStaysInRange)
+{
+    const StarshipSimulator::GradeSettings grade;
+    for (const double v : {0.0, 0.25, 0.5, 0.75, 1.0})
+    {
+        const Vec3d g = StarshipSimulator::gradeColor(Vec3d(v), grade);
+        // Split toning tints greys a little, but they stay near grey and in order.
+        EXPECT_NEAR(g.x, g.y, 0.06);
+        EXPECT_NEAR(g.z, g.y, 0.06);
+        EXPECT_GE(g.y, 0.0);
+        EXPECT_LE(g.y, 1.0);
+    }
+    EXPECT_LT(StarshipSimulator::gradeColor(Vec3d(0.25), grade).y,
+              StarshipSimulator::gradeColor(Vec3d(0.75), grade).y);
+}
+
+TEST(ColorGrade, GreensLeanTowardYellowAndHighlightsWarm)
+{
+    const StarshipSimulator::GradeSettings grade;
+    const Vec3d                            green  = Vec3d(0.2, 0.55, 0.15);
+    const Vec3d                            graded = StarshipSimulator::gradeColor(green, grade);
+    EXPECT_GT(graded.x / graded.y, green.x / green.y);  // more yellow
+    const Vec3d light = StarshipSimulator::gradeColor(Vec3d(0.9), grade);
+    EXPECT_GT(light.x, light.z);  // golden
+}
+
+TEST(ColorGrade, LookupTableMatchesTheGrade)
+{
+    const StarshipSimulator::GradeSettings grade;
+    const auto                             lut = StarshipSimulator::makeGradeLut(grade, 17);
+    ASSERT_EQ(lut.size(), 17U * 17U * 17U * 4U);
+    // Entry (r, g, b) = (16, 8, 0): red fastest.
+    const std::size_t i = ((std::size_t{8} * 17) + 16) * 4;
+    const Vec3d       g = StarshipSimulator::gradeColor(Vec3d(1.0, 0.5, 0.0), grade);
+    EXPECT_NEAR(lut[i] / 255.0, g.x, 1.0 / 255.0);
+    EXPECT_NEAR(lut[i + 1] / 255.0, g.y, 1.0 / 255.0);
+    EXPECT_EQ(lut[i + 3], 255);
 }
 
 }  // namespace

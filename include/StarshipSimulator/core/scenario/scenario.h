@@ -37,7 +37,7 @@ struct SkySpec
 struct Scenario
 {
     static constexpr int kFormatVersion    = 1;  // file layout
-    static constexpr int kGeneratorVersion = 1;  // terrain/mesh generation algorithms
+    static constexpr int kGeneratorVersion = 2;  // terrain generation (2: rivers, lakes, woods)
 
     int                formatVersion    = kFormatVersion;
     int                generatorVersion = kGeneratorVersion;

@@ -110,6 +110,17 @@ std::vector<std::string> validate(const OneillCylinderSpec& spec)
         problems.emplace_back(
             "terrain needs a feature size of at least 50 m and non-negative heights");
     }
+    const TerrainSpec& terrain = spec.terrain;
+    if (terrain.riverWidthM < 0.0 || terrain.riverWidthM > 300.0 || terrain.lakesPerValley < 0 ||
+        terrain.lakesPerValley > 8 || terrain.lakeRadiusM < 10.0 || terrain.lakeRadiusM > 3000.0)
+    {
+        problems.emplace_back(
+            "water needs a river width of 0..300 m, 0..8 lakes per valley and lakes of 10..3000 m");
+    }
+    if (terrain.forestCover < 0.0 || terrain.forestCover > 0.9)
+    {
+        problems.emplace_back("forest cover must be between 0 and 0.9");
+    }
     if (spec.partner.enabled && spec.partner.separationM < minimumPartnerSeparation(spec))
     {
         problems.push_back(std::format(

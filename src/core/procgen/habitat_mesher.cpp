@@ -403,7 +403,7 @@ std::vector<Job> planJobs(const HabitatGeometry& geometry, const Grid& grid,
                 const double z1 = profile.pointAt(grid.rows[rows.last]).x;
                 jobs.push_back(glassJob(segs.first, segs.last, z0, z1));
             }
-            else
+            else if (settings.terrain)
             {
                 jobs.push_back(terrainJob(rows.floor ? material::kValley : material::kEndcap,
                                           rows.first, rows.last, segs.first, segs.last));

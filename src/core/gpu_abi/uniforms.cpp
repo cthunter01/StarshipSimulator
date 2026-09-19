@@ -4,15 +4,19 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 #include "StarshipSimulator/core/astro/ephemeris.h"
 #include "StarshipSimulator/core/astro/star_catalog.h"
 #include "StarshipSimulator/core/camera.h"
 #include "StarshipSimulator/core/habitat/habitat_geometry.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
+#include "StarshipSimulator/core/habitat/landscape.h"
 #include "StarshipSimulator/core/habitat/mirror_optics.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/procgen/star_field.h"
+#include "StarshipSimulator/core/procgen/terrain_grid.h"
+#include "StarshipSimulator/core/procgen/terrain_lod.h"
 #include "StarshipSimulator/core/units.h"
 
 namespace StarshipSimulator::gpu
@@ -48,7 +52,8 @@ double planetColorKelvin(astro::Body body)
 
 }  // namespace
 
-FrameUniforms makeFrameUniforms(const Camera& camera, std::uint32_t width, std::uint32_t height)
+FrameUniforms makeFrameUniforms(const Camera& camera, std::uint32_t width, std::uint32_t height,
+                                double animationSeconds)
 {
     const double safeWidth      = std::max(1.0, static_cast<double>(width));
     const double safeHeight     = std::max(1.0, static_cast<double>(height));
@@ -59,6 +64,7 @@ FrameUniforms makeFrameUniforms(const Camera& camera, std::uint32_t width, std::
     frame.inverseViewProjection = Mat4f(glm::inverse(viewProjection));
     frame.cameraPosition        = Vec4f(Vec4d(camera.position, camera.nearPlaneMeters));
     frame.viewport = Vec4f(Vec4d(safeWidth, safeHeight, 1.0 / safeWidth, 1.0 / safeHeight));
+    frame.time = Vec4f(static_cast<float>(std::fmod(animationSeconds, 3600.0)), 0.0F, 0.0F, 0.0F);
     return frame;
 }
 
@@ -106,6 +112,50 @@ SkyUniforms makeSkyUniforms(const Mat3d& habitatFromInertial, double starBrightn
     sky.habitatFromInertial = Mat4f(Mat4d(habitatFromInertial));
     sky.params              = Vec4f(Vec4d(starBrightness, milkyWayBrightness, 0.0, 0.0));
     return sky;
+}
+
+LandscapeUniforms makeLandscapeUniforms(const TerrainGrid&               grid,
+                                        const std::vector<TerrainMorph>& morphs)
+{
+    const TerrainGridLayout& layout = grid.layout;
+    LandscapeUniforms        uniforms;
+    uniforms.grid    = Vec4f(Vec4d(layout.columns, layout.rows(), layout.cellU,
+                                   2.0 * kPi / static_cast<double>(layout.columns)));
+    uniforms.extent  = Vec4f(grid.zMin, grid.zMax, 0.0F, 0.0F);
+    uniforms.heights = Vec4f(grid.heightMin, grid.heightMin + grid.heightRange,
+                             static_cast<float>(kWaterLevelM), static_cast<float>(layout.radiusM));
+    for (std::size_t level = 0; level < std::min(morphs.size(), kMaxTerrainLevels); ++level)
+    {
+        const TerrainMorph& m    = morphs[level];
+        const double        band = m.end - m.start;
+        uniforms.morph.at(level) = Vec4f(Vec4d(m.start, m.end, band > 0.0 ? 1.0 / band : 0.0, 0.0));
+    }
+    return uniforms;
+}
+
+ShadowUniforms makeShadowUniforms(const Vec3d& cameraPosition, const Vec3d& towardSun, int window,
+                                  double halfExtentM, std::uint32_t resolution)
+{
+    constexpr double kDepthHalfRangeM = 1500.0;  // casters this far toward the sun still count
+    const Vec3d      travel           = -glm::normalize(towardSun);  // the way the light goes
+    const Vec3d helper = std::abs(travel.z) < 0.9 ? Vec3d(0.0, 0.0, 1.0) : Vec3d(1.0, 0.0, 0.0);
+    const Vec3d right  = glm::normalize(glm::cross(travel, helper));
+    const Vec3d up     = glm::cross(right, travel);
+
+    // Keep the texel grid fixed in the habitat: shift the box by the camera's sub-texel offset.
+    const double texel  = 2.0 * halfExtentM / static_cast<double>(resolution);
+    const double alongR = glm::dot(cameraPosition, right);
+    const double alongU = glm::dot(cameraPosition, up);
+    const Vec3d  centre = -((alongR - (std::floor(alongR / texel) * texel)) * right) -
+                          ((alongU - (std::floor(alongU / texel) * texel)) * up);
+
+    const Mat4d view       = glm::lookAt(centre - (travel * kDepthHalfRangeM), centre, up);
+    const Mat4d projection = glm::ortho(-halfExtentM, halfExtentM, -halfExtentM, halfExtentM, 0.0,
+                                        2.0 * kDepthHalfRangeM);
+    ShadowUniforms shadow;
+    shadow.lightFromCameraRelative = Mat4f(projection * view);
+    shadow.params = Vec4f(Vec4d(1.0, window, texel, 0.6 / (2.0 * kDepthHalfRangeM)));
+    return shadow;
 }
 
 BodyUniforms makeBodyUniforms(const astro::VisibleBody& body, const Mat3d& habitatFromInertial,

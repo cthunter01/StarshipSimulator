@@ -1,6 +1,11 @@
 # LeakSanitizer suppressions for running the (asan-built) application, not the unit tests:
-#   LSAN_OPTIONS=suppressions=tools/lsan.supp build/asan/bin/StarshipSimulator
+#   LSAN_OPTIONS=suppressions=tools/lsan.supp:fast_unwind_on_malloc=0 build/asan/bin/StarshipSimulator
 # System libraries that intentionally keep allocations until exit.
 leak:libdbus-1.so
 leak:libnvidia-
 leak:libvulkan.so
+# The NVIDIA driver keeps ~80 bytes per graphics pipeline that LeakSanitizer sometimes reports (depending on the
+# view). The Vulkan loader unloads the driver before the leak check, so its frames are unnamed and the libnvidia-
+# pattern above cannot match; the nearest named frame is ours. Pipelines themselves are released (RAII handles).
+# Matching it needs the slow unwinder (fast_unwind_on_malloc=0): the driver has no frame pointers.
+leak:StarshipSimulator::createPipeline

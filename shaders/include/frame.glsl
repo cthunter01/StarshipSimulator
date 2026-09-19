@@ -12,5 +12,6 @@ layout(std140, set = UNIFORM_SET, binding = 0) uniform Frame
     mat4 inverseViewProjection;  // NDC -> camera-relative position
     vec4 cameraPosition;         // xyz: camera in the habitat frame, w: near plane (m)
     vec4 viewport;               // xy: size in pixels, zw: 1 / size
+    vec4 time;                   // x: seconds for animation, wraps every hour
 }
 frame;

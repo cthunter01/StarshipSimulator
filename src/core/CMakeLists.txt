@@ -10,11 +10,13 @@ add_library(StarshipSimulator_core STATIC
     camera.cpp
     frustum.cpp
     sim_clock.cpp
+    gpu_abi/color_grade.cpp
     gpu_abi/spirv_reflect.cpp
     gpu_abi/uniforms.cpp
     habitat/day_schedule.cpp
     habitat/habitat_geometry.cpp
     habitat/habitat_spec.cpp
+    habitat/landscape.cpp
     habitat/meridian_profile.cpp
     habitat/metrics.cpp
     habitat/mirror_optics.cpp
@@ -25,6 +27,9 @@ add_library(StarshipSimulator_core STATIC
     procgen/mesh.cpp
     procgen/noise.cpp
     procgen/star_field.cpp
+    procgen/terrain_grid.cpp
+    procgen/terrain_lod.cpp
+    procgen/trees.cpp
     scenario/scenario.cpp)
 add_library(StarshipSimulator::core ALIAS StarshipSimulator_core)
 target_include_directories(StarshipSimulator_core PUBLIC ${PROJECT_SOURCE_DIR}/include)
@@ -41,3 +46,9 @@ target_compile_definitions(StarshipSimulator_core PUBLIC
 # identical worlds from the same seed.
 target_compile_options(StarshipSimulator_core PRIVATE -ffp-contract=off)
 StarshipSimulator_configure_target(StarshipSimulator_core)
+# Terrain generation evaluates noise tens of millions of times: optimize those files even in Debug
+# builds, or the app would take half a minute to start.
+set_source_files_properties(
+    habitat/habitat_geometry.cpp habitat/landscape.cpp habitat/meridian_profile.cpp
+    procgen/noise.cpp procgen/terrain_grid.cpp procgen/terrain_lod.cpp procgen/trees.cpp
+    PROPERTIES COMPILE_OPTIONS "$<$<CONFIG:Debug>:-O2>")

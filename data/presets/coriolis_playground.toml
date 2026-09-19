@@ -1,6 +1,6 @@
 # StarshipSimulator habitat scenario
 format_version = 1
-generator_version = 1
+generator_version = 2
 title = "Coriolis Playground"
 description = "A small 250 m radius cylinder spinning at almost 2 rpm. Same floor gravity as Earth, but Coriolis forces are 14 times stronger than in Island Three: throws curve and jumps drift visibly."
 
@@ -39,6 +39,10 @@ seed = 7
 hill_height_m = 3.0
 mountain_height_m = 6.0
 feature_size_m = 60.0
+river_width_m = 0.0
+lakes_per_valley = 1
+lake_radius_m = 20.0
+forest_cover = 0.2
 
 [start]
 valley = 1

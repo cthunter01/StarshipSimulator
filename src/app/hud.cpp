@@ -17,6 +17,7 @@
 #include "StarshipSimulator/core/astro/sky_objects.h"
 #include "StarshipSimulator/core/habitat/habitat_geometry.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
+#include "StarshipSimulator/core/habitat/landscape.h"
 #include "StarshipSimulator/core/habitat/metrics.h"
 #include "StarshipSimulator/core/habitat/mirror_optics.h"
 #include "StarshipSimulator/core/math.h"
@@ -246,6 +247,7 @@ void drawTimeAndLook(const HudModel& model, HudSettings& settings, HudActions& a
     ImGui::SliderFloat("Haze", &settings.haze, 0.0F, 4.0F, "%.2f");
     ImGui::SliderFloat("Stars", &settings.starBrightness, 0.0F, 4.0F, "%.2f");
     ImGui::SliderFloat("Milky Way", &settings.milkyWay, 0.0F, 4.0F, "%.2f");
+    ImGui::SliderFloat("Painted colours", &settings.grade, 0.0F, 1.0F, "%.2f");
     ImGui::SliderFloat("Field of view", &settings.fieldOfViewDeg, 2.0F, 100.0F, "%.0f deg",
                        ImGuiSliderFlags_Logarithmic);
 }
@@ -300,6 +302,10 @@ void drawMetrics(const HudModel& model)
                                    m.floorGravity / units::kStandardGravity, m.rimSpeed));
     ui::field("Land", std::format("{:.0f} km^2 for {:.1f} million people", m.landAreaM2 / 1e6,
                                   m.population / 1e6));
+    const Landscape& land = model.geometry->landscape();
+    ui::field("Nature", std::format("{:.1f} million trees, {} lakes{}",
+                                    static_cast<double>(model.trees) / 1e6, land.lakes().size(),
+                                    land.hasRivers() ? ", a river in each valley" : ""));
     ui::field("Axis air", std::format("{:.0f}% of floor pressure, {:.0f} K colder",
                                       100.0 * m.axisPressureRatio, m.axisTemperatureDropK));
     ui::field("Walking",

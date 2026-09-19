@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <span>
 #include <string_view>
 
 #include <SDL3/SDL_gpu.h>
@@ -25,20 +26,26 @@ enum class DepthMode : std::uint8_t
     TestWrite,  // reverse-Z: GREATER passes
     TestOnly,
     AlwaysWrite,
+    ShadowWrite,  // shadow maps: ordinary depth, LESS passes
 };
 
 /// What differs between our graphics pipelines; everything else is shared.
 struct PipelineDescription
 {
-    SDL_GPUShader*       vertexShader   = nullptr;
-    SDL_GPUShader*       fragmentShader = nullptr;
-    bool                 meshVertices   = false;  // StarshipSimulator::Vertex input, else none
-    SDL_GPUCullMode      cull           = SDL_GPU_CULLMODE_NONE;
-    DepthMode            depth          = DepthMode::None;
-    BlendMode            blend          = BlendMode::Opaque;
-    SDL_GPUTextureFormat colorFormat    = SDL_GPU_TEXTUREFORMAT_INVALID;
+    SDL_GPUShader* vertexShader   = nullptr;
+    SDL_GPUShader* fragmentShader = nullptr;
+    bool           meshVertices   = false;  // StarshipSimulator::Vertex input, else none
+    // Any other vertex input (used when not empty, instead of meshVertices).
+    std::span<const SDL_GPUVertexBufferDescription> vertexBuffers;
+    std::span<const SDL_GPUVertexAttribute>         vertexAttributes;
+    SDL_GPUCullMode                                 cull        = SDL_GPU_CULLMODE_NONE;
+    DepthMode                                       depth       = DepthMode::None;
+    BlendMode                                       blend       = BlendMode::Opaque;
+    SDL_GPUTextureFormat                            colorFormat = SDL_GPU_TEXTUREFORMAT_INVALID;
     SDL_GPUTextureFormat depthFormat = SDL_GPU_TEXTUREFORMAT_INVALID;  // INVALID: no depth target
     SDL_GPUSampleCount   samples     = SDL_GPU_SAMPLECOUNT_1;
+    float                depthBiasConstant = 0.0F;  // shadow maps: push depths away a little
+    float                depthBiasSlope    = 0.0F;
 };
 
 /// A description for drawing into the HDR scene targets.

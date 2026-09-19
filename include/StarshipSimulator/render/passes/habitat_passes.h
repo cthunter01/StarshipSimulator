@@ -10,6 +10,8 @@
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/procgen/star_field.h"
 #include "StarshipSimulator/render/gpu_handles.h"
+#include "StarshipSimulator/render/gpu_landscape.h"
+#include "StarshipSimulator/render/gpu_trees.h"
 #include "StarshipSimulator/render/gpu_world.h"
 #include "StarshipSimulator/render/render_targets.h"
 #include "StarshipSimulator/render/shader_library.h"
@@ -26,6 +28,10 @@ struct HabitatFrame
     Mat4d                       viewProjection{1.0};  // camera-relative
     Vec3d                       camera{0.0};
     const Frustum*              frustum = nullptr;
+    // The trees' shadow map, read by everything they shade.
+    const gpu::ShadowUniforms* shadow        = nullptr;
+    SDL_GPUTexture*            shadowMap     = nullptr;
+    SDL_GPUSampler*            shadowSampler = nullptr;
 };
 
 struct DrawStats
@@ -50,7 +56,55 @@ private:
     std::uint32_t       count_ = 0;
 };
 
-/// The land: valley floors, endcaps and hubs.
+/// The land: the level-of-detail terrain over the whole habitat surface.
+class LandscapePass
+{
+public:
+    LandscapePass(SDL_GPUDevice* device, const ShaderLibrary& shaders, const SceneFormats& formats);
+
+    DrawStats draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
+                   const GpuLandscape& landscape, const HabitatFrame& view) const;
+
+private:
+    GpuGraphicsPipeline pipeline_;
+};
+
+/// Trees: instanced meshes in two detail levels that cross-fade, fading out into the terrain's
+/// painted canopy in the distance.
+class TreePass
+{
+public:
+    TreePass(SDL_GPUDevice* device, const ShaderLibrary& shaders, const SceneFormats& formats);
+
+    DrawStats draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, const GpuTrees& trees,
+                   std::span<const TreeDraw> draws, const TreeRanges& ranges,
+                   const HabitatFrame& view) const;
+
+    /// Draws the trees' depth into a shadow map; `light` holds the light's view-projection.
+    void drawShadow(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, const GpuTrees& trees,
+                    std::span<const TreeDraw> draws, const gpu::FrameUniforms& light) const;
+
+private:
+    GpuGraphicsPipeline pipeline_;
+    GpuGraphicsPipeline shadow_;
+};
+
+/// Rivers and lakes: the water surface over the bed, drawn twice like the glass: multiplying what
+/// shows through it, then adding reflections and the light scattered in the water.
+class WaterPass
+{
+public:
+    WaterPass(SDL_GPUDevice* device, const ShaderLibrary& shaders, const SceneFormats& formats);
+
+    DrawStats draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
+                   const GpuLandscape& landscape, const HabitatFrame& view) const;
+
+private:
+    GpuGraphicsPipeline transmit_;
+    GpuGraphicsPipeline emit_;
+};
+
+/// Meshes inside the habitat that are not terrain: flat end walls and the hub caps.
 class TerrainPass
 {
 public:

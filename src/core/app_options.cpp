@@ -275,8 +275,8 @@ std::string appUsage()
 Options:
   -h, --help               Show this help
   --scenario FILE.toml     Habitat to load (default: data/presets/island_three.toml)
-  --view NAME              Start at a viewpoint: valley, lookup, window, endcap, ramp, sunward,
-                           axis, overview
+  --view NAME              Start at a viewpoint: valley, lookup, window, river, lake, endcap, ramp,
+                           sunward, axis, overview
   --camera x,y,z,yaw,pitch Start at this eye position (m, habitat frame) and view (degrees)
   --mirror DEG             Hold the mirrors at this angle instead of following the day schedule:
                            45 = noon, 90 = sunset, over 90 = night

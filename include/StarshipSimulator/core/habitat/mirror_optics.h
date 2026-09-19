@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <vector>
 
 #include "StarshipSimulator/core/habitat/habitat_geometry.h"
@@ -42,5 +43,15 @@ struct SunBeam
 
 /// One beam per window.
 [[nodiscard]] std::vector<SunBeam> sunBeams(const HabitatGeometry& geometry, double openingAngle);
+
+/// How much of a beam reaches point p inside the habitat, 0..1: the ray toward its sun image must
+/// leave through its window, between the mirror's hinge and the far end of the window. Matches
+/// beamAperture() in shaders/include/habitat.glsl.
+[[nodiscard]] double beamReach(const HabitatGeometry& geometry, const Vec3d& p,
+                               const SunBeam& beam);
+
+/// The window whose beam lights p most strongly (on ground facing up), if any does.
+[[nodiscard]] std::optional<int> dominantBeam(const HabitatGeometry& geometry, double openingAngle,
+                                              const Vec3d& p);
 
 }  // namespace StarshipSimulator

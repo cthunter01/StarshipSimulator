@@ -1,19 +1,27 @@
 #include "StarshipSimulator/render/passes/habitat_passes.h"
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <span>
 
 #include <SDL3/SDL_gpu.h>
+#include <SDL3/SDL_stdinc.h>
 
 #include "StarshipSimulator/core/gpu_abi/uniforms.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/procgen/habitat_mesher.h"
+#include "StarshipSimulator/core/procgen/mesh.h"
 #include "StarshipSimulator/core/procgen/star_field.h"
+#include "StarshipSimulator/core/procgen/trees.h"
 #include "StarshipSimulator/render/gpu_handles.h"
+#include "StarshipSimulator/render/gpu_landscape.h"
+#include "StarshipSimulator/render/gpu_trees.h"
 #include "StarshipSimulator/render/gpu_world.h"
 #include "StarshipSimulator/render/pipeline.h"
 #include "StarshipSimulator/render/render_targets.h"
 #include "StarshipSimulator/render/shader_library.h"
+#include "StarshipSimulator/render/shadow_map.h"
 #include "StarshipSimulator/render/upload.h"
 
 namespace StarshipSimulator
@@ -97,6 +105,257 @@ void StarPass::draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
     SDL_PushGPUVertexUniformData(commands, 0, &frame, sizeof(frame));
     SDL_PushGPUVertexUniformData(commands, 1, &sky, sizeof(sky));
     SDL_DrawGPUPrimitives(pass, count_ * kVerticesPerQuad, 1, 0, 0);
+}
+
+// ---- Landscape ---------------------------------------------------------------------------------
+
+LandscapePass::LandscapePass(SDL_GPUDevice* device, const ShaderLibrary& shaders,
+                             const SceneFormats& formats)
+{
+    const GpuShader                      vertex   = shaders.load("landscape.vert");
+    const GpuShader                      fragment = shaders.load("landscape.frag");
+    const SDL_GPUVertexBufferDescription grid{
+        .slot = 0, .pitch = sizeof(Vec2f), .input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX};
+    const SDL_GPUVertexAttribute position{
+        .location = 0, .buffer_slot = 0, .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, .offset = 0};
+    PipelineDescription description = scenePipeline(formats);
+    description.vertexShader        = vertex.get();
+    description.fragmentShader      = fragment.get();
+    description.vertexBuffers       = std::span(&grid, 1);
+    description.vertexAttributes    = std::span(&position, 1);
+    description.cull                = SDL_GPU_CULLMODE_BACK;
+    description.depth               = DepthMode::TestWrite;
+    pipeline_                       = createPipeline(device, description, "landscape");
+}
+
+DrawStats LandscapePass::draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
+                              const GpuLandscape& landscape, const HabitatFrame& view) const
+{
+    const std::uint32_t patches = landscape.patchCount();
+    if (patches == 0)
+    {
+        return {};
+    }
+    const std::array<SDL_GPUTextureSamplerBinding, 5> samplers{{
+        {.texture = landscape.heights(), .sampler = landscape.surfaceSampler()},
+        {.texture = landscape.profile(), .sampler = landscape.profileSampler()},
+        {.texture = landscape.cover(), .sampler = landscape.surfaceSampler()},
+        {.texture = landscape.arcByZ(), .sampler = landscape.profileSampler()},
+        {.texture = view.shadowMap, .sampler = view.shadowSampler},
+    }};
+    // SDL takes SDL_GPUBuffer* const*, so the pointee cannot be const.
+    SDL_GPUBuffer* const       patchBuffer = landscape.patches();  // NOLINT(misc-const-correctness)
+    const SDL_GPUBufferBinding vertices{.buffer = landscape.gridVertices(), .offset = 0};
+    const SDL_GPUBufferBinding indices{.buffer = landscape.gridIndices(), .offset = 0};
+    const gpu::LandscapeUniforms& uniforms = landscape.uniforms();
+
+    SDL_BindGPUGraphicsPipeline(pass, pipeline_.get());
+    SDL_BindGPUVertexBuffers(pass, 0, &vertices, 1);
+    SDL_BindGPUIndexBuffer(pass, &indices, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+    SDL_BindGPUVertexSamplers(pass, 0, samplers.data(), 2);
+    SDL_BindGPUVertexStorageBuffers(pass, 0, &patchBuffer, 1);
+    SDL_BindGPUFragmentSamplers(pass, 0, samplers.data(), static_cast<Uint32>(samplers.size()));
+    SDL_PushGPUVertexUniformData(commands, 0, view.frame, sizeof(gpu::FrameUniforms));
+    SDL_PushGPUVertexUniformData(commands, 1, view.habitat, sizeof(gpu::HabitatUniforms));
+    SDL_PushGPUVertexUniformData(commands, 2, &uniforms, sizeof(uniforms));
+    pushHabitatFragmentUniforms(commands, view);
+    SDL_PushGPUFragmentUniformData(commands, 2, &uniforms, sizeof(uniforms));
+    SDL_PushGPUFragmentUniformData(commands, 3, view.shadow, sizeof(gpu::ShadowUniforms));
+    SDL_DrawGPUIndexedPrimitives(pass, landscape.gridIndexCount(), patches, 0, 0, 0);
+    return {.chunks    = patches,
+            .triangles = static_cast<std::uint64_t>(patches) * landscape.patchTriangles()};
+}
+
+// ---- Trees -------------------------------------------------------------------------------------
+
+TreePass::TreePass(SDL_GPUDevice* device, const ShaderLibrary& shaders, const SceneFormats& formats)
+{
+    const GpuShader                                     vertex   = shaders.load("tree.vert");
+    const GpuShader                                     fragment = shaders.load("tree.frag");
+    const std::array<SDL_GPUVertexBufferDescription, 2> buffers{{
+        {.slot = 0, .pitch = sizeof(Vertex), .input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX},
+        {.slot = 1, .pitch = sizeof(TreeInstance), .input_rate = SDL_GPU_VERTEXINPUTRATE_INSTANCE},
+    }};
+    const std::array<SDL_GPUVertexAttribute, 6>         attributes{{
+        {.location    = 0,
+         .buffer_slot = 0,
+         .format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
+         .offset      = offsetof(Vertex, position)},
+        {.location    = 1,
+         .buffer_slot = 0,
+         .format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
+         .offset      = offsetof(Vertex, normal)},
+        {.location    = 2,
+         .buffer_slot = 0,
+         .format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2,
+         .offset      = offsetof(Vertex, uv)},
+        {.location    = 3,
+         .buffer_slot = 0,
+         .format      = SDL_GPU_VERTEXELEMENTFORMAT_UINT,
+         .offset      = offsetof(Vertex, material)},
+        {.location    = 4,
+         .buffer_slot = 1,
+         .format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
+         .offset      = offsetof(TreeInstance, position)},
+        {.location    = 5,
+         .buffer_slot = 1,
+         .format      = SDL_GPU_VERTEXELEMENTFORMAT_UINT,
+         .offset      = offsetof(TreeInstance, packed)},
+    }};
+    PipelineDescription                                 description = scenePipeline(formats);
+    description.vertexShader                                        = vertex.get();
+    description.fragmentShader                                      = fragment.get();
+    description.vertexBuffers                                       = buffers;
+    description.vertexAttributes                                    = attributes;
+    description.cull                                                = SDL_GPU_CULLMODE_BACK;
+    description.depth                                               = DepthMode::TestWrite;
+    pipeline_ = createPipeline(device, description, "tree");
+
+    const GpuShader depthOnly     = shaders.load("shadow.frag");
+    description.fragmentShader    = depthOnly.get();
+    description.colorFormat       = SDL_GPU_TEXTUREFORMAT_INVALID;
+    description.depthFormat       = ShadowMap::kFormat;
+    description.samples           = SDL_GPU_SAMPLECOUNT_1;
+    description.cull              = SDL_GPU_CULLMODE_NONE;
+    description.depth             = DepthMode::ShadowWrite;
+    description.depthBiasConstant = 2.0F;
+    description.depthBiasSlope    = 2.0F;
+    shadow_                       = createPipeline(device, description, "tree shadow");
+}
+
+DrawStats TreePass::draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
+                         const GpuTrees& trees, std::span<const TreeDraw> draws,
+                         const TreeRanges& ranges, const HabitatFrame& view) const
+{
+    if (draws.empty())
+    {
+        return {};
+    }
+    const std::array<SDL_GPUBufferBinding, 2> vertexBuffers{{
+        {.buffer = trees.vertices(), .offset = 0},
+        {.buffer = trees.instances(), .offset = 0},
+    }};
+    const SDL_GPUBufferBinding                indices{.buffer = trees.indices(), .offset = 0};
+    SDL_BindGPUGraphicsPipeline(pass, pipeline_.get());
+    SDL_BindGPUVertexBuffers(pass, 0, vertexBuffers.data(),
+                             static_cast<Uint32>(vertexBuffers.size()));
+    SDL_BindGPUIndexBuffer(pass, &indices, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+    SDL_PushGPUVertexUniformData(commands, 0, view.frame, sizeof(gpu::FrameUniforms));
+    SDL_PushGPUVertexUniformData(commands, 1, view.habitat, sizeof(gpu::HabitatUniforms));
+    pushHabitatFragmentUniforms(commands, view);
+    SDL_PushGPUFragmentUniformData(commands, 2, view.shadow, sizeof(gpu::ShadowUniforms));
+    const SDL_GPUTextureSamplerBinding shadowMap{.texture = view.shadowMap,
+                                                 .sampler = view.shadowSampler};
+    SDL_BindGPUFragmentSamplers(pass, 0, &shadowMap, 1);
+
+    DrawStats stats;
+    for (const TreeDraw& d : draws)
+    {
+        const gpu::TreeDrawUniforms uniforms{
+            .origin = Vec4f(d.origin, 0.0F),
+            .lod =
+                Vec4f(Vec4d(d.detailed ? 1.0 : 0.0, ranges.detailEnd, ranges.blend, ranges.farEnd)),
+            .fade = Vec4f(static_cast<float>(ranges.fade), 0.0F, 0.0F, 0.0F)};
+        SDL_PushGPUVertexUniformData(commands, 2, &uniforms, sizeof(uniforms));
+        SDL_DrawGPUIndexedPrimitives(pass, d.indexCount, d.instanceCount, d.firstIndex,
+                                     d.vertexOffset, d.firstInstance);
+        stats.chunks += 1;
+        stats.triangles += static_cast<std::uint64_t>(d.indexCount / 3) * d.instanceCount;
+    }
+    return stats;
+}
+
+void TreePass::drawShadow(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
+                          const GpuTrees& trees, std::span<const TreeDraw> draws,
+                          const gpu::FrameUniforms& light) const
+{
+    if (draws.empty())
+    {
+        return;
+    }
+    const std::array<SDL_GPUBufferBinding, 2> vertexBuffers{{
+        {.buffer = trees.vertices(), .offset = 0},
+        {.buffer = trees.instances(), .offset = 0},
+    }};
+    const SDL_GPUBufferBinding                indices{.buffer = trees.indices(), .offset = 0};
+    const gpu::HabitatUniforms                unused;
+    SDL_BindGPUGraphicsPipeline(pass, shadow_.get());
+    SDL_BindGPUVertexBuffers(pass, 0, vertexBuffers.data(),
+                             static_cast<Uint32>(vertexBuffers.size()));
+    SDL_BindGPUIndexBuffer(pass, &indices, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+    SDL_PushGPUVertexUniformData(commands, 0, &light, sizeof(light));
+    SDL_PushGPUVertexUniformData(commands, 1, &unused, sizeof(unused));
+    for (const TreeDraw& d : draws)
+    {
+        // Every tree casts, at full size: no fading in the shadow map.
+        const gpu::TreeDrawUniforms uniforms{.origin = Vec4f(d.origin, 0.0F),
+                                             .lod    = Vec4f(0.0F, -1.0F, 1.0F, 1.0e9F),
+                                             .fade   = Vec4f(1.0F, 0.0F, 0.0F, 0.0F)};
+        SDL_PushGPUVertexUniformData(commands, 2, &uniforms, sizeof(uniforms));
+        SDL_DrawGPUIndexedPrimitives(pass, d.indexCount, d.instanceCount, d.firstIndex,
+                                     d.vertexOffset, d.firstInstance);
+    }
+}
+
+// ---- Water -------------------------------------------------------------------------------------
+
+WaterPass::WaterPass(SDL_GPUDevice* device, const ShaderLibrary& shaders,
+                     const SceneFormats& formats)
+{
+    const GpuShader                      vertex   = shaders.load("landscape.vert");
+    const GpuShader                      fragment = shaders.load("water.frag");
+    const SDL_GPUVertexBufferDescription grid{
+        .slot = 0, .pitch = sizeof(Vec2f), .input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX};
+    const SDL_GPUVertexAttribute position{
+        .location = 0, .buffer_slot = 0, .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, .offset = 0};
+    PipelineDescription description = scenePipeline(formats);
+    description.vertexShader        = vertex.get();
+    description.fragmentShader      = fragment.get();
+    description.vertexBuffers       = std::span(&grid, 1);
+    description.vertexAttributes    = std::span(&position, 1);
+    description.cull                = SDL_GPU_CULLMODE_BACK;
+    description.depth               = DepthMode::TestOnly;
+    description.blend               = BlendMode::Multiply;
+    transmit_                       = createPipeline(device, description, "water transmittance");
+    description.blend               = BlendMode::Additive;
+    emit_                           = createPipeline(device, description, "water surface");
+}
+
+DrawStats WaterPass::draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
+                          const GpuLandscape& landscape, const HabitatFrame& view) const
+{
+    const std::uint32_t patches = landscape.waterPatchCount();
+    if (patches == 0)
+    {
+        return {};
+    }
+    const std::array<SDL_GPUTextureSamplerBinding, 2> samplers{{
+        {.texture = landscape.heights(), .sampler = landscape.surfaceSampler()},
+        {.texture = landscape.profile(), .sampler = landscape.profileSampler()},
+    }};
+    // SDL takes SDL_GPUBuffer* const*, so the pointee cannot be const.
+    SDL_GPUBuffer* const patchBuffer = landscape.waterPatches();  // NOLINT(misc-const-correctness)
+    const SDL_GPUBufferBinding vertices{.buffer = landscape.gridVertices(), .offset = 0};
+    const SDL_GPUBufferBinding indices{.buffer = landscape.gridIndices(), .offset = 0};
+    gpu::LandscapeUniforms     uniforms = landscape.uniforms();
+    for (const bool emission : {false, true})
+    {
+        uniforms.mode = Vec4f(1.0F, emission ? 1.0F : 0.0F, 0.0F, 0.0F);
+        SDL_BindGPUGraphicsPipeline(pass, emission ? emit_.get() : transmit_.get());
+        SDL_BindGPUVertexBuffers(pass, 0, &vertices, 1);
+        SDL_BindGPUIndexBuffer(pass, &indices, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+        SDL_BindGPUVertexSamplers(pass, 0, samplers.data(), static_cast<Uint32>(samplers.size()));
+        SDL_BindGPUVertexStorageBuffers(pass, 0, &patchBuffer, 1);
+        SDL_BindGPUFragmentSamplers(pass, 0, samplers.data(), static_cast<Uint32>(samplers.size()));
+        SDL_PushGPUVertexUniformData(commands, 0, view.frame, sizeof(gpu::FrameUniforms));
+        SDL_PushGPUVertexUniformData(commands, 1, view.habitat, sizeof(gpu::HabitatUniforms));
+        SDL_PushGPUVertexUniformData(commands, 2, &uniforms, sizeof(uniforms));
+        pushHabitatFragmentUniforms(commands, view);
+        SDL_PushGPUFragmentUniformData(commands, 2, &uniforms, sizeof(uniforms));
+        SDL_DrawGPUIndexedPrimitives(pass, landscape.gridIndexCount(), patches, 0, 0, 0);
+    }
+    return {.chunks    = patches,
+            .triangles = static_cast<std::uint64_t>(patches) * landscape.patchTriangles()};
 }
 
 // ---- Terrain -----------------------------------------------------------------------------------

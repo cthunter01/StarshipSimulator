@@ -24,6 +24,8 @@ OneillCylinderSpec flatSpec(double gravityG = 1.0)
     spec.surfaceGravityG         = gravityG;
     spec.terrain.hillHeightM     = 0.0;
     spec.terrain.mountainHeightM = 0.0;
+    spec.terrain.riverWidthM     = 0.0;  // flat: no rivers or lakes either
+    spec.terrain.lakesPerValley  = 0;
     return spec;
 }
 

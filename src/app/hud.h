@@ -3,6 +3,7 @@
 #include <imgui.h>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -68,6 +69,7 @@ struct HudModel
     std::string                title;
     const HabitatGeometry*     geometry      = nullptr;
     const HabitatMetrics*      metrics       = nullptr;
+    std::size_t                trees         = 0;
     const PlayerController*    player        = nullptr;
     bool                       mouseCaptured = false;
     bool                       generating    = false;
@@ -89,6 +91,7 @@ struct HudSettings
     float                starBrightness = 2.0F;
     float                milkyWay       = 1.0F;
     float                fieldOfViewDeg = 70.0F;  // vertical
+    float                grade          = 1.0F;   // painterly colour grade
     bool                 showHelp       = true;
     bool                 showEditor     = false;
     bool                 showCredits    = false;

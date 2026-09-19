@@ -4,6 +4,7 @@
 #include <optional>
 
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
+#include "StarshipSimulator/core/habitat/landscape.h"
 #include "StarshipSimulator/core/habitat/meridian_profile.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/procgen/noise.h"
@@ -49,6 +50,7 @@ public:
 
     [[nodiscard]] const OneillCylinderSpec& spec() const { return spec_; }
     [[nodiscard]] const MeridianProfile&    profile() const { return profile_; }
+    [[nodiscard]] const Landscape&          landscape() const { return landscape_; }
     [[nodiscard]] double                    radius() const { return spec_.radiusM; }
     [[nodiscard]] double                    omega() const { return omega_; }
     [[nodiscard]] double                    floorZMin() const { return floorZMin_; }
@@ -65,8 +67,15 @@ public:
     [[nodiscard]] double landCenter(int index) const;
 
     [[nodiscard]] Region regionAt(double z, double theta) const;
-    /// Soil height above the profile surface (toward the axis), metres; zero on windows.
+    /// Soil height above the profile surface (toward the axis), metres; zero on windows, below
+    /// zero in rivers and lakes (see Landscape).
     [[nodiscard]] double terrainHeight(double z, double theta) const;
+    /// The hills and mountains alone, before water shapes them (smooth, non-negative).
+    [[nodiscard]] double naturalHeight(double z, double theta) const;
+    /// How wooded the ground is, 0..1: the landscape's woods, kept off water, walkways and cliffs.
+    [[nodiscard]] double forestDensity(double z, double theta) const;
+    /// Whether (z, theta) is under water, and how deep (m, 0 on land).
+    [[nodiscard]] double waterDepth(double z, double theta) const;
     /// Distance of the ground from the axis at (z, theta), or nullopt beyond the ends.
     [[nodiscard]] std::optional<double> groundRadius(double z, double theta) const;
     /// Point on the ground at (z, theta); z is clamped to the profile.
@@ -99,6 +108,7 @@ private:
     double             floorZMax_    = 0.0;
     double             walkableZMin_ = 0.0;
     double             walkableZMax_ = 0.0;
+    Landscape          landscape_;
 };
 
 }  // namespace StarshipSimulator

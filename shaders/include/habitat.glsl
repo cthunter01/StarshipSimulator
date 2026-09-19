@@ -64,7 +64,33 @@ float densityPath(vec3 a, vec3 b, int samples)
 vec3 extinction() { return (RAYLEIGH + MIE) * habitat.atmosphere.y * habitat.atmosphere.z; }
 
 // Radiance of the sunlit air itself (light scattered toward the viewer).
+// Radiance of the sunlit air itself (light scattered toward the viewer), averaged over directions.
 vec3 airLight() { return habitat.sunColor.rgb * habitat.atmosphere.w * 0.42 + vec3(0.0004, 0.0005, 0.0009); }
+
+// How the air's glow depends on the direction you look: Rayleigh scattering (blue, gentle) and a
+// forward Mie peak (white) around each sun image, relative to the average over all directions.
+const float MIE_G = 0.76;
+
+vec3 phaseWeight(vec3 view)
+{
+    vec3  weight = vec3(0.0);
+    float lit    = 0.0;
+    vec3  beta   = RAYLEIGH + MIE;
+    for (int i = 0; i < stripCount(); ++i)
+    {
+        float intensity = habitat.beams[i].w;
+        if (intensity <= 0.0)
+        {
+            continue;
+        }
+        float mu       = dot(view, habitat.beams[i].xyz);
+        float rayleigh = 0.75 * (1.0 + mu * mu);
+        float mie      = (1.0 - MIE_G * MIE_G) / pow(1.0 + MIE_G * MIE_G - 2.0 * MIE_G * mu, 1.5);
+        weight += intensity * (RAYLEIGH * rayleigh + MIE * mie) / beta;
+        lit += intensity;
+    }
+    return lit > 0.0 ? weight / lit : vec3(1.0);
+}
 
 struct Haze
 {
@@ -76,12 +102,13 @@ struct Haze
 Haze aerialPerspective(vec3 camera, vec3 point)
 {
     vec3 transmittance = exp(-extinction() * densityPath(camera, point, 8));
-    return Haze(transmittance, airLight() * (1.0 - transmittance));
+    vec3 view          = normalize(point - camera);
+    return Haze(transmittance, airLight() * phaseWeight(view) * (1.0 - transmittance));
 }
 
 // ---- Sunlight through the windows --------------------------------------------------------------
 // Fraction of beam i reaching point p: the ray toward the sun image must leave through window i,
-// between the mirror's hinge and the end of the window. (Terrain shadows are not modelled yet.)
+// between the mirror's hinge and the end of the window. (Terrain and tree shadows are separate.)
 float beamAperture(vec3 p, vec3 towardSun, int i)
 {
     float R = habitat.shape.x;
@@ -105,27 +132,34 @@ float beamAperture(vec3 p, vec3 towardSun, int i)
     return across * along;
 }
 
-// Direct sunlight arriving at p with normal n, from all the mirrors.
+// Direct sunlight from beam i arriving at p with normal n, before terrain shadows (zero where the
+// beam cannot reach p through its window).
+vec3 beamLight(vec3 p, vec3 n, int i)
+{
+    vec3  towardSun = habitat.beams[i].xyz;
+    float intensity = habitat.beams[i].w;
+    float facing    = dot(n, towardSun);
+    if (intensity <= 0.0 || facing <= 0.0)
+    {
+        return vec3(0.0);
+    }
+    float aperture = beamAperture(p, towardSun, i);
+    if (aperture <= 0.0)
+    {
+        return vec3(0.0);
+    }
+    // Light crossing the habitat's air picks up a warm tint on long paths.
+    vec3 beamTransmittance = exp(-extinction() * densityPath(p, p + towardSun * 6000.0, 4));
+    return habitat.sunColor.rgb * (intensity * facing * aperture) * beamTransmittance;
+}
+
+// Direct sunlight arriving at p with normal n, from all the mirrors (no terrain shadows).
 vec3 sunlight(vec3 p, vec3 n)
 {
     vec3 light = vec3(0.0);
     for (int i = 0; i < stripCount(); ++i)
     {
-        vec3  towardSun = habitat.beams[i].xyz;
-        float intensity = habitat.beams[i].w;
-        float facing    = dot(n, towardSun);
-        if (intensity <= 0.0 || facing <= 0.0)
-        {
-            continue;
-        }
-        float aperture = beamAperture(p, towardSun, i);
-        if (aperture <= 0.0)
-        {
-            continue;
-        }
-        // Light crossing the habitat's air picks up a warm tint on long paths.
-        vec3 beamTransmittance = exp(-extinction() * densityPath(p, p + towardSun * 6000.0, 4));
-        light += habitat.sunColor.rgb * (intensity * facing * aperture) * beamTransmittance;
+        light += beamLight(p, n, i);
     }
     return light;
 }
