@@ -27,14 +27,21 @@ Views: valley, river, lake, town, street, rooftops, lookup, window, endcap, ramp
 habitat frame; `--scenario data/presets/coriolis_playground.toml` for the small habitat). Write captures to the
 scratchpad and inspect them with the Read tool before reporting visual work as done. The window opens briefly
 on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
+- The weather: `--weather clear|fair|cloudy|overcast|mist|rain|storm` holds it still (otherwise it runs itself
+  from the clock); the season follows the date, so `--time 2045-07-21T10:00` is autumn in the Island Three
+  preset. Captures and `--benchmark` are always silent; `--mute` silences an ordinary run
 - The sky: `--time 2045-06-15T01:00` (UTC; the day schedule makes 20:00-06:00 night), `--look-at earth|moon|
   jupiter|Vega|partner` (spins the habitat so it shows through window 0 and floats you off the axis facing it),
   `--fov 2.5` to zoom in. Captures step a fixed 1/60 s per frame and load the sky data synchronously, so they
   are repeatable; keep the window size small (e.g. 960x540), the compositor may resize large windows
 - Performance: `build/clang-release/bin/StarshipSimulator --size 1920x1080 --no-vsync --no-gpu-debug --benchmark`
   prints average/p99 frame times over a fixed tour and per view (M3 on the RTX A1000: ~6 ms average, ~13 ms
-  p99; towns and physics in M4 added about 1 ms; the goal is p99 < 20 ms). Another app instance running
-  (uncapped, in mailbox mode) halves the GPU and ruins the numbers: check `nvidia-smi` first. The log
+  p99; towns and physics in M4 added about 1 ms; M5's clouds cost a few ms wherever sky fills the view, about
+  12 ms average and p99 19 ms at 1080p under thick cloud; the goal is p99 < 20 ms). Another app instance running
+  (uncapped, in mailbox mode) halves the GPU and ruins the numbers: check `nvidia-smi` first. Mailbox present
+  mode paces frames to whole refresh intervals (6.06 ms here), so small differences hide: compare two builds
+  under the same conditions (a `git worktree` of the previous commit) rather than against older numbers, and
+  check `nvidia-smi dmon` to see whether the GPU is the limit at all. The log
   reports the terrain, tree and town GPU memory at startup
 - ASan build of the app:
   `LSAN_OPTIONS=suppressions=tools/lsan.supp:fast_unwind_on_malloc=0 build/asan/bin/StarshipSimulator --no-gpu-debug ...`
@@ -49,7 +56,10 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
   - `habitat/`: `OneillCylinderSpec` (the shareable description), `metrics` (spin, gravity, air, hull strength),
     `MeridianProfile` (the revolved cross-section), `HabitatGeometry` (regions, terrain, ground queries, water,
     forest density), `landscape` (rivers, lakes, shore shaping, woodland), `mirror_optics` (where the sun
-    appears, day/night, which beam lights a point), `day_schedule` (mirror angle by local time)
+    appears, day/night, which beam lights a point), `day_schedule` (mirror angle by local time),
+    `weather` (`ClimateSpec`, `weatherAt`: cloud, rain, wetness, mist, wind and the season as a smooth function
+    of time, never simulated or remembered, so two people at the same moment see the same sky; `seasonalDay`
+    stretches the day schedule over the year)
   - `astro/`: `SimTime` (int64 microseconds since J2000, UT), `ephemeris` (Astronomy Engine: bodies, Lagrange
     point locations, `computeSky`, `habitatFromEqj`: the spin axis points at the Sun), `star_catalog` (HYG),
     `sky_objects` (phases, naming what the crosshair points at)
@@ -66,11 +76,16 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
     houses, square, bridge, river front, props, town trees, 1 m ground maps; `stampSettlements` marks them
     in the cover map), `buildings` (their meshes and colliders; facades are packed into
     `Vertex::material` and drawn by the shader), `props` (balls, crates, barrels, bales, cafe furniture:
-    meshes and collision parts)
+    meshes and collision parts), `clouds` (the cloud map: cover and detail wrapped once round the habitat and
+    once along it), `birds` (flocks wheeling over fixed places on the floor, worked out fresh each frame)
+  - `audio/`: `Soundscape`, the synthesised ambience (wind, leaves, water, rain, birds or crickets, a town's
+    murmur, footsteps). It fills a buffer of frames and knows nothing about devices, so it is unit tested
   - The terrain and settlement sources are compiled with `-O2` even in Debug (`src/core/CMakeLists.txt`),
     or world generation takes several seconds
   - `scenario/`: TOML habitat files (toml++, used only in `scenario.cpp`; bump `kGeneratorVersion` when
-    generation changes); `gpu_abi/`: uniform structs, SPIR-V reflection, `color_grade` (the grading LUT),
+    generation changes; `[climate]` holds the cloud deck, how often it rains and the length of the year,
+    `season_at_epoch` deciding where in that year J2000 falls, and so which season a preset starts in);
+    `gpu_abi/`: uniform structs, SPIR-V reflection, `color_grade` (the grading LUT),
     `ground_atlas` (the towns' ground maps packed for the landscape shader); plus camera, frustum, sim
     clock, app options
 - `physics` (`StarshipSimulator_physics`): `PhysicsWorld`, Jolt Physics v5.6.0 in double precision behind a
@@ -81,21 +96,34 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
   trunks per tree tile near the player; the player is a `CharacterVirtual` stood along the local up
   every step. No SDL or render includes (layering test). Include Jolt only through `src/physics/jolt.h`
   (Jolt.h must come first). Jolt is built with `-O2` even in Debug. Unit tests link core and physics
+- `audio` (`StarshipSimulator_audio`): `AudioDevice`, SDL's audio device pulling frames from `core/audio`'s
+  `Soundscape` on its own thread (a mutex guards it). No renderer, ImGui or Jolt includes (layering test); a
+  machine without sound just stays quiet
 - `render` (`StarshipSimulator_render`): SDL_GPU device, shader library, `GpuWorld` (all habitat chunks in one
   vertex/index buffer), `GpuLandscape` (height, cover and profile textures, the instanced CDLOD patch mesh),
   `GpuTrees` (instances by tile, two detail levels), `ShadowMap` (trees, along the dominant mirror beam),
   `DynamicBuffer` (per-frame storage uploads), `GpuSettlements` (town meshes, ground-map atlas), `GpuProps`
-  (prop meshes, per-frame instances), passes (Milky Way, stars, planets, Earth/Moon, partner hull, terrain
-  disks, landscape, trees, buildings, props, mirrors, markers, water, glass, tonemap with the grade LUT; drawn
-  in that order after the shadow pass, which holds trees, buildings and props), `texture.h` (2D uploads with
+  (prop meshes, per-frame instances), `GpuBirds` (this frame's birds, no mesh: six vertices each in the
+  shader), passes (Milky Way, stars, planets, Earth/Moon, partner hull, terrain disks, landscape, trees,
+  buildings, props, mirrors, birds, markers, water, glass, clouds, rain, tonemap with the grade LUT; drawn in
+  that order after the shadow pass, which holds trees, buildings and props), `texture.h` (2D uploads with
   GPU mipmaps), `pipeline.h` helper, ImGui layer
+  - The cloud deck is ray-marched, so it is drawn on a stand-in cylinder just outside the deck's base
+    (`cloud_shell.vert`) rather than on a full-screen triangle, and writes no depth: the depth test then
+    throws away every pixel with land in front before the march runs, and `layout(early_fragment_tests)`
+    makes sure it happens early. From below the deck the pass draws the faces where rays enter that cylinder,
+    from inside it the faces where they leave, so each pixel is shaded exactly once
 - `src/app/`: the `StarshipSimulator` executable (main loop, input, HUD, sky data loading on a worker thread);
-  its headers are private
+  its headers are private. The weather and the season come from `weatherAt` each frame; the HUD's sliders
+  follow them until "Hold the weather" is ticked, so holding starts from what is outside the window. The
+  clouds drift, the birds fly and the rain falls in real time (like the spin), from `animationSeconds`
 - `third_party/`: vendored C code (Astronomy Engine, stb) in their own targets, never reformatted
 - `cmake/SkyData.cmake`: downloads the star catalog and sky maps (~52 MB, SHA-256 checked) once into
   `build/_downloads/sky`; off when `CI` is set. Tests using them skip when missing. Credits: `data/CREDITS.md`
 - `shaders/`: GLSL, compiled by glslc to `build/<preset>/bin/shaders/*.spv` (`cmake/Shaders.cmake`);
   `include/habitat.glsl` holds the shared air (aerial perspective) and sunlight (mirror beams) models;
+  `include/clouds.glsl` the cloud deck (its map, cover, density and the shade it casts) and
+  `include/clouds_shell.glsl` the stand-in cylinder's radius (keep `SHELL_SEGMENTS` in step with `CloudPass`);
   `include/landscape.glsl` the height field and terrain shadow march, `include/shadow.glsl` the tree shadow
   lookup, `include/terrain_colors.glsl` the fields, meadows, shore and town colours, `include/lit.glsl` the
   light on buildings and props (hill and shadow-map shadows, lights at night), `include/town_ground.glsl`

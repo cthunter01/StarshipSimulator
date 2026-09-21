@@ -11,6 +11,7 @@
 #define SHADOW_UNIFORM 3
 #define SHADOW_SAMPLER 3
 #include "shadow.glsl"
+#include "clouds.glsl"
 #include "lit.glsl"
 
 layout(location = 0) in vec3 inNormal;
@@ -21,6 +22,7 @@ layout(location = 3) in vec3 inCameraRelative;
 layout(set = 2, binding = 0) uniform sampler2D heightMap;
 layout(set = 2, binding = 1) uniform sampler2D profileMap;
 layout(set = 2, binding = 2) uniform sampler2D arcMap;
+layout(set = 2, binding = 4) uniform sampler2D cloudMap;
 
 layout(location = 0) out vec4 outColor;
 
@@ -299,7 +301,7 @@ void main()
         look = Look(mix(vec3(0.05, 0.12, 0.03), BLOSSOMS[min(colour, 3u)], blossom), vec3(0.0));
     }
 
-    vec3 light = surfaceLight(heightMap, profileMap, arcMap, p, n, inCameraRelative);
+    vec3 light = surfaceLight(heightMap, profileMap, arcMap, cloudMap, p, n, inCameraRelative);
     vec3 color = look.albedo * light + look.emission;
     Haze haze  = aerialPerspective(frame.cameraPosition.xyz, p);
     outColor   = vec4(color * haze.transmittance + haze.inscatter, 1.0);

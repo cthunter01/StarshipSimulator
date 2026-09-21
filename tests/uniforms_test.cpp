@@ -11,6 +11,7 @@
 #include "StarshipSimulator/core/gpu_abi/color_grade.h"
 #include "StarshipSimulator/core/habitat/habitat_geometry.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
+#include "StarshipSimulator/core/habitat/weather.h"
 #include "StarshipSimulator/core/math.h"
 
 namespace
@@ -24,6 +25,7 @@ using StarshipSimulator::Mat4f;
 using StarshipSimulator::OneillCylinderSpec;
 using StarshipSimulator::Vec3d;
 using StarshipSimulator::Vec4f;
+using StarshipSimulator::Weather;
 
 TEST(FrameUniforms, InverseViewProjectionUndoesViewProjection)
 {
@@ -57,8 +59,8 @@ TEST(FrameUniforms, ViewportAndCamera)
 TEST(HabitatUniforms, DescribeShapeLightAndAir)
 {
     const HabitatGeometry      geometry{OneillCylinderSpec{}};
-    const gpu::HabitatUniforms habitat =
-        gpu::makeHabitatUniforms(geometry, degreesToRadians(60.0), gpu::LightingSettings{});
+    const gpu::HabitatUniforms habitat = gpu::makeHabitatUniforms(
+        geometry, degreesToRadians(60.0), gpu::LightingSettings{}, Weather{}, gpu::CloudSettings{});
     EXPECT_FLOAT_EQ(habitat.shape.x, 4000.0F);
     EXPECT_FLOAT_EQ(habitat.strips.y, 3.0F);
     for (int i = 0; i < 3; ++i)
@@ -72,8 +74,22 @@ TEST(HabitatUniforms, DescribeShapeLightAndAir)
     EXPECT_NEAR(static_cast<double>(habitat.atmosphere.x) * 4000.0 * 4000.0, 0.2332, 1e-3);
     EXPECT_FLOAT_EQ(habitat.atmosphere.w, 1.0F);  // full daylight
 
+    // The cloud deck sits as a pair of radii, and thick cloud dims the beams and the air.
+    Weather overcast;
+    overcast.cloudCover                = 1.0;
+    const gpu::HabitatUniforms clouded = gpu::makeHabitatUniforms(
+        geometry, degreesToRadians(60.0), gpu::LightingSettings{}, overcast,
+        gpu::CloudSettings{.baseM = 420.0, .topM = 820.0, .driftM = 0.0, .turnRad = 0.0});
+    EXPECT_FLOAT_EQ(clouded.cloud.x, 4000.0F - 820.0F);
+    EXPECT_FLOAT_EQ(clouded.cloud.y, 4000.0F - 420.0F);
+    EXPECT_FLOAT_EQ(clouded.cloud.z, 1.0F);
+    EXPECT_LT(clouded.cloud.w, 0.3F);
+    EXPECT_LT(clouded.beams.at(0).w, 0.3F * habitat.beams.at(0).w);
+    EXPECT_LT(clouded.atmosphere.w, habitat.atmosphere.w);
+
     const gpu::HabitatUniforms night =
-        gpu::makeHabitatUniforms(geometry, degreesToRadians(100.0), gpu::LightingSettings{});
+        gpu::makeHabitatUniforms(geometry, degreesToRadians(100.0), gpu::LightingSettings{},
+                                 Weather{}, gpu::CloudSettings{});
     EXPECT_EQ(night.beams.at(0).w, 0.0F);
     EXPECT_EQ(night.atmosphere.w, 0.0F);
 }

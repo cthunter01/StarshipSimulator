@@ -5,7 +5,7 @@ the land overhead, and see an astronomically accurate sky. The goal: help people
 space that we could actually build, with the real physics of spin gravity (Coriolis drift, gravity that fades
 toward the axis) and real stars and planets outside.
 
-**Status: M4: towns.** Walk the valleys of Gerard O'Neill's Island Three, an 8 km wide, 32 km long
+**Status: M5: a living atmosphere.** Walk the valleys of Gerard O'Neill's Island Three, an 8 km wide, 32 km long
 cylinder at the Earth-Moon L5 point: farmland curving up overhead through blue haze, three window strips, three
 mirrors bringing in the sunlight, mountain ramps at one end and a dome at the other. The physics is real:
 gravity comes from spin (and fades as you climb toward the axis), jumps and thrown balls drift from the Coriolis
@@ -28,8 +28,16 @@ shops with striped awnings on tree-lined main streets, a square with a fountain 
 stone bridges and a lamp-lit river front; farmsteads stand out in the fields. At night the windows and street
 lamps light up. Everything is solid (Jolt Physics, in the habitat's spinning frame): you bump into walls and
 trees, climb kerbs and steps, and can kick (E) the balls, crates, barrels, hay bales and cafe chairs lying
-about; thrown balls bounce and roll, float on the water, and fall off course with the Coriolis force. Next up,
-M5: a living atmosphere.
+about; thrown balls bounce and roll, float on the water, and fall off course with the Coriolis force.
+
+The habitat has weather and a year. A deck of cloud a few hundred metres up drifts with the wind, throws its
+shadow on the land, and ends at a horizon of its own two dozen degrees above yours, so there is always a ring of
+clear air under it through which you see the far side. It thickens and clears over the hours, rains (the drops
+slant antispinward: Coriolis again), leaves the ground dark and wet, and lies as mist over the river on still
+mornings. The mirrors run a year as well as a day, longer and shorter days by season, with spring blossom in the
+orchards and whole woods turning gold in autumn. Flocks of birds wheel over the fields. And you can hear it:
+wind, leaves, running water, rain, birdsong (crickets after dark), the murmur of a town and your own footsteps,
+all synthesised on the fly rather than played from files. Next up, M6: people and transit.
 
 ## Requirements
 - Linux with a Vulkan GPU
@@ -70,6 +78,8 @@ StarshipSimulator --time 2045-06-15T23:00             # night (UTC; the habitat'
 StarshipSimulator --look-at earth                     # look out of a window at Earth (or moon, jupiter, Vega, partner)
 StarshipSimulator --time-scale 3600                   # an hour per second: watch the day go by
 StarshipSimulator --mirror 30                         # hold the mirrors: 45 is noon, 90 sunset, more is night
+StarshipSimulator --weather rain                      # hold the weather: clear, fair, cloudy, overcast, mist, rain, storm
+StarshipSimulator --mute                              # no sound
 StarshipSimulator --scenario data/presets/coriolis_playground.toml   # a small, fast-spinning habitat
 StarshipSimulator --capture shot.png --capture-ui     # render, save a PNG, exit
 StarshipSimulator --no-vsync --benchmark              # frame times over a fixed tour (use a Release build)
@@ -92,6 +102,7 @@ tests in one command. Separate steps: `cmake --preset <p>`, `cmake --build --pre
   star catalog) and data decoding; no graphics dependencies, fully unit tested
 - `src/physics`: rigid bodies and the player's body (Jolt Physics) in the habitat's spinning frame
 - `src/render`: the SDL_GPU renderer and the ImGui layer
+- `src/audio`: plays the synthesised soundscape through SDL's audio device
 - `src/app`: the executable (main loop, input, HUD)
 - `shaders`: GLSL, compiled to SPIR-V at build time
 - `data/presets`: habitat scenarios (Island Three, Coriolis Playground)

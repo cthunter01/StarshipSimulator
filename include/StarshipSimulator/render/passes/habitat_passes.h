@@ -9,6 +9,7 @@
 #include "StarshipSimulator/core/gpu_abi/uniforms.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/procgen/star_field.h"
+#include "StarshipSimulator/render/gpu_birds.h"
 #include "StarshipSimulator/render/gpu_handles.h"
 #include "StarshipSimulator/render/gpu_landscape.h"
 #include "StarshipSimulator/render/gpu_settlements.h"
@@ -33,6 +34,9 @@ struct HabitatFrame
     const gpu::ShadowUniforms* shadow        = nullptr;
     SDL_GPUTexture*            shadowMap     = nullptr;
     SDL_GPUSampler*            shadowSampler = nullptr;
+    // The cloud map: the deck's shadows fall on everything below it.
+    SDL_GPUTexture* cloudMap     = nullptr;
+    SDL_GPUSampler* cloudSampler = nullptr;
 };
 
 struct DrawStats
@@ -90,6 +94,49 @@ public:
 private:
     GpuGraphicsPipeline pipeline_;
     GpuGraphicsPipeline shadow_;
+};
+
+/// The deck of cloud over the valleys, ray-marched: seen from below, from inside, and hanging
+/// under the far side of the habitat overhead.
+class CloudPass
+{
+public:
+    CloudPass(SDL_GPUDevice* device, const ShaderLibrary& shaders, const SceneFormats& formats);
+
+    void draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
+              const HabitatFrame& view) const;
+
+private:
+    // The deck is drawn on a stand-in cylinder: from below it, on the faces where view rays enter
+    // it; from inside it, on the faces where they leave.
+    GpuGraphicsPipeline below_;
+    GpuGraphicsPipeline inside_;
+};
+
+/// Flocks of birds over the valleys (shaders/bird.vert).
+class BirdPass
+{
+public:
+    BirdPass(SDL_GPUDevice* device, const ShaderLibrary& shaders, const SceneFormats& formats);
+
+    DrawStats draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, const GpuBirds& birds,
+                   const HabitatFrame& view) const;
+
+private:
+    GpuGraphicsPipeline pipeline_;
+};
+
+/// Rain falling past the camera, in layers of streaks (shaders/rain.frag).
+class RainPass
+{
+public:
+    RainPass(SDL_GPUDevice* device, const ShaderLibrary& shaders, const SceneFormats& formats);
+
+    void draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
+              const HabitatFrame& view) const;
+
+private:
+    GpuGraphicsPipeline pipeline_;
 };
 
 /// Rivers and lakes: the water surface over the bed, drawn twice like the glass: multiplying what

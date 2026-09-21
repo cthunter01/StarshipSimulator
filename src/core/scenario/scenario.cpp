@@ -21,6 +21,7 @@
 #include "StarshipSimulator/core/astro/ephemeris.h"
 #include "StarshipSimulator/core/habitat/day_schedule.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
+#include "StarshipSimulator/core/habitat/weather.h"
 
 namespace StarshipSimulator
 {
@@ -385,6 +386,21 @@ void readSkyAndDay(TableReader& top, Scenario& scenario, std::optional<ScenarioE
         reader.read("noon_angle_deg", scenario.day.noonAngleDeg);
         reader.read("night_angle_deg", scenario.day.nightAngleDeg);
     }
+    if (const toml::table* climate = top.table("climate"))
+    {
+        TableReader reader(*climate, "climate", error);
+        reader.allowOnly({"cloud_base_m", "cloud_top_m", "cloudiness", "raininess", "wind_speed_ms",
+                          "mistiness", "year_days", "season_swing_hours", "season_at_epoch"});
+        reader.read("cloud_base_m", scenario.climate.cloudBaseM);
+        reader.read("cloud_top_m", scenario.climate.cloudTopM);
+        reader.read("cloudiness", scenario.climate.cloudiness);
+        reader.read("raininess", scenario.climate.raininess);
+        reader.read("wind_speed_ms", scenario.climate.windSpeedMS);
+        reader.read("mistiness", scenario.climate.mistiness);
+        reader.read("year_days", scenario.climate.yearDays);
+        reader.read("season_swing_hours", scenario.climate.seasonSwingHours);
+        reader.read("season_at_epoch", scenario.climate.seasonAtEpoch);
+    }
 }
 
 /// Problems with the sky and day settings (the habitat has its own validate()).
@@ -404,6 +420,16 @@ std::optional<std::string> validateSkyAndDay(const Scenario& scenario)
         day.nightAngleDeg > 150.0)
     {
         return "the noon mirror angle must be 20..85 degrees and the night angle 90..150";
+    }
+    if (scenario.climate.cloudTopM > 0.8 * scenario.habitat.radiusM)
+    {
+        return "the cloud deck must stay well inside the habitat (cloud_top_m under 0.8 * radius)";
+    }
+    if (!validClimate(scenario.climate))
+    {
+        return "the climate needs a cloud deck 50 m or more above the floor (top above base), "
+               "cloudiness, raininess and mistiness of 0..1, wind up to 40 m/s, a year of "
+               "1..10000 days and a season swing of 0..8 hours";
     }
     return std::nullopt;
 }
@@ -457,7 +483,7 @@ std::expected<Scenario, ScenarioError> parseScenario(std::string_view toml)
     std::optional<ScenarioError> error;
     TableReader                  top(root, "top level", error);
     top.allowOnly({"format_version", "generator_version", "title", "description", "habitat",
-                   "start", "sky", "day"});
+                   "start", "sky", "day", "climate"});
     top.read("format_version", scenario.formatVersion);
     top.read("generator_version", scenario.generatorVersion);
     top.read("title", scenario.title);
@@ -558,6 +584,15 @@ std::string serializeScenario(const Scenario& scenario)
         "night_angle_deg = {}\n",
         boolean(day.enabled), number(day.dayLengthHours), number(day.sunriseHour),
         number(day.noonAngleDeg), number(day.nightAngleDeg));
+    const ClimateSpec& climate = scenario.climate;
+    out += "\n# Weather: the cloud deck over the valleys, how often it rains, and the year.\n";
+    out += std::format(
+        "[climate]\ncloud_base_m = {}\ncloud_top_m = {}\ncloudiness = {}\nraininess = {}\n"
+        "wind_speed_ms = {}\nmistiness = {}\nyear_days = {}\nseason_swing_hours = {}\n"
+        "season_at_epoch = {}\n",
+        number(climate.cloudBaseM), number(climate.cloudTopM), number(climate.cloudiness),
+        number(climate.raininess), number(climate.windSpeedMS), number(climate.mistiness),
+        number(climate.yearDays), number(climate.seasonSwingHours), number(climate.seasonAtEpoch));
     return out;
 }
 

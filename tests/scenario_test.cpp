@@ -42,6 +42,15 @@ TEST(Scenario, RoundTripsThroughToml)
     original.day.enabled                 = false;
     original.day.dayLengthHours          = 16.5;
     original.day.noonAngleDeg            = 50.0;
+    original.climate                     = {.cloudBaseM       = 300.0,
+                                            .cloudTopM        = 650.0,
+                                            .cloudiness       = 0.7,
+                                            .raininess        = 0.1,
+                                            .windSpeedMS      = 5.5,
+                                            .mistiness        = 0.25,
+                                            .yearDays         = 365.25,
+                                            .seasonSwingHours = 3.0,
+                                            .seasonAtEpoch    = 0.625};
 
     const auto parsed = parseScenario(serializeScenario(original));
     ASSERT_TRUE(parsed.has_value()) << parsed.error().describe();
@@ -70,6 +79,15 @@ TEST(Scenario, RoundTripsThroughToml)
     EXPECT_FALSE(copy.day.enabled);
     EXPECT_EQ(copy.day.dayLengthHours, 16.5);
     EXPECT_EQ(copy.day.noonAngleDeg, 50.0);
+    EXPECT_EQ(copy.climate.cloudBaseM, 300.0);
+    EXPECT_EQ(copy.climate.cloudTopM, 650.0);
+    EXPECT_EQ(copy.climate.cloudiness, 0.7);
+    EXPECT_EQ(copy.climate.raininess, 0.1);
+    EXPECT_EQ(copy.climate.windSpeedMS, 5.5);
+    EXPECT_EQ(copy.climate.mistiness, 0.25);
+    EXPECT_EQ(copy.climate.yearDays, 365.25);
+    EXPECT_EQ(copy.climate.seasonSwingHours, 3.0);
+    EXPECT_EQ(copy.climate.seasonAtEpoch, 0.625);
     EXPECT_EQ(serializeScenario(copy), serializeScenario(original));
 }
 
@@ -85,9 +103,13 @@ TEST(Scenario, PresetsLoad)
     EXPECT_TRUE(island->habitat.partner.enabled);
     EXPECT_TRUE(island->day.enabled);
 
+    EXPECT_EQ(island->climate.cloudBaseM, 420.0);
+    EXPECT_GT(island->climate.seasonAtEpoch, 0.0);
+
     const auto playground = loadScenario(presets() / "coriolis_playground.toml");
     ASSERT_TRUE(playground.has_value()) << playground.error().describe();
     EXPECT_EQ(playground->habitat.radiusM, 250.0);
+    EXPECT_LT(playground->climate.cloudTopM, 0.8 * playground->habitat.radiusM);
 
     // The presets are written the way serializeScenario writes them.
     EXPECT_EQ(serializeScenario(island.value()),
@@ -138,6 +160,15 @@ TEST(Scenario, ErrorsSayWhatAndWhere)
     const auto flag = parseScenario("[day]\nenabled = 1\n");
     ASSERT_FALSE(flag.has_value());
     EXPECT_EQ(flag.error().line, 2);
+
+    const auto clouds = parseScenario("[climate]\ncloud_base_m = 900.0\ncloud_top_m = 800.0\n");
+    ASSERT_FALSE(clouds.has_value());
+    EXPECT_NE(clouds.error().message.find("cloud"), std::string::npos);
+
+    // The deck must stay well clear of the axis: a small habitat cannot have Earth's clouds.
+    const auto high = parseScenario(
+        "[habitat]\nradius_m = 250.0\n[climate]\ncloud_base_m = 150.0\ncloud_top_m = 240.0\n");
+    ASSERT_FALSE(high.has_value());
 
     const auto night = parseScenario("[day]\nnight_angle_deg = 80.0\n");
     ASSERT_FALSE(night.has_value());

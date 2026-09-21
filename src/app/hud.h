@@ -17,6 +17,7 @@
 #include "StarshipSimulator/core/habitat/habitat_geometry.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
 #include "StarshipSimulator/core/habitat/metrics.h"
+#include "StarshipSimulator/core/habitat/weather.h"
 #include "StarshipSimulator/core/physics/player_controller.h"
 #include "StarshipSimulator/render/gpu_device.h"
 
@@ -74,6 +75,7 @@ struct HudModel
     std::size_t                farms       = 0;
     std::size_t                buildings   = 0;
     std::size_t                movingProps = 0;
+    std::size_t                birds       = 0;
     std::string                place;  // the town (or farm) you are in or near
     const PlayerController*    player        = nullptr;
     bool                       mouseCaptured = false;
@@ -81,6 +83,10 @@ struct HudModel
     std::string                status;
     std::optional<ThrowReport> throwReport;
     SkyModel                   sky;
+    bool                       sound = false;  // an audio device is playing
+    Weather                    weather;
+    double                     cloudBaseM = 0.0;
+    double                     cloudTopM  = 0.0;
 };
 
 /// Settings the HUD edits in place.
@@ -97,6 +103,15 @@ struct HudSettings
     float                milkyWay       = 1.0F;
     float                fieldOfViewDeg = 70.0F;  // vertical
     float                grade          = 1.0F;   // painterly colour grade
+    float                volume         = 0.8F;
+    bool                 forceWeather   = false;  // hold the weather still, for looking at it
+    float                cloudCover     = 0.45F;
+    float                rain           = 0.0F;
+    float                wetness        = 0.0F;
+    float                mist           = 0.0F;
+    float                windSpeedMS    = 3.0F;
+    bool                 forceSeason    = false;  // hold the year still as well
+    float                season         = 0.2F;   // 0 spring, 0.25 summer, 0.5 autumn
     bool                 showHelp       = true;
     bool                 showEditor     = false;
     bool                 showCredits    = false;

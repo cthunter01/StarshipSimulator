@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include "StarshipSimulator/core/astro/astro_time.h"
+#include "StarshipSimulator/core/habitat/weather.h"
 
 namespace
 {
@@ -90,6 +91,35 @@ TEST(AppOptions, SkyOptions)
     EXPECT_NE(parse({"--time", "tomorrow"}).error().find("--time"), std::string::npos);
     EXPECT_NE(parse({"--look-at", "sun"}).error().find("--look-at"), std::string::npos);
     EXPECT_FALSE(parse({"--time-scale", "-1"}).has_value());
+}
+
+TEST(AppOptions, WeatherAndSound)
+{
+    const auto parsed = parse({"--weather", "rain", "--mute"});
+    ASSERT_TRUE(parsed.has_value()) << parsed.error();
+    EXPECT_EQ(parsed->weather, "rain");
+    EXPECT_TRUE(parsed->mute);
+    EXPECT_FALSE(parse({})->mute);
+    EXPECT_NE(parse({"--weather", "snow"}).error().find("--weather"), std::string::npos);
+
+    // Each name holds weather that looks like it.
+    using StarshipSimulator::Weather;
+    Weather cloudy;  // what a missing name would give: fails the checks below
+    cloudy.cloudCover   = 1.0;
+    const Weather clear = StarshipSimulator::weatherNamed("clear").value_or(cloudy);
+    const Weather storm = StarshipSimulator::weatherNamed("storm").value_or(Weather{});
+    const Weather mist  = StarshipSimulator::weatherNamed("mist").value_or(Weather{});
+    EXPECT_LT(clear.cloudCover, 0.1);
+    EXPECT_EQ(clear.rain, 0.0);
+    EXPECT_GT(storm.cloudCover, 0.9);
+    EXPECT_GT(storm.rain, 0.9);
+    EXPECT_GE(storm.wetness, storm.rain);
+    EXPECT_GT(mist.mist, 0.5);
+    for (const auto* name : {"fair", "cloudy", "overcast"})
+    {
+        EXPECT_TRUE(StarshipSimulator::weatherNamed(name).has_value()) << name;
+    }
+    EXPECT_FALSE(StarshipSimulator::weatherNamed("hail").has_value());
 }
 
 TEST(AppOptions, HelpFlag)

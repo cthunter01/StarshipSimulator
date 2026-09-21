@@ -12,9 +12,10 @@
 #define SHADOW_UNIFORM 3
 #define SHADOW_SAMPLER 4
 #include "shadow.glsl"
+#include "clouds.glsl"
 #include "lit.glsl"
 #define TOWN_ATLAS_BINDING 5
-#define TOWN_RECORDS_BINDING 6
+#define TOWN_RECORDS_BINDING 7
 #include "town_ground.glsl"
 
 layout(location = 0) in vec2 inCell;
@@ -24,6 +25,7 @@ layout(set = 2, binding = 0) uniform sampler2D heightMap;
 layout(set = 2, binding = 1) uniform sampler2D profileMap;  // z, radius, inward normal (z, r)
 layout(set = 2, binding = 2) uniform sampler2D coverMap;    // woods, wetness, near a town
 layout(set = 2, binding = 3) uniform sampler2D arcMap;      // profile arc length u by z
+layout(set = 2, binding = 6) uniform sampler2D cloudMap;   // the cloud deck's cover
 
 layout(location = 0) out vec4 outColor;
 
@@ -84,7 +86,8 @@ void main()
         {
             beam *= terrainShadow(heightMap, profileMap, arcMap, ground, habitat.beams[i].xyz,
                                   0.5 + 0.004 * length(inCameraRelative)) *
-                    treeShadow(inCameraRelative, n, i);
+                    treeShadow(inCameraRelative, n, i) *
+                    cloudShade(cloudMap, ground, habitat.beams[i].xyz);
         }
         direct += beam;
     }

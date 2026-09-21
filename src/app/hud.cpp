@@ -3,6 +3,7 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <filesystem>
@@ -20,6 +21,7 @@
 #include "StarshipSimulator/core/habitat/landscape.h"
 #include "StarshipSimulator/core/habitat/metrics.h"
 #include "StarshipSimulator/core/habitat/mirror_optics.h"
+#include "StarshipSimulator/core/habitat/weather.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/physics/player_controller.h"
 #include "StarshipSimulator/core/physics/rotating_frame.h"
@@ -69,6 +71,45 @@ std::string describeSun(double openingAngleDeg)
     return std::format("Sun {:.0f} degrees up, toward the {} end",
                        radiansToDegrees(sunElevation(alpha)),
                        openingAngleDeg < 45.0 ? "sunward" : "anti-sunward");
+}
+
+/// A few words for what the sky is doing.
+std::string skyName(const Weather& weather)
+{
+    if (weather.rain > 0.5)
+    {
+        return "pouring";
+    }
+    if (weather.rain > 0.05)
+    {
+        return "raining";
+    }
+    if (weather.mist > 0.4)
+    {
+        return "misty";
+    }
+    if (weather.cloudCover > 0.85)
+    {
+        return "overcast";
+    }
+    if (weather.cloudCover > 0.55)
+    {
+        return "cloudy";
+    }
+    if (weather.cloudCover > 0.2)
+    {
+        return "fair";
+    }
+    return "clear";
+}
+
+/// Where in the year the habitat is.
+std::string seasonName(double season)
+{
+    constexpr std::array<const char*, 8> kNames{"spring", "late spring", "summer", "late summer",
+                                                "autumn", "late autumn", "winter", "late winter"};
+    const auto index = static_cast<std::size_t>(std::floor(season * 8.0)) % kNames.size();
+    return kNames.at(index);
 }
 
 void drawThrowReport(const ThrowReport& report)
@@ -254,6 +295,44 @@ void drawTimeAndLook(const HudModel& model, HudSettings& settings, HudActions& a
     ImGui::SliderFloat("Painted colours", &settings.grade, 0.0F, 1.0F, "%.2f");
     ImGui::SliderFloat("Field of view", &settings.fieldOfViewDeg, 2.0F, 100.0F, "%.0f deg",
                        ImGuiSliderFlags_Logarithmic);
+}
+
+/// What the weather is doing, and the knobs to hold it still and look at it.
+void drawWeather(const HudModel& model, HudSettings& settings)
+{
+    const Weather& now = model.weather;
+    ui::field("Sky", std::format("{}, {:.0f}% cloud from {:.0f} to {:.0f} m up", skyName(now),
+                                 100.0 * now.cloudCover, model.cloudBaseM, model.cloudTopM));
+    ui::field("Ground", now.wetness > 0.02 ? std::format("wet ({:.0f}%)", 100.0 * now.wetness)
+                                           : std::string("dry"));
+    ui::field("Wind", std::format("{:.1f} m/s along the valley, {:.1f} m/s across", now.windAlongMS,
+                                  now.windAroundMS));
+    ui::field("Year", std::format("{} ({:.0f}% through), days {:.1f} h long",
+                                  seasonName(now.season), 100.0 * now.season, now.dayLengthHours));
+    ui::field("Birds", std::format("{} in the air near you", model.birds));
+    if (model.sound)
+    {
+        ImGui::SliderFloat("Volume", &settings.volume, 0.0F, 1.0F, "%.2f");
+    }
+    else
+    {
+        ui::textMuted("No sound (--mute, a capture, or no audio device)");
+    }
+
+    ImGui::Checkbox("Hold the weather", &settings.forceWeather);
+    ImGui::BeginDisabled(!settings.forceWeather);
+    ImGui::SliderFloat("Cloud", &settings.cloudCover, 0.0F, 1.0F, "%.2f");
+    ImGui::SliderFloat("Rain", &settings.rain, 0.0F, 1.0F, "%.2f");
+    ImGui::SliderFloat("Wet ground", &settings.wetness, 0.0F, 1.0F, "%.2f");
+    ImGui::SliderFloat("Mist", &settings.mist, 0.0F, 1.0F, "%.2f");
+    ImGui::SliderFloat("Wind", &settings.windSpeedMS, 0.0F, 30.0F, "%.1f m/s");
+    ImGui::EndDisabled();
+    ImGui::Checkbox("Hold the season", &settings.forceSeason);
+    ImGui::BeginDisabled(!settings.forceSeason);
+    ImGui::SliderFloat("Season", &settings.season, 0.0F, 0.999F, "%.3f");
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ui::textMuted("0 spring, 0.5 autumn");
 }
 
 void drawCredits()
@@ -496,6 +575,10 @@ HudActions drawHud(const HudModel& model, HudSettings& settings, EditorState& ed
         if (ImGui::CollapsingHeader("Sky, time and look", ImGuiTreeNodeFlags_DefaultOpen))
         {
             drawTimeAndLook(model, settings, actions);
+        }
+        if (ImGui::CollapsingHeader("Weather and the year"))
+        {
+            drawWeather(model, settings);
         }
         if (ImGui::CollapsingHeader("This habitat"))
         {

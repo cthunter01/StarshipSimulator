@@ -9,6 +9,7 @@
 
 #include "StarshipSimulator/core/astro/astro_time.h"
 #include "StarshipSimulator/core/astro/ephemeris.h"
+#include "StarshipSimulator/core/habitat/weather.h"
 
 namespace StarshipSimulator
 {
@@ -45,11 +46,17 @@ struct AppOptions
     std::optional<double>                timeScale;       // simulated seconds per real second
     std::optional<std::string>           lookAt;  // a planet, "moon", a star's name or "partner"
     std::optional<double>                fieldOfViewDeg;  // vertical
+    std::optional<std::string>           weather;         // holds the weather: see weatherNamed()
     bool                                 benchmark = false;
+    bool                                 mute      = false;
     std::optional<std::filesystem::path> capturePath;  // render, save a PNG, then exit
     int                                  captureFrames = 90;
     bool                                 captureUi     = false;
 };
+
+/// The weather a `--weather` name asks for ("clear", "fair", "cloudy", "overcast", "rain",
+/// "storm", "mist"), or nothing if the name is not one of them.
+[[nodiscard]] std::optional<Weather> weatherNamed(std::string_view name);
 
 /// Parses the arguments after the program name.
 [[nodiscard]] std::expected<AppOptions, std::string> parseAppOptions(

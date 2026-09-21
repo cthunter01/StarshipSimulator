@@ -8,6 +8,7 @@
 #include "StarshipSimulator/core/astro/ephemeris.h"
 #include "StarshipSimulator/core/camera.h"
 #include "StarshipSimulator/core/habitat/habitat_geometry.h"
+#include "StarshipSimulator/core/habitat/weather.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/procgen/terrain_grid.h"
 #include "StarshipSimulator/core/procgen/terrain_lod.h"
@@ -45,8 +46,16 @@ struct alignas(16) HabitatUniforms
         0.0F};           // x: density falloff k (1/m^2), y: pressure / 1 atm, z: haze, w: daylight
     Vec4f mirror{0.0F};  // x: opening angle, y: mirror length, z: half width, w: hinge z
     Vec4f sun{0.0F};     // xyz: direction to the Sun, w: its angular radius (rad)
+    // x: radius of the cloud deck's top (nearest the axis), y: its base, z: cover, w: how much
+    // light the deck lets through
+    Vec4f cloud{0.0F};
+    // x: rain, y: mist, z: how wet the ground is, w: how far the clouds have drifted along the
+    // axis (m; they also turn, see cloudTurn)
+    Vec4f weather{0.0F};
+    // x: fresh green, y: autumn gold, z: spring blossom, w: how far the clouds have turned (rad)
+    Vec4f season{1.0F, 0.0F, 0.0F, 0.0F};
 };
-static_assert(sizeof(HabitatUniforms) == 16 * (2 + kMaxSunBeams + 6));
+static_assert(sizeof(HabitatUniforms) == 16 * (2 + kMaxSunBeams + 9));
 static_assert(offsetof(HabitatUniforms, sunColor) == 16 * (2 + kMaxSunBeams));
 
 /// The starry sky (shaders/include/sky.glsl, block "Sky").
@@ -155,10 +164,25 @@ struct LightingSettings
     double haze         = 1.0;  // scales aerial perspective
 };
 
-/// Builds the habitat uniforms for a mirror opening angle (radians).
+/// Where the clouds are and how far they have drifted, for the habitat uniforms.
+struct CloudSettings
+{
+    double baseM   = 420.0;  // the deck, above the floor
+    double topM    = 820.0;
+    double driftM  = 0.0;  // how far they have blown along the axis
+    double turnRad = 0.0;  // and around the habitat
+};
+
+/// How much of the mirrors' light reaches the ground under this much cloud (1 clear, 0.25 under a
+/// solid deck). The same factor dims the beams, the air and the eye's adaptation.
+[[nodiscard]] double cloudShade(double cloudCover);
+
+/// Builds the habitat uniforms for a mirror opening angle (radians), in this weather.
 [[nodiscard]] HabitatUniforms makeHabitatUniforms(const HabitatGeometry&  geometry,
                                                   double                  openingAngle,
-                                                  const LightingSettings& lighting);
+                                                  const LightingSettings& lighting,
+                                                  const Weather&          weather,
+                                                  const CloudSettings&    clouds);
 
 /// The sky seen from the habitat: habitatFromInertial rotates EQJ directions into the habitat frame
 /// (see astro::habitatFromEqj).

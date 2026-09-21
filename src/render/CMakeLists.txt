@@ -1,6 +1,7 @@
 # The SDL_GPU renderer: device, shaders, render targets, passes and the ImGui layer.
 add_library(StarshipSimulator_render STATIC
     dynamic_buffer.cpp
+    gpu_birds.cpp
     gpu_device.cpp
     gpu_landscape.cpp
     gpu_props.cpp

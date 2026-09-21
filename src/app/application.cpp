@@ -32,11 +32,13 @@
 #include <SDL3/SDL_timer.h>
 #include <SDL3/SDL_video.h>
 
+#include "StarshipSimulator/audio/audio_device.h"
 #include "StarshipSimulator/core/app_options.h"
 #include "StarshipSimulator/core/astro/astro_time.h"
 #include "StarshipSimulator/core/astro/ephemeris.h"
 #include "StarshipSimulator/core/astro/sky_objects.h"
 #include "StarshipSimulator/core/astro/star_catalog.h"
+#include "StarshipSimulator/core/audio/soundscape.h"
 #include "StarshipSimulator/core/camera.h"
 #include "StarshipSimulator/core/gpu_abi/uniforms.h"
 #include "StarshipSimulator/core/habitat/day_schedule.h"
@@ -45,12 +47,15 @@
 #include "StarshipSimulator/core/habitat/landscape.h"
 #include "StarshipSimulator/core/habitat/metrics.h"
 #include "StarshipSimulator/core/habitat/mirror_optics.h"
+#include "StarshipSimulator/core/habitat/weather.h"
 #include "StarshipSimulator/core/log.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/physics/colliders.h"
 #include "StarshipSimulator/core/physics/player_controller.h"
 #include "StarshipSimulator/core/physics/rotating_frame.h"
+#include "StarshipSimulator/core/procgen/birds.h"
 #include "StarshipSimulator/core/procgen/buildings.h"
+#include "StarshipSimulator/core/procgen/clouds.h"
 #include "StarshipSimulator/core/procgen/habitat_mesher.h"
 #include "StarshipSimulator/core/procgen/hull_mesh.h"
 #include "StarshipSimulator/core/procgen/props.h"
@@ -58,8 +63,10 @@
 #include "StarshipSimulator/core/procgen/star_field.h"
 #include "StarshipSimulator/core/procgen/terrain_grid.h"
 #include "StarshipSimulator/core/procgen/trees.h"
+#include "StarshipSimulator/core/rng.h"
 #include "StarshipSimulator/core/scenario/scenario.h"
 #include "StarshipSimulator/physics/physics_world.h"
+#include "StarshipSimulator/render/gpu_birds.h"
 #include "StarshipSimulator/render/gpu_device.h"
 #include "StarshipSimulator/render/gpu_landscape.h"
 #include "StarshipSimulator/render/gpu_props.h"
@@ -228,6 +235,10 @@ GeneratedWorld generateWorld(const OneillCylinderSpec& spec, const StartSpec& vi
             std::make_shared<TreeLayer>(plantTrees(*world.geometry, *world.terrain, trees));
         addStandingTrees(*world.trees, world.settlements);
         world.settlementMeshes = buildSettlementMeshes(world.settlements);
+        // The clouds, wrapped once round the habitat and once along it.
+        world.clouds =
+            makeCloudMap(hashSeed(spec.terrain.seed, 0xC10D), 2.0 * kPi * world.geometry->radius(),
+                         world.geometry->profile().zMax() - world.geometry->profile().zMin());
         // The physics: what the towns built, and everything lying about in them.
         world.physics = std::make_unique<PhysicsWorld>(world.geometry, world.terrain);
         world.physics->addColliders(settlementColliders(world.settlements));
@@ -335,6 +346,20 @@ Application::Application(AppOptions options)
     hudSettings_.mirrorAngleDeg = static_cast<float>(
         options_.mirrorAngleDeg.value_or(scenario_.habitat.mirrors.openingAngleDeg));
     hudSettings_.followSchedule = scenario_.day.enabled && !options_.mirrorAngleDeg;
+    if (!options_.mute && !options_.capturePath && !options_.benchmark)
+    {
+        audio_ = std::make_unique<AudioDevice>(scenario_.habitat.terrain.seed);
+    }
+    if (options_.weather)
+    {
+        const Weather held        = weatherNamed(*options_.weather).value_or(Weather{});
+        hudSettings_.forceWeather = true;
+        hudSettings_.cloudCover   = static_cast<float>(held.cloudCover);
+        hudSettings_.rain         = static_cast<float>(held.rain);
+        hudSettings_.wetness      = static_cast<float>(held.wetness);
+        hudSettings_.mist         = static_cast<float>(held.mist);
+        hudSettings_.windSpeedMS  = static_cast<float>(held.windAlongMS);
+    }
     if (options_.timeScale)
     {
         hudSettings_.timePaused = *options_.timeScale <= 0.0;
@@ -392,8 +417,10 @@ void Application::adoptWorld(GeneratedWorld world, bool placeAtStartPoint)
     if (!gpuProps_)
     {
         gpuProps_ = std::make_unique<GpuProps>(device_.get());
+        gpuBirds_ = std::make_unique<GpuBirds>(device_.get());
     }
     renderer_.setHull(world.hull);
+    renderer_.setCloudMap(world.clouds);
     const Vec3d eye      = player_.eyePosition();
     const bool  hadWorld = geometry_ != nullptr;
     geometry_            = std::move(world.geometry);
@@ -784,6 +811,121 @@ void Application::advanceClock(double realSeconds)
         simTime_ = simTime_.plusSeconds(realSeconds * hudSettings_.timeScale);
     }
     identifiedAge_ += realSeconds;
+    animationSeconds_ = std::fmod(animationSeconds_ + realSeconds, 3600.0);
+}
+
+void Application::updateWeather(double realSeconds)
+{
+    weather_ = weatherAt(scenario_.climate, scenario_.day, simTime_, scenario_.sky.utcOffsetHours,
+                         scenario_.habitat.terrain.seed);
+    // While the weather runs itself the sliders follow it, so holding it starts from what is
+    // outside the window rather than jumping.
+    if (!hudSettings_.forceWeather)
+    {
+        hudSettings_.cloudCover  = static_cast<float>(weather_.cloudCover);
+        hudSettings_.rain        = static_cast<float>(weather_.rain);
+        hudSettings_.wetness     = static_cast<float>(weather_.wetness);
+        hudSettings_.mist        = static_cast<float>(weather_.mist);
+        hudSettings_.windSpeedMS = static_cast<float>(weather_.windAlongMS);
+    }
+    else
+    {
+        weather_.cloudCover  = static_cast<double>(hudSettings_.cloudCover);
+        weather_.rain        = static_cast<double>(hudSettings_.rain);
+        weather_.wetness     = static_cast<double>(hudSettings_.wetness);
+        weather_.mist        = static_cast<double>(hudSettings_.mist);
+        weather_.windAlongMS = static_cast<double>(hudSettings_.windSpeedMS);
+    }
+    if (!hudSettings_.forceSeason)
+    {
+        hudSettings_.season = static_cast<float>(weather_.season);
+    }
+    else
+    {
+        weather_.season = static_cast<double>(hudSettings_.season);
+    }
+    weather_.look        = seasonLook(weather_.season);
+    cloudSettings_.baseM = scenario_.climate.cloudBaseM;
+    cloudSettings_.topM  = scenario_.climate.cloudTopM;
+    // The clouds blow with the wind in real time, like the spin: the sky is not a clock.
+    const double radius = std::max(geometry_->radius() - scenario_.climate.cloudBaseM, 1.0);
+    cloudSettings_.driftM += weather_.windAlongMS * realSeconds;
+    cloudSettings_.turnRad += (weather_.windAroundMS / radius) * realSeconds;
+}
+
+audio::SoundMix Application::soundMix() const
+{
+    audio::SoundMix mix;
+    const Vec3d     eye    = player_.eyePosition();
+    const double    theta  = HabitatGeometry::angleOf(eye);
+    const double    radius = std::hypot(eye.x, eye.y);
+    const auto      ground = geometry_->groundRadius(eye.z, theta);
+    const double    height = ground ? *ground - radius : 1000.0;
+    const double    speed  = glm::length(player_.velocity());
+
+    // Wind: a breeze in the open, stronger up high, and the rush of air when you fly fast.
+    const double breeze = weather_.windAlongMS / 10.0;
+    mix.wind            = std::clamp(
+        0.12 + breeze + (0.3 * glm::smoothstep(5.0, 250.0, height)) + (speed / 40.0), 0.0, 1.0);
+    mix.windSpeedMS = weather_.windAlongMS + (0.5 * speed);
+
+    // What is within earshot: woods and water on a ring of points around you.
+    double woods = 0.0;
+    double water = 0.0;
+    for (const double reach : {0.0, 30.0, 70.0})
+    {
+        const double falloff = 1.0 - (reach / 100.0);
+        for (int k = 0; k < (reach > 0.0 ? 6 : 1); ++k)
+        {
+            const double angle = (2.0 * kPi * k) / 6.0;
+            const double z     = eye.z + (reach * std::cos(angle));
+            const double around =
+                theta + ((reach * std::sin(angle)) / std::max(geometry_->radius(), 1.0));
+            woods = std::max(woods, geometry_->forestDensity(z, around) * falloff);
+            water = std::max(water, geometry_->waterDepth(z, around) > 0.0 ? falloff : 0.0);
+        }
+    }
+    const double onTheGround = 1.0 - glm::smoothstep(4.0, 90.0, height);
+    const double daylight    = daylightFactor(mirrorAngle());
+    mix.leaves               = std::clamp(woods * (0.45 + breeze), 0.0, 1.0) * onTheGround;
+    mix.water                = water * onTheGround;
+    mix.rain                 = weather_.rain;
+    const bool inTown = settlements_ != nullptr && settlements_->townAt(eye.z, theta) != nullptr;
+    mix.town          = inTown ? 0.8 * onTheGround : 0.0;
+    mix.night         = 1.0 - glm::smoothstep(0.05, 0.4, daylight);
+    // Birds sing in the woods and hedges and keep quiet in the rain; crickets take over at night.
+    mix.birds  = (0.3 + (0.7 * woods)) * (1.0 - weather_.rain) * (0.4 + (0.6 * onTheGround)) *
+                 (inTown ? 0.5 : 1.0);
+    mix.master = static_cast<double>(hudSettings_.volume);
+    return mix;
+}
+
+void Application::updateSound(double realSeconds)
+{
+    if (!audio_ || geometry_ == nullptr)
+    {
+        return;
+    }
+    audio_->setMix(soundMix());
+    // Footsteps: one every stride while walking on the ground.
+    if (player_.locomotion() == Locomotion::Walk && player_.grounded())
+    {
+        const Vec3d  up       = HabitatGeometry::localUp(player_.eyePosition());
+        const Vec3d  velocity = player_.velocity();
+        const double speed    = glm::length(velocity - (up * glm::dot(velocity, up)));
+        const bool   running  = speed > 3.2;
+        stride_ += speed * realSeconds;
+        if (speed < 0.3)
+        {
+            stride_ = 0.0;
+        }
+        else if (stride_ >= (running ? 1.25 : 0.75))
+        {
+            stride_ = 0.0;
+            audio_->play(running ? audio::Sound::Run : audio::Sound::Footstep,
+                         0.7 + (0.3 * weather_.wetness));
+        }
+    }
 }
 
 void Application::updateSky()
@@ -792,9 +934,9 @@ void Application::updateSky()
     habitatFromSky_ = astro::habitatFromEqj(sky_.sunDirection, spinPhase_);
     if (hudSettings_.followSchedule)
     {
-        const double hour = astro::hourOfDay(simTime_, scenario_.sky.utcOffsetHours);
-        hudSettings_.mirrorAngleDeg =
-            static_cast<float>(scheduledMirrorAngleDeg(scenario_.day, hour));
+        const double hour  = astro::hourOfDay(simTime_, scenario_.sky.utcOffsetHours);
+        const auto   today = seasonalDay(scenario_.day, scenario_.climate, weather_.season);
+        hudSettings_.mirrorAngleDeg = static_cast<float>(scheduledMirrorAngleDeg(today, hour));
     }
 }
 
@@ -939,8 +1081,10 @@ double Application::autoExposure() const
     {
         return 1.0;
     }
-    // Eyes adapt: about 1x in daylight, up to kNightExposure^0.8 in the dark.
-    const double daylight = daylightFactor(mirrorAngle());
+    // Eyes adapt: about 1x in daylight, up to kNightExposure^0.8 in the dark. A cloudy day is
+    // dimmer than a clear one, but it does not look it, so the eye opens for that too.
+    const double daylight =
+        daylightFactor(mirrorAngle()) * std::lerp(1.0, gpu::cloudShade(weather_.cloudCover), 0.45);
     return std::pow(1.0 / (daylight + (1.0 / kNightExposure)), 0.8);
 }
 
@@ -1066,6 +1210,7 @@ HudActions Application::drawUi()
         .farms         = settlements_ ? settlements_->places.size() - settlements_->townCount() : 0,
         .buildings     = settlements_ ? settlements_->buildings.size() : 0,
         .movingProps   = physics_ ? physics_->awakeProps() : 0,
+        .birds         = birdPoses_.size(),
         .place         = placeName(),
         .player        = &player_,
         .mouseCaptured = input_.mouseCaptured(),
@@ -1073,6 +1218,10 @@ HudActions Application::drawUi()
         .status        = status_,
         .throwReport   = ball_ ? std::optional<ThrowReport>(ball_->report) : std::nullopt,
         .sky           = skyModel(),
+        .sound         = audio_ != nullptr && audio_->isOpen(),
+        .weather       = weather_,
+        .cloudBaseM    = scenario_.climate.cloudBaseM,
+        .cloudTopM     = scenario_.climate.cloudTopM,
     };
     return drawHud(model, hudSettings_, editor_, player_.settings);
 }
@@ -1245,6 +1394,10 @@ void Application::throwBall()
         physics_->removeProp(thrown_.front());
         thrown_.erase(thrown_.begin());
     }
+    if (audio_)
+    {
+        audio_->play(audio::Sound::Throw);
+    }
 }
 
 void Application::kick()
@@ -1367,6 +1520,12 @@ std::optional<int> Application::render(int frame, bool screenshotRequested, ImDr
                                   .tint        = prop.tint});
         }
     }
+    // The birds are worked out fresh each frame: flocks that wheel over fixed places, in real time.
+    BirdSettings flocks;
+    flocks.windMS = 0.35 * weather_.windAlongMS;
+    birdPoses_    = birdsNear(*geometry_, player_.eyePosition(), animationSeconds_,
+                              scenario_.habitat.terrain.seed, flocks);
+
     const SceneView scene{
         .camera      = camera(),
         .world       = world_.get(),
@@ -1375,8 +1534,11 @@ std::optional<int> Application::render(int frame, bool screenshotRequested, ImDr
         .settlements = gpuSettlements_.get(),
         .props       = gpuProps_.get(),
         .propPoses   = propPoses_,
+        .birds       = gpuBirds_.get(),
+        .birdPoses   = birdPoses_,
         .shadow      = shadow,
-        .habitat     = gpu::makeHabitatUniforms(*geometry_, mirrorAngle(), lighting),
+        .habitat =
+            gpu::makeHabitatUniforms(*geometry_, mirrorAngle(), lighting, weather_, cloudSettings_),
         .sky =
             gpu::makeSkyUniforms(habitatFromSky_, static_cast<double>(hudSettings_.starBrightness),
                                  kMilkyWayScale * static_cast<double>(hudSettings_.milkyWay)),
@@ -1388,6 +1550,7 @@ std::optional<int> Application::render(int frame, bool screenshotRequested, ImDr
         .markers  = shapes,
         .exposure = static_cast<float>(static_cast<double>(hudSettings_.exposure) * autoExposure()),
         .grade    = hudSettings_.grade,
+        .animationSeconds = animationSeconds_,
     };
     const FrameResult result = renderer_.renderFrame(scene, frameOptions);
     if (result.presented)
@@ -1492,7 +1655,9 @@ int Application::run()
         applyInput(input, actions);
         simulate(benchmark_ ? MoveIntent{} : input.move, realSeconds);
         advanceClock(realSeconds);
+        updateWeather(realSeconds);
         updateSky();
+        updateSound(realSeconds);
 
         if (const auto exitCode = render(frame, input.screenshot, ui))
         {

@@ -9,6 +9,7 @@
 #include "StarshipSimulator/core/astro/ephemeris.h"
 #include "StarshipSimulator/core/habitat/day_schedule.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
+#include "StarshipSimulator/core/habitat/weather.h"
 
 namespace StarshipSimulator
 {
@@ -48,6 +49,7 @@ struct Scenario
     StartSpec          start;
     SkySpec            sky;
     DayScheduleSpec    day;
+    ClimateSpec        climate;
 };
 
 struct ScenarioError

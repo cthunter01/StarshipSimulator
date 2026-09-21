@@ -13,6 +13,9 @@ layout(std140, set = UNIFORM_SET, binding = 1) uniform Habitat
     vec4 atmosphere;  // x: density falloff k (1/m^2), y: pressure / 1 atm, z: haze, w: daylight
     vec4 mirror;      // x: opening angle, y: mirror length, z: half width, w: hinge z
     vec4 sun;         // xyz: direction to the Sun, w: angular radius
+    vec4 cloud;    // x: radius of the cloud deck's top, y: its base, z: cover, w: light let through
+    vec4 weather;  // x: rain, y: mist, z: wetness of the ground, w: cloud drift along the axis (m)
+    vec4 season;   // x: fresh green, y: autumn gold, z: blossom, w: how far the clouds have turned
 }
 habitat;
 
@@ -63,6 +66,36 @@ float densityPath(vec3 a, vec3 b, int samples)
 
 vec3 extinction() { return (RAYLEIGH + MIE) * habitat.atmosphere.y * habitat.atmosphere.z; }
 
+// ---- Mist and rain -----------------------------------------------------------------------------
+// Water in the air: mist lying in the lowest tens of metres, and rain filling everything under the
+// cloud deck. Grey, so it whitens what it hides instead of colouring it.
+const vec3 WATER_HAZE = vec3(2.6e-3);  // per metre at full mist
+
+float mistDensity(vec3 p)
+{
+    float radius  = length(p.xy);
+    float above   = max(habitat.shape.x - radius, 0.0);  // roughly metres above the floor
+    float lying   = habitat.weather.y * exp(-above / 40.0);
+    float falling = 0.30 * habitat.weather.x *
+                    smoothstep(habitat.cloud.y - 150.0, habitat.cloud.y + 50.0, radius);
+    return lying + falling;
+}
+
+// Mist-weighted length (m) of the segment a -> b (midpoint rule).
+float mistPath(vec3 a, vec3 b, int samples)
+{
+    if (habitat.weather.x + habitat.weather.y <= 0.0)
+    {
+        return 0.0;
+    }
+    float sum = 0.0;
+    for (int i = 0; i < samples; ++i)
+    {
+        sum += mistDensity(mix(a, b, (float(i) + 0.5) / float(samples)));
+    }
+    return sum * length(b - a) / float(samples);
+}
+
 // Radiance of the sunlit air itself (light scattered toward the viewer).
 // Radiance of the sunlit air itself (light scattered toward the viewer), averaged over directions.
 vec3 airLight() { return habitat.sunColor.rgb * habitat.atmosphere.w * 0.42 + vec3(0.0004, 0.0005, 0.0009); }
@@ -98,12 +131,19 @@ struct Haze
     vec3 inscatter;
 };
 
+// The mist's own glow: the whole sky lights it, so it has no direction and no colour of its own.
+vec3 mistLight() { return habitat.sunColor.rgb * habitat.atmosphere.w * 0.30 + vec3(0.0006); }
+
 // Aerial perspective between the camera and a point inside the habitat.
 Haze aerialPerspective(vec3 camera, vec3 point)
 {
-    vec3 transmittance = exp(-extinction() * densityPath(camera, point, 8));
-    vec3 view          = normalize(point - camera);
-    return Haze(transmittance, airLight() * phaseWeight(view) * (1.0 - transmittance));
+    vec3  air           = extinction() * densityPath(camera, point, 8);
+    float water         = WATER_HAZE.g * mistPath(camera, point, 8);
+    vec3  transmittance = exp(-(air + vec3(water)));
+    vec3  view          = normalize(point - camera);
+    float grey          = water / max(water + air.g, 1e-7);
+    vec3  glow          = mix(airLight() * phaseWeight(view), mistLight(), grey);
+    return Haze(transmittance, glow * (1.0 - transmittance));
 }
 
 // ---- Sunlight through the windows --------------------------------------------------------------

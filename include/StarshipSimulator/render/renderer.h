@@ -15,9 +15,11 @@
 #include "StarshipSimulator/core/camera.h"
 #include "StarshipSimulator/core/gpu_abi/uniforms.h"
 #include "StarshipSimulator/core/math.h"
+#include "StarshipSimulator/core/procgen/clouds.h"
 #include "StarshipSimulator/core/procgen/mesh.h"
 #include "StarshipSimulator/core/procgen/props.h"
 #include "StarshipSimulator/core/procgen/star_field.h"
+#include "StarshipSimulator/render/gpu_birds.h"
 #include "StarshipSimulator/render/gpu_device.h"
 #include "StarshipSimulator/render/gpu_landscape.h"
 #include "StarshipSimulator/render/gpu_props.h"
@@ -60,7 +62,9 @@ struct SceneView
     const GpuSettlements*          settlements = nullptr;  // its towns and farms
     GpuProps*                      props = nullptr;  // loose props (instances picked per frame)
     std::span<const PropPlacement> propPoses;        // where each prop is now
-    gpu::ShadowUniforms            shadow;           // the trees' shadow map (params.x = 0: none)
+    GpuBirds*                      birds = nullptr;  // the flocks over the valleys
+    std::span<const Bird>          birdPoses;
+    gpu::ShadowUniforms            shadow;  // the trees' shadow map (params.x = 0: none)
     gpu::HabitatUniforms           habitat;
     gpu::SkyUniforms               sky;
     gpu::PlanetUniforms            planets;
@@ -121,6 +125,8 @@ public:
     void setSkyImages(const SkyImages& images);
     /// The outside of the habitat, drawn for the partner cylinder.
     void setHull(const CpuMesh& hull);
+    /// The habitat's cloud map (see makeCloudMap). Throws std::runtime_error on failure.
+    void setCloudMap(const CloudMap& clouds);
 
     [[nodiscard]] const SceneFormats&          sceneFormats() const { return targets_.formats(); }
     [[nodiscard]] const std::filesystem::path& shaderDirectory() const
@@ -152,6 +158,8 @@ private:
     SkyTextures          skyTextures_;
     ShadowMap            shadowMap_;
     GpuMesh              hull_;
+    GpuTexture           cloudMap_;  // the habitat's clouds, wrapped round it
+    GpuSampler           cloudSampler_;
     // Bound for the landscape when there are no settlements (an empty ground-map atlas).
     std::unique_ptr<GpuSettlements> noSettlements_;
     std::unique_ptr<Passes>         passes_;

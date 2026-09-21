@@ -1,8 +1,8 @@
 # Script mode (cmake -DROOT=<source dir> -P CheckLayering.cmake), run as the 'layering' test.
 # The core library must stay free of windowing, GPU, UI and physics-engine code so it can be unit
 # tested anywhere (including CI without a GPU): it fails if a core file includes SDL, ImGui, Jolt,
-# or a physics, render or app header. The physics library may use core and Jolt, but not SDL,
-# ImGui or the renderer.
+# or a physics, render, audio or app header. The physics library may use core and Jolt, but not SDL,
+# ImGui or the renderer; the audio library may use core and SDL's audio, but not the renderer.
 
 if(NOT DEFINED ROOT)
     message(FATAL_ERROR "CheckLayering.cmake requires -DROOT=<project source dir>")
@@ -32,7 +32,7 @@ file(GLOB_RECURSE core_files
     "${ROOT}/src/core/*.cpp"
     "${ROOT}/src/core/*.h")
 check_layer(core
-    "#[ \t]*include[ \t]*[<\"](SDL3/|SDL\\.h|imgui|Jolt/|StarshipSimulator/(render|app|physics)/)"
+    "#[ \t]*include[ \t]*[<\"](SDL3/|SDL\\.h|imgui|Jolt/|StarshipSimulator/(render|app|physics|audio)/)"
     ${core_files})
 
 file(GLOB_RECURSE physics_files
@@ -42,3 +42,11 @@ file(GLOB_RECURSE physics_files
 check_layer(physics
     "#[ \t]*include[ \t]*[<\"](SDL3/|SDL\\.h|imgui|StarshipSimulator/(render|app)/)"
     ${physics_files})
+
+file(GLOB_RECURSE audio_files
+    "${ROOT}/include/StarshipSimulator/audio/*.h"
+    "${ROOT}/src/audio/*.cpp"
+    "${ROOT}/src/audio/*.h")
+check_layer(audio
+    "#[ \t]*include[ \t]*[<\"](imgui|Jolt/|StarshipSimulator/(render|app|physics)/)"
+    ${audio_files})

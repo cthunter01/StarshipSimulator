@@ -1,6 +1,7 @@
 #include "StarshipSimulator/render/passes/habitat_passes.h"
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -14,6 +15,7 @@
 #include "StarshipSimulator/core/procgen/mesh.h"
 #include "StarshipSimulator/core/procgen/star_field.h"
 #include "StarshipSimulator/core/procgen/trees.h"
+#include "StarshipSimulator/render/gpu_birds.h"
 #include "StarshipSimulator/render/gpu_handles.h"
 #include "StarshipSimulator/render/gpu_landscape.h"
 #include "StarshipSimulator/render/gpu_settlements.h"
@@ -63,6 +65,8 @@ DrawStats drawChunks(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, co
     });
     return stats;
 }
+
+constexpr std::uint32_t kCloudShellSegments = 128;  // SHELL_SEGMENTS in clouds_shell.glsl
 
 void pushHabitatFragmentUniforms(SDL_GPUCommandBuffer* commands, const HabitatFrame& view)
 {
@@ -138,13 +142,14 @@ DrawStats LandscapePass::draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass*
     {
         return {};
     }
-    const std::array<SDL_GPUTextureSamplerBinding, 6> samplers{{
+    const std::array<SDL_GPUTextureSamplerBinding, 7> samplers{{
         {.texture = landscape.heights(), .sampler = landscape.surfaceSampler()},
         {.texture = landscape.profile(), .sampler = landscape.profileSampler()},
         {.texture = landscape.cover(), .sampler = landscape.surfaceSampler()},
         {.texture = landscape.arcByZ(), .sampler = landscape.profileSampler()},
         {.texture = view.shadowMap, .sampler = view.shadowSampler},
         {.texture = settlements.groundAtlas(), .sampler = settlements.groundSampler()},
+        {.texture = view.cloudMap, .sampler = view.cloudSampler},
     }};
     // SDL takes SDL_GPUBuffer* const*, so the pointee cannot be const.
     SDL_GPUBuffer* const townMaps = settlements.groundMaps();  // NOLINT(misc-const-correctness)
@@ -250,9 +255,11 @@ DrawStats TreePass::draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass
     SDL_PushGPUVertexUniformData(commands, 1, view.habitat, sizeof(gpu::HabitatUniforms));
     pushHabitatFragmentUniforms(commands, view);
     SDL_PushGPUFragmentUniformData(commands, 2, view.shadow, sizeof(gpu::ShadowUniforms));
-    const SDL_GPUTextureSamplerBinding shadowMap{.texture = view.shadowMap,
-                                                 .sampler = view.shadowSampler};
-    SDL_BindGPUFragmentSamplers(pass, 0, &shadowMap, 1);
+    const std::array<SDL_GPUTextureSamplerBinding, 2> samplers{{
+        {.texture = view.shadowMap, .sampler = view.shadowSampler},
+        {.texture = view.cloudMap, .sampler = view.cloudSampler},
+    }};
+    SDL_BindGPUFragmentSamplers(pass, 0, samplers.data(), static_cast<Uint32>(samplers.size()));
 
     DrawStats stats;
     for (const TreeDraw& d : draws)
@@ -301,6 +308,124 @@ void TreePass::drawShadow(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pas
         SDL_DrawGPUIndexedPrimitives(pass, d.indexCount, d.instanceCount, d.firstIndex,
                                      d.vertexOffset, d.firstInstance);
     }
+}
+
+// ---- Clouds ------------------------------------------------------------------------------------
+
+CloudPass::CloudPass(SDL_GPUDevice* device, const ShaderLibrary& shaders,
+                     const SceneFormats& formats)
+{
+    const GpuShader     vertex      = shaders.load("cloud_shell.vert");
+    const GpuShader     fragment    = shaders.load("clouds.frag");
+    PipelineDescription description = scenePipeline(formats);
+    description.vertexShader        = vertex.get();
+    description.fragmentShader      = fragment.get();
+    description.depth               = DepthMode::TestOnly;
+    description.blend               = BlendMode::Alpha;
+    description.cull                = SDL_GPU_CULLMODE_BACK;  // the near faces, where rays enter
+    below_                          = createPipeline(device, description, "cloud (below)");
+    description.cull                = SDL_GPU_CULLMODE_FRONT;  // the far faces, where they leave
+    inside_                         = createPipeline(device, description, "cloud (inside)");
+}
+
+BirdPass::BirdPass(SDL_GPUDevice* device, const ShaderLibrary& shaders, const SceneFormats& formats)
+{
+    const GpuShader vertex   = shaders.load("bird.vert");
+    const GpuShader fragment = shaders.load("bird.frag");
+    // One instance per bird; the six vertices come from gl_VertexIndex.
+    const std::array<SDL_GPUVertexBufferDescription, 1> buffers{{
+        {.slot               = 0,
+         .pitch              = sizeof(BirdInstance),
+         .input_rate         = SDL_GPU_VERTEXINPUTRATE_INSTANCE,
+         .instance_step_rate = 0},
+    }};
+    const std::array<SDL_GPUVertexAttribute, 4>         attributes{{
+        {.location    = 0,
+         .buffer_slot = 0,
+         .format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
+         .offset      = 0},
+        {.location    = 1,
+         .buffer_slot = 0,
+         .format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT,
+         .offset      = offsetof(BirdInstance, wingspanM)},
+        {.location    = 2,
+         .buffer_slot = 0,
+         .format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
+         .offset      = offsetof(BirdInstance, forward)},
+        {.location    = 3,
+         .buffer_slot = 0,
+         .format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT,
+         .offset      = offsetof(BirdInstance, wingBeat)},
+    }};
+    PipelineDescription                                 description = scenePipeline(formats);
+    description.vertexShader                                        = vertex.get();
+    description.fragmentShader                                      = fragment.get();
+    description.vertexBuffers                                       = buffers;
+    description.vertexAttributes                                    = attributes;
+    description.depth                                               = DepthMode::TestWrite;
+    pipeline_ = createPipeline(device, description, "bird");
+}
+
+DrawStats BirdPass::draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
+                         const GpuBirds& birds, const HabitatFrame& view) const
+{
+    DrawStats stats;
+    if (birds.count() == 0)
+    {
+        return stats;
+    }
+    const SDL_GPUBufferBinding instances{.buffer = birds.instances(), .offset = 0};
+    SDL_BindGPUGraphicsPipeline(pass, pipeline_.get());
+    SDL_BindGPUVertexBuffers(pass, 0, &instances, 1);
+    SDL_PushGPUVertexUniformData(commands, 0, view.frame, sizeof(gpu::FrameUniforms));
+    pushHabitatFragmentUniforms(commands, view);
+    SDL_DrawGPUPrimitives(pass, 6, birds.count(), 0, 0);
+    stats.chunks    = 1;
+    stats.triangles = 2ULL * birds.count();
+    return stats;
+}
+
+RainPass::RainPass(SDL_GPUDevice* device, const ShaderLibrary& shaders, const SceneFormats& formats)
+{
+    const GpuShader     vertex      = shaders.load("fullscreen.vert");
+    const GpuShader     fragment    = shaders.load("rain.frag");
+    PipelineDescription description = scenePipeline(formats);
+    description.vertexShader        = vertex.get();
+    description.fragmentShader      = fragment.get();
+    description.depth               = DepthMode::TestOnly;  // the shader writes its own depth
+    description.blend               = BlendMode::Alpha;
+    pipeline_                       = createPipeline(device, description, "rain");
+}
+
+void RainPass::draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
+                    const HabitatFrame& view) const
+{
+    SDL_BindGPUGraphicsPipeline(pass, pipeline_.get());
+    pushHabitatFragmentUniforms(commands, view);
+    SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+}
+
+void CloudPass::draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
+                     const HabitatFrame& view) const
+{
+    const Vec4f& deck = view.habitat->cloud;
+    if (deck.z <= 0.001F)
+    {
+        return;  // a clear sky
+    }
+    // Must match shellRadius() in shaders/include/clouds_shell.glsl.
+    const double shell =
+        static_cast<double>(deck.y) + (0.1 * static_cast<double>(deck.y - deck.x)) + 5.0;
+    const bool                         inside = std::hypot(view.camera.x, view.camera.y) < shell;
+    const SDL_GPUTextureSamplerBinding clouds{.texture = view.cloudMap,
+                                              .sampler = view.cloudSampler};
+    SDL_BindGPUGraphicsPipeline(pass, inside ? inside_.get() : below_.get());
+    SDL_BindGPUFragmentSamplers(pass, 0, &clouds, 1);
+    SDL_PushGPUVertexUniformData(commands, 0, view.frame, sizeof(gpu::FrameUniforms));
+    SDL_PushGPUVertexUniformData(commands, 1, view.habitat, sizeof(gpu::HabitatUniforms));
+    pushHabitatFragmentUniforms(commands, view);
+    // The side (six vertices a segment) and the two ends (three each): see cloud_shell.vert.
+    SDL_DrawGPUPrimitives(pass, 12 * kCloudShellSegments, 1, 0, 0);
 }
 
 // ---- Water -------------------------------------------------------------------------------------

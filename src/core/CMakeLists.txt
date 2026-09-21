@@ -3,6 +3,7 @@
 add_library(StarshipSimulator_core STATIC
     app_options.cpp
     assets/assets.cpp
+    audio/soundscape.cpp
     astro/astro_time.cpp
     astro/ephemeris.cpp
     astro/sky_objects.cpp
@@ -21,10 +22,13 @@ add_library(StarshipSimulator_core STATIC
     habitat/meridian_profile.cpp
     habitat/metrics.cpp
     habitat/mirror_optics.cpp
+    habitat/weather.cpp
     physics/colliders.cpp
     physics/player_controller.cpp
     physics/rotating_frame.cpp
+    procgen/birds.cpp
     procgen/buildings.cpp
+    procgen/clouds.cpp
     procgen/habitat_mesher.cpp
     procgen/hull_mesh.cpp
     procgen/mesh.cpp
@@ -55,6 +59,7 @@ StarshipSimulator_configure_target(StarshipSimulator_core)
 # builds, or the app would take half a minute to start.
 set_source_files_properties(
     habitat/habitat_geometry.cpp habitat/landscape.cpp habitat/meridian_profile.cpp
-    procgen/noise.cpp procgen/settlements.cpp procgen/terrain_grid.cpp procgen/terrain_lod.cpp
+    procgen/birds.cpp procgen/clouds.cpp procgen/noise.cpp procgen/settlements.cpp procgen/terrain_grid.cpp
+    procgen/terrain_lod.cpp
     procgen/trees.cpp
     PROPERTIES COMPILE_OPTIONS "$<$<CONFIG:Debug>:-O2>")

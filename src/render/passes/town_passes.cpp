@@ -48,11 +48,12 @@ PipelineDescription shadowVariant(PipelineDescription description, SDL_GPUShader
 void bindLighting(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
                   const GpuLandscape& landscape, const HabitatFrame& view)
 {
-    const std::array<SDL_GPUTextureSamplerBinding, 4> samplers{{
+    const std::array<SDL_GPUTextureSamplerBinding, 5> samplers{{
         {.texture = landscape.heights(), .sampler = landscape.surfaceSampler()},
         {.texture = landscape.profile(), .sampler = landscape.profileSampler()},
         {.texture = landscape.arcByZ(), .sampler = landscape.profileSampler()},
         {.texture = view.shadowMap, .sampler = view.shadowSampler},
+        {.texture = view.cloudMap, .sampler = view.cloudSampler},
     }};
     SDL_BindGPUFragmentSamplers(pass, 0, samplers.data(), static_cast<Uint32>(samplers.size()));
     SDL_PushGPUFragmentUniformData(commands, 0, view.frame, sizeof(gpu::FrameUniforms));

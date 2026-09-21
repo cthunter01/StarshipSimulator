@@ -13,6 +13,7 @@
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
 #include "StarshipSimulator/core/habitat/landscape.h"
 #include "StarshipSimulator/core/habitat/mirror_optics.h"
+#include "StarshipSimulator/core/habitat/weather.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/procgen/star_field.h"
 #include "StarshipSimulator/core/procgen/terrain_grid.h"
@@ -68,8 +69,14 @@ FrameUniforms makeFrameUniforms(const Camera& camera, std::uint32_t width, std::
     return frame;
 }
 
+double cloudShade(double cloudCover)
+{
+    return 1.0 - (0.75 * glm::smoothstep(0.15, 0.95, cloudCover));
+}
+
 HabitatUniforms makeHabitatUniforms(const HabitatGeometry& geometry, double openingAngle,
-                                    const LightingSettings& lighting)
+                                    const LightingSettings& lighting, const Weather& weather,
+                                    const CloudSettings& clouds)
 {
     const OneillCylinderSpec& spec     = geometry.spec();
     const double              daylight = daylightFactor(openingAngle);
@@ -102,6 +109,30 @@ HabitatUniforms makeHabitatUniforms(const HabitatGeometry& geometry, double open
                                         geometry.radius() * std::sin(geometry.windowHalfAngle()),
                                         geometry.floorZMin()));
     habitat.sun           = Vec4f(0.0F, 0.0F, 1.0F, static_cast<float>(kSunAngularRadius));
+
+    // The cloud deck, as radii from the axis; how much sunlight it lets through when overcast.
+    const double base = geometry.radius() - clouds.baseM;
+    const double top  = geometry.radius() - clouds.topM;
+    habitat.cloud     = Vec4f(Vec4d(top, base, weather.cloudCover, cloudShade(weather.cloudCover)));
+    habitat.weather   = Vec4f(Vec4d(weather.rain, weather.mist, weather.wetness, clouds.driftM));
+    habitat.season =
+        Vec4f(Vec4d(weather.look.fresh, weather.look.gold, weather.look.blossom, clouds.turnRad));
+    // Thick cloud dims the sunbeams, and the deck itself becomes the sky: a wide, even, dull
+    // light in place of the far side's green glow. Less light altogether, but softer.
+    const auto shade = static_cast<double>(habitat.cloud.w);
+    for (Vec4f& beam : habitat.beams)
+    {
+        beam.w *= static_cast<float>(shade);
+    }
+    const double under    = glm::smoothstep(0.2, 0.95, weather.cloudCover);
+    const Vec3d  deckGlow = kSunColor * (0.62 * daylight * lighting.ambient);
+    habitat.ambientUp =
+        Vec4f(Vec4d(glm::mix(Vec3d(Vec3f(habitat.ambientUp)), deckGlow, under), 0.0));
+    habitat.ambientDown =
+        Vec4f(Vec3f(habitat.ambientDown) * static_cast<float>(1.0 - (0.35 * under)), 0.0F);
+    // The air keeps more of its light than the ground does: under a deck the haze is lit by the
+    // whole grey sky, not by a beam.
+    habitat.atmosphere.w *= static_cast<float>(0.45 + (0.55 * shade));
     return habitat;
 }
 

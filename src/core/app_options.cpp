@@ -15,6 +15,7 @@
 
 #include "StarshipSimulator/core/astro/astro_time.h"
 #include "StarshipSimulator/core/astro/ephemeris.h"
+#include "StarshipSimulator/core/habitat/weather.h"
 
 namespace StarshipSimulator
 {
@@ -185,6 +186,16 @@ std::expected<void, std::string> applyValueOption(AppOptions& options, std::stri
         }
         options.mirrorAngleDeg = angle;
     }
+    else if (name == "--weather")
+    {
+        if (!weatherNamed(value))
+        {
+            return std::unexpected(std::format(
+                "--weather expects clear, fair, cloudy, overcast, mist, rain or storm, got '{}'",
+                value));
+        }
+        options.weather = std::string(value);
+    }
     else if (isSkyOption(name))
     {
         return applySkyOption(options, name, value);
@@ -225,6 +236,10 @@ bool applyFlag(AppOptions& options, std::string_view name)
     {
         options.benchmark = true;
     }
+    else if (name == "--mute")
+    {
+        options.mute = true;
+    }
     else
     {
         return false;
@@ -236,10 +251,56 @@ bool takesValue(std::string_view name)
 {
     return name == "--size" || name == "--camera" || name == "--capture" ||
            name == "--capture-frames" || name == "--scenario" || name == "--view" ||
-           name == "--mirror" || isSkyOption(name);
+           name == "--mirror" || name == "--weather" || isSkyOption(name);
 }
 
 }  // namespace
+
+std::optional<Weather> weatherNamed(std::string_view name)
+{
+    Weather weather;
+    if (name == "clear")
+    {
+        weather.cloudCover = 0.02;
+    }
+    else if (name == "fair")
+    {
+        weather.cloudCover = 0.35;
+    }
+    else if (name == "cloudy")
+    {
+        weather.cloudCover = 0.7;
+    }
+    else if (name == "overcast")
+    {
+        weather.cloudCover = 1.0;
+    }
+    else if (name == "mist")
+    {
+        weather.cloudCover = 0.2;
+        weather.mist       = 0.9;
+    }
+    else if (name == "rain")
+    {
+        weather.cloudCover = 0.9;
+        weather.rain       = 0.5;
+        weather.wetness    = 0.8;
+        weather.mist       = 0.25;
+    }
+    else if (name == "storm")
+    {
+        weather.cloudCover  = 1.0;
+        weather.rain        = 1.0;
+        weather.wetness     = 1.0;
+        weather.mist        = 0.15;
+        weather.windAlongMS = 14.0;
+    }
+    else
+    {
+        return std::nullopt;
+    }
+    return weather;
+}
 
 std::expected<AppOptions, std::string> parseAppOptions(std::span<const std::string_view> args)
 {
@@ -285,8 +346,10 @@ Options:
   --look-at NAME            Look out of a window at earth, moon, a planet, a star (e.g. Vega)
                            or the partner cylinder ("partner")
   --fov DEG                Vertical field of view (default 70; B toggles binoculars)
+  --weather NAME           Hold the weather: clear, fair, cloudy, overcast, mist, rain, storm
   --size WxH               Window size, e.g. 1920x1080
   --no-vsync               Present as fast as possible (mailbox or immediate)
+  --mute                   No sound (captures and benchmarks are always silent)
   --gpu-debug              SDL_GPU debug mode and Vulkan validation (default in Debug builds)
   --no-gpu-debug           Disable it
   --capture FILE.png       Render, save a screenshot to FILE.png, then exit

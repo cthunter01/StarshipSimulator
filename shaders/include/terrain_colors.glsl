@@ -23,8 +23,20 @@ vec3 cropColor(float pick)
     if (pick < 0.50) return SPROUTS;
     if (pick < 0.72) return WHEAT;
     if (pick < 0.84) return SOIL;
-    if (pick < 0.97) return ORCHARD;
+    if (pick < 0.97) return mix(ORCHARD, BLOSSOM, habitat.season.z);  // in blossom each spring
     return BLOSSOM;
+}
+
+// The turn of the year and the weather on a piece of ground: what is green goes gold in autumn,
+// growth is lushest in early summer, and everything is darker while it is wet.
+vec3 weathered(vec3 albedo)
+{
+    const vec3 AUTUMN = vec3(0.62, 0.42, 0.10);
+    float      leafy  = clamp((albedo.g - albedo.b) * 5.0, 0.0, 1.0);
+    vec3       gold   = AUTUMN * (albedo.r + albedo.g + albedo.b);
+    vec3       color  = mix(albedo, gold, leafy * habitat.season.y * 0.8);
+    color *= mix(0.88, 1.1, leafy * habitat.season.x);
+    return color * (1.0 - (0.4 * habitat.weather.z));
 }
 
 // Fades out detail of the given size (m) once a pixel covers more than about half of it.
@@ -76,7 +88,7 @@ vec3 valleyAlbedo(vec2 uv, vec3 p, float woods, float wetness)
     color        = mix(color, FOREST * canopy, forest);
 
     // A stone promenade along the windows, where the terrain is flat.
-    return mix(STONE, color, smoothstep(22.0, 32.0, distanceToWindow(p)));
+    return weathered(mix(STONE, color, smoothstep(22.0, 32.0, distanceToWindow(p))));
 }
 
 vec3 endcapAlbedo(vec3 p, vec3 n, float woods)
@@ -90,7 +102,7 @@ vec3 endcapAlbedo(vec3 p, vec3 n, float woods)
     color           = mix(color, color * 0.75 + STONE * 0.1, terrace * 0.5);
     float rockMask  = smoothstep(0.28, 0.40, slope + 0.12 * valueNoise3(p / 60.0));
     float grain     = mix(0.5, valueNoise3(p / 15.0), detail(footprint, 15.0));
-    return mix(color, ROCK * (0.8 + 0.4 * grain), rockMask);
+    return weathered(mix(color, ROCK * (0.8 + 0.4 * grain), rockMask));
 }
 
 // Shores and river beds: sand at the waterline, silt deeper down. depth: below the water level (m).
@@ -111,7 +123,7 @@ vec3 townAlbedo(vec3 land, vec2 uv, vec4 town, float footprint)
 {
     vec3  lawn      = LAWN * (0.85 + 0.3 * valueNoise(uv / 7.0)) *
                 (1.0 + 0.25 * detail(footprint, 0.5) * (valueNoise(uv / 0.4) - 0.5));
-    vec3 color = mix(land, lawn, smoothstep(0.15, 0.7, town.z));
+    vec3 color = mix(land, weathered(lawn), smoothstep(0.15, 0.7, town.z));
 
     float edge  = max(0.05, 0.75 * footprint);
     float paved = 1.0 - smoothstep(-edge, edge, town.x);
@@ -136,5 +148,7 @@ vec3 townAlbedo(vec3 land, vec2 uv, vec4 town, float footprint)
     vec3 paving = mix(street, stone, smoothstep(0.3, 0.7, town.y));
     // A kerb along street edges.
     paving *= 1.0 - 0.3 * (1.0 - smoothstep(0.3, 0.7, town.y)) * smoothstep(-0.45, -0.15, town.x);
+    // Wet paving is darker and shinier than wet grass.
+    paving *= 1.0 - (0.45 * habitat.weather.z);
     return mix(color, paving, paved);
 }

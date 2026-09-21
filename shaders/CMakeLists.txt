@@ -7,6 +7,11 @@ StarshipSimulator_add_shaders(StarshipSimulator_shaders
         body.frag
         body.vert
         building.frag
+        bird.frag
+        bird.vert
+        cloud_shell.vert
+        clouds.frag
+        rain.frag
         fullscreen.vert
         glass.frag
         habitat.frag

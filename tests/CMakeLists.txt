@@ -3,8 +3,10 @@ add_executable(StarshipSimulator_tests
     app_options_test.cpp
     assets_test.cpp
     astro_test.cpp
+    birds_test.cpp
     buildings_test.cpp
     camera_test.cpp
+    clouds_test.cpp
     habitat_mesher_test.cpp
     habitat_test.cpp
     mesh_test.cpp
@@ -14,10 +16,12 @@ add_executable(StarshipSimulator_tests
     scenario_test.cpp
     settlements_test.cpp
     sim_clock_test.cpp
+    soundscape_test.cpp
     spirv_reflect_test.cpp
     star_catalog_test.cpp
     terrain_test.cpp
-    uniforms_test.cpp)
+    uniforms_test.cpp
+    weather_test.cpp)
 target_link_libraries(StarshipSimulator_tests
     PRIVATE StarshipSimulator::core StarshipSimulator::physics GTest::gtest_main)
 # spirv_reflect_test checks every compiled shader against SDL_GPU's binding rules.

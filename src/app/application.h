@@ -11,6 +11,7 @@
 
 #include <SDL3/SDL_video.h>
 
+#include "StarshipSimulator/audio/audio_device.h"
 #include "StarshipSimulator/core/app_options.h"
 #include "StarshipSimulator/core/astro/astro_time.h"
 #include "StarshipSimulator/core/astro/ephemeris.h"
@@ -20,9 +21,12 @@
 #include "StarshipSimulator/core/gpu_abi/uniforms.h"
 #include "StarshipSimulator/core/habitat/habitat_geometry.h"
 #include "StarshipSimulator/core/habitat/metrics.h"
+#include "StarshipSimulator/core/habitat/weather.h"
 #include "StarshipSimulator/core/physics/player_controller.h"
 #include "StarshipSimulator/core/physics/rotating_frame.h"
+#include "StarshipSimulator/core/procgen/birds.h"
 #include "StarshipSimulator/core/procgen/buildings.h"
+#include "StarshipSimulator/core/procgen/clouds.h"
 #include "StarshipSimulator/core/procgen/habitat_mesher.h"
 #include "StarshipSimulator/core/procgen/mesh.h"
 #include "StarshipSimulator/core/procgen/props.h"
@@ -33,6 +37,7 @@
 #include "StarshipSimulator/core/scenario/scenario.h"
 #include "StarshipSimulator/core/sim_clock.h"
 #include "StarshipSimulator/physics/physics_world.h"
+#include "StarshipSimulator/render/gpu_birds.h"
 #include "StarshipSimulator/render/gpu_device.h"
 #include "StarshipSimulator/render/gpu_landscape.h"
 #include "StarshipSimulator/render/gpu_props.h"
@@ -74,6 +79,7 @@ struct GeneratedWorld
     std::shared_ptr<TreeLayer>             trees;
     Settlements                            settlements;
     std::vector<SettlementMesh>            settlementMeshes;
+    CloudMap                               clouds;
     std::unique_ptr<PhysicsWorld>          physics;
     std::string                            error;
     double                                 seconds = 0.0;
@@ -135,6 +141,9 @@ private:
     void                                  adoptSky(SkyData data);
     void                                  advanceClock(double realSeconds);
     void                                  updateSky();
+    void                                  updateWeather(double realSeconds);
+    void                                  updateSound(double realSeconds);
+    [[nodiscard]] audio::SoundMix         soundMix() const;
     void                                  setTime(astro::SimTime time);
     void                                  stepTimeScale(int steps);
     void                                  identify();
@@ -179,9 +188,11 @@ private:
     std::shared_ptr<const Settlements>     settlements_;
     std::unique_ptr<GpuSettlements>        gpuSettlements_;
     std::unique_ptr<GpuProps>              gpuProps_;
+    std::unique_ptr<GpuBirds>              gpuBirds_;
     std::unique_ptr<PhysicsWorld>          physics_;
     std::vector<std::size_t>               thrown_;     // props: the balls thrown, oldest first
     std::vector<PropPlacement>             propPoses_;  // where the props are, for drawing
+    std::vector<Bird>                      birdPoses_;
     HabitatMetrics                         metrics_;
     std::future<GeneratedWorld>            pending_;
     bool                                   placeWhenReady_ = false;
@@ -199,9 +210,14 @@ private:
     PlayerController          player_;
     LookRig                   look_;
     SimClock                  clock_;
-    double                    spinPhase_ = 0.0;
+    double                    spinPhase_        = 0.0;
+    double                    animationSeconds_ = 0.0;  // wall clock, for ripples, rain and birds
     std::optional<ThrownBall> ball_;
-    std::optional<Benchmark>  benchmark_;
+    Weather                   weather_;
+    std::unique_ptr<AudioDevice> audio_;         // null when silent
+    double                       stride_ = 0.0;  // metres walked since the last footstep
+    gpu::CloudSettings           cloudSettings_;
+    std::optional<Benchmark>     benchmark_;
 
     HudSettings   hudSettings_;
     EditorState   editor_;

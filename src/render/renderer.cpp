@@ -3,6 +3,7 @@
 #include <imgui.h>
 #include <imgui_impl_sdlgpu3.h>
 
+#include <array>
 #include <cstdint>
 #include <exception>
 #include <expected>
@@ -27,6 +28,7 @@
 #include "StarshipSimulator/core/gpu_abi/uniforms.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/procgen/buildings.h"
+#include "StarshipSimulator/core/procgen/clouds.h"
 #include "StarshipSimulator/core/procgen/mesh.h"
 #include "StarshipSimulator/core/procgen/settlements.h"
 #include "StarshipSimulator/core/procgen/star_field.h"
@@ -42,6 +44,7 @@
 #include "StarshipSimulator/render/passes/town_passes.h"
 #include "StarshipSimulator/render/render_targets.h"
 #include "StarshipSimulator/render/shadow_map.h"
+#include "StarshipSimulator/render/texture.h"
 #include "StarshipSimulator/render/upload.h"
 
 namespace StarshipSimulator
@@ -55,6 +58,9 @@ struct Renderer::Passes
     BodyPass      bodies;
     HullPass      hull;
     LandscapePass landscape;
+    CloudPass     clouds;
+    BirdPass      birds;
+    RainPass      rain;
     WaterPass     water;
     TreePass      trees;
     BuildingPass  buildings;
@@ -70,7 +76,30 @@ namespace
 {
 
 constexpr std::uint32_t kBytesPerPixel = 4;
-constexpr double        kPropRange     = 400.0;  // m: props farther away are too small to see
+
+constexpr std::array<std::uint8_t, 2> kClearSky{0, 0};
+
+/// Linear filtering with mipmaps, repeating both ways: the cloud map wraps round the habitat and
+/// along it.
+GpuSampler createWrappingSampler(SDL_GPUDevice* device)
+{
+    const SDL_GPUSamplerCreateInfo info{
+        .min_filter     = SDL_GPU_FILTER_LINEAR,
+        .mag_filter     = SDL_GPU_FILTER_LINEAR,
+        .mipmap_mode    = SDL_GPU_SAMPLERMIPMAPMODE_LINEAR,
+        .address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_REPEAT,
+        .address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_REPEAT,
+        .address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_REPEAT,
+        .max_lod        = 1000.0F,
+    };
+    GpuSampler sampler(device, SDL_CreateGPUSampler(device, &info));
+    if (!sampler.valid())
+    {
+        throw std::runtime_error(std::format("Cannot create a sampler: {}", SDL_GetError()));
+    }
+    return sampler;
+}
+constexpr double kPropRange = 400.0;  // m: props farther away are too small to see
 
 std::optional<SDL_PixelFormat> pixelFormatOf(SDL_GPUTextureFormat format)
 {
@@ -122,6 +151,10 @@ Renderer::Renderer(GpuDevice& device, std::filesystem::path shaderDirectory,
     targets_(device.get(), chooseSceneFormats(device.get(), SDL_GPU_SAMPLECOUNT_4)),
     skyTextures_(device.get()),
     shadowMap_(device.get(), kShadowMapResolution),
+    // Until a habitat is generated: a clear sky.
+    cloudMap_(createSolidTexture(device.get(), SDL_GPU_TEXTUREFORMAT_R8G8_UNORM,
+                                 std::as_bytes(std::span(kClearSky)))),
+    cloudSampler_(createWrappingSampler(device.get())),
     noSettlements_(std::make_unique<GpuSettlements>(device.get(), std::span<const SettlementMesh>(),
                                                     Settlements{})),
     passes_(createPasses())
@@ -144,6 +177,9 @@ std::unique_ptr<Renderer::Passes> Renderer::createPasses() const
         .bodies    = BodyPass(device, shaders_, formats),
         .hull      = HullPass(device, shaders_, formats),
         .landscape = LandscapePass(device, shaders_, formats),
+        .clouds    = CloudPass(device, shaders_, formats),
+        .birds     = BirdPass(device, shaders_, formats),
+        .rain      = RainPass(device, shaders_, formats),
         .water     = WaterPass(device, shaders_, formats),
         .trees     = TreePass(device, shaders_, formats),
         .buildings = BuildingPass(device, shaders_, formats),
@@ -196,6 +232,19 @@ void Renderer::setSkyImages(const SkyImages& images)
 void Renderer::setHull(const CpuMesh& hull)
 {
     hull_ = uploadMesh(device_->get(), hull);
+}
+
+void Renderer::setCloudMap(const CloudMap& clouds)
+{
+    if (clouds.width == 0 || clouds.height == 0)
+    {
+        return;
+    }
+    cloudMap_ = createTexture(device_->get(), {.width   = clouds.width,
+                                               .height  = clouds.height,
+                                               .format  = SDL_GPU_TEXTUREFORMAT_R8G8_UNORM,
+                                               .pixels  = std::as_bytes(std::span(clouds.texels)),
+                                               .mipmaps = true});
 }
 
 FrameResult Renderer::renderFrame(const SceneView& view, const FrameOptions& options)
@@ -261,7 +310,9 @@ void Renderer::drawScene(SDL_GPUCommandBuffer* commands, const SceneView& view, 
                                     .frustum        = &frustum,
                                     .shadow         = &view.shadow,
                                     .shadowMap      = shadowMap_.texture(),
-                                    .shadowSampler  = shadowMap_.sampler()};
+                                    .shadowSampler  = shadowMap_.sampler(),
+                                    .cloudMap       = cloudMap_.get(),
+                                    .cloudSampler   = cloudSampler_.get()};
 
     const bool                   msaa = targets_.multisampled();
     const SDL_GPUColorTargetInfo color{
@@ -282,7 +333,7 @@ void Renderer::drawScene(SDL_GPUCommandBuffer* commands, const SceneView& view, 
         .stencil_store_op = SDL_GPU_STOREOP_DONT_CARE,
         .cycle            = true,
     };
-    if (view.landscape != nullptr || view.props != nullptr)
+    if (view.landscape != nullptr || view.props != nullptr || view.birds != nullptr)
     {
         SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
         if (view.landscape != nullptr)
@@ -292,6 +343,10 @@ void Renderer::drawScene(SDL_GPUCommandBuffer* commands, const SceneView& view, 
         if (view.props != nullptr)
         {
             view.props->prepare(copy, view.camera.position, view.propPoses, kPropRange);
+        }
+        if (view.birds != nullptr)
+        {
+            view.birds->prepare(copy, view.camera.position, view.birdPoses);
         }
         SDL_EndGPUCopyPass(copy);
     }
@@ -317,17 +372,25 @@ void Renderer::drawScene(SDL_GPUCommandBuffer* commands, const SceneView& view, 
         passes_->mirrors.draw(commands, pass, habitatFrame, *view.partner);
     }
 
-    // Inside: the land, our mirrors seen through the windows, markers, then the window glass.
+    // Inside: the land, our mirrors seen through the windows, birds, markers, water, the window
+    // glass, then the clouds and rain in front of it all.
     if (view.world != nullptr)
     {
         const DrawStats terrain = drawLand(commands, pass, view, habitatFrame);
         passes_->mirrors.draw(commands, pass, habitatFrame, Mat4d(1.0));
+        if (view.birds != nullptr)
+        {
+            passes_->birds.draw(commands, pass, *view.birds, habitatFrame);
+        }
         passes_->markers.draw(commands, pass, viewProjection, view.camera.position, view.markers);
         if (view.landscape != nullptr)
         {
             passes_->water.draw(commands, pass, *view.landscape, habitatFrame);
         }
         const DrawStats glass = passes_->glass.draw(commands, pass, *view.world, habitatFrame);
+        // The clouds and the rain are inside the glass, in front of everything they cover.
+        passes_->clouds.draw(commands, pass, habitatFrame);
+        passes_->rain.draw(commands, pass, habitatFrame);
         result.chunksDrawn    = terrain.chunks + glass.chunks + partner.chunks;
         result.trianglesDrawn = terrain.triangles + glass.triangles + partner.triangles;
     }

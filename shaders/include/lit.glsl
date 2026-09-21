@@ -2,8 +2,8 @@
 // (terrainShadow, landscape.glsl) and by trees and buildings (treeShadow, shadow.glsl), plus the
 // glow of the far side overhead. Include habitat.glsl, landscape.glsl and shadow.glsl first.
 
-vec3 surfaceLight(sampler2D heights, sampler2D profiles, sampler2D arcs, vec3 p, vec3 n,
-                  vec3 cameraRelative)
+vec3 surfaceLight(sampler2D heights, sampler2D profiles, sampler2D arcs, sampler2D cloudMap,
+                  vec3 p, vec3 n, vec3 cameraRelative)
 {
     vec3 direct = vec3(0.0);
     for (int i = 0; i < stripCount(); ++i)
@@ -13,7 +13,8 @@ vec3 surfaceLight(sampler2D heights, sampler2D profiles, sampler2D arcs, vec3 p,
         {
             beam *= terrainShadow(heights, profiles, arcs, p, habitat.beams[i].xyz,
                                   0.5 + 0.004 * length(cameraRelative)) *
-                    treeShadow(cameraRelative, n, i);
+                    treeShadow(cameraRelative, n, i) *
+                    cloudShade(cloudMap, p, habitat.beams[i].xyz);
         }
         direct += beam;
     }

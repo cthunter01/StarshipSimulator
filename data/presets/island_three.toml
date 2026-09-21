@@ -73,3 +73,15 @@ day_length_hours = 14.0
 sunrise_hour = 6.0
 noon_angle_deg = 45.0
 night_angle_deg = 105.0
+
+# Weather: the cloud deck over the valleys, how often it rains, and the year.
+[climate]
+cloud_base_m = 420.0
+cloud_top_m = 820.0
+cloudiness = 0.45
+raininess = 0.35
+wind_speed_ms = 3.0
+mistiness = 0.7
+year_days = 120.0
+season_swing_hours = 2.0
+season_at_epoch = 0.851  # so the preset starts in early summer
