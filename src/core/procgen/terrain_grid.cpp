@@ -128,6 +128,14 @@ double TerrainGrid::heightAt(double column, double row) const
     return h11 + ((h01 - h11) * (1.0 - fc)) + ((h10 - h11) * (1.0 - fr));
 }
 
+void TerrainGrid::setHeight(std::uint32_t column, std::uint32_t row, double metres)
+{
+    const double range = std::max(static_cast<double>(heightRange), 1e-6);
+    const double t     = std::clamp((metres - static_cast<double>(heightMin)) / range, 0.0, 1.0);
+    heights[(static_cast<std::size_t>(row) * layout.columns) + (column % layout.columns)] =
+        static_cast<std::uint16_t>(std::lround(t * 65535.0));
+}
+
 Vec2d TerrainGrid::cellAt(double z, double theta) const
 {
     const double t = std::clamp((z - static_cast<double>(zMin)) /

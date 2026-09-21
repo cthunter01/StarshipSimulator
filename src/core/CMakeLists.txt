@@ -33,11 +33,13 @@ add_library(StarshipSimulator_core STATIC
     procgen/hull_mesh.cpp
     procgen/mesh.cpp
     procgen/noise.cpp
+    procgen/people.cpp
     procgen/props.cpp
     procgen/settlements.cpp
     procgen/star_field.cpp
     procgen/terrain_grid.cpp
     procgen/terrain_lod.cpp
+    procgen/transit.cpp
     procgen/trees.cpp
     scenario/scenario.cpp)
 add_library(StarshipSimulator::core ALIAS StarshipSimulator_core)
@@ -59,7 +61,8 @@ StarshipSimulator_configure_target(StarshipSimulator_core)
 # builds, or the app would take half a minute to start.
 set_source_files_properties(
     habitat/habitat_geometry.cpp habitat/landscape.cpp habitat/meridian_profile.cpp
-    procgen/birds.cpp procgen/clouds.cpp procgen/noise.cpp procgen/settlements.cpp procgen/terrain_grid.cpp
+    procgen/birds.cpp procgen/clouds.cpp procgen/noise.cpp procgen/people.cpp procgen/settlements.cpp procgen/terrain_grid.cpp
     procgen/terrain_lod.cpp
+    procgen/transit.cpp
     procgen/trees.cpp
     PROPERTIES COMPILE_OPTIONS "$<$<CONFIG:Debug>:-O2>")

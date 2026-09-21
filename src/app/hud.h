@@ -76,6 +76,11 @@ struct HudModel
     std::size_t                buildings   = 0;
     std::size_t                movingProps = 0;
     std::size_t                birds       = 0;
+    std::size_t                people      = 0;  // near you, and drawn
+    std::size_t                tramLines   = 0;
+    std::size_t                tramStops   = 0;
+    std::size_t                trams       = 0;
+    double                     trackKm     = 0.0;
     std::string                place;  // the town (or farm) you are in or near
     const PlayerController*    player        = nullptr;
     bool                       mouseCaptured = false;
@@ -132,6 +137,7 @@ struct EditorState
 struct HudActions
 {
     bool                                 toggleLocomotion = false;
+    bool                                 toggleWings      = false;
     bool                                 throwBall        = false;
     bool                                 regenerate       = false;
     bool                                 save             = false;

@@ -16,6 +16,7 @@
 #include <future>
 #include <limits>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <print>
 #include <stdexcept>
@@ -58,10 +59,12 @@
 #include "StarshipSimulator/core/procgen/clouds.h"
 #include "StarshipSimulator/core/procgen/habitat_mesher.h"
 #include "StarshipSimulator/core/procgen/hull_mesh.h"
+#include "StarshipSimulator/core/procgen/people.h"
 #include "StarshipSimulator/core/procgen/props.h"
 #include "StarshipSimulator/core/procgen/settlements.h"
 #include "StarshipSimulator/core/procgen/star_field.h"
 #include "StarshipSimulator/core/procgen/terrain_grid.h"
+#include "StarshipSimulator/core/procgen/transit.h"
 #include "StarshipSimulator/core/procgen/trees.h"
 #include "StarshipSimulator/core/rng.h"
 #include "StarshipSimulator/core/scenario/scenario.h"
@@ -69,8 +72,10 @@
 #include "StarshipSimulator/render/gpu_birds.h"
 #include "StarshipSimulator/render/gpu_device.h"
 #include "StarshipSimulator/render/gpu_landscape.h"
+#include "StarshipSimulator/render/gpu_people.h"
 #include "StarshipSimulator/render/gpu_props.h"
 #include "StarshipSimulator/render/gpu_settlements.h"
+#include "StarshipSimulator/render/gpu_transit.h"
 #include "StarshipSimulator/render/gpu_trees.h"
 #include "StarshipSimulator/render/gpu_world.h"
 #include "StarshipSimulator/render/passes/marker_pass.h"
@@ -222,19 +227,26 @@ GeneratedWorld generateWorld(const OneillCylinderSpec& spec, const StartSpec& vi
         // The terrain on a grid of about 4 m for Island Three (about 6000 cells around).
         const double terrainCell = 2.0 * kPi * spec.radiusM / 6144.0;
         world.terrain = std::make_shared<TerrainGrid>(sampleTerrain(*world.geometry, terrainCell));
+        // The tramway first: it cuts and fills the land it runs over, and everything after it --
+        // the level-of-detail tree, the towns, the woods, the physics -- works from the ground it
+        // leaves behind.
+        world.tramLines = planTramLines(*world.geometry, *world.terrain);
+        gradeForTrack(*world.terrain, world.tramLines);
         world.lod.emplace(*world.terrain, *world.geometry, 50.0 * world.terrain->layout.cellArcM);
-        // Towns and farms, then the woods around them.
         world.settlements = planSettlements(*world.geometry, *world.terrain);
         stampSettlements(*world.terrain, world.settlements);
-        const TreeSettings trees{
-            .clearings = startClearings(*world.geometry, visitStart),
-            .keepOff   = [&settlements = world.settlements](double z, double theta) {
-                return settlements.keepsTreesOff(z, theta);
-            }};
+        addTramStops(world.tramLines, world.settlements);
+        const TreeSettings trees{.clearings = startClearings(*world.geometry, visitStart),
+                                 .keepOff   = [&settlements = world.settlements,
+                                               &lines = world.tramLines](double z, double theta) {
+                                     return settlements.keepsTreesOff(z, theta) ||
+                                            nearTrack(lines, z, theta, 6.5);
+                                 }};
         world.trees =
             std::make_shared<TreeLayer>(plantTrees(*world.geometry, *world.terrain, trees));
         addStandingTrees(*world.trees, world.settlements);
         world.settlementMeshes = buildSettlementMeshes(world.settlements);
+        world.track            = buildTrackMeshes(world.tramLines);
         // The clouds, wrapped once round the habitat and once along it.
         world.clouds =
             makeCloudMap(hashSeed(spec.terrain.seed, 0xC10D), 2.0 * kPi * world.geometry->radius(),
@@ -416,21 +428,25 @@ void Application::adoptWorld(GeneratedWorld world, bool placeAtStartPoint)
         std::make_unique<GpuSettlements>(device_.get(), world.settlementMeshes, world.settlements);
     if (!gpuProps_)
     {
-        gpuProps_ = std::make_unique<GpuProps>(device_.get());
-        gpuBirds_ = std::make_unique<GpuBirds>(device_.get());
+        gpuProps_  = std::make_unique<GpuProps>(device_.get());
+        gpuBirds_  = std::make_unique<GpuBirds>(device_.get());
+        gpuPeople_ = std::make_unique<GpuPeople>(device_.get());
     }
     renderer_.setHull(world.hull);
     renderer_.setCloudMap(world.clouds);
-    const Vec3d eye      = player_.eyePosition();
-    const bool  hadWorld = geometry_ != nullptr;
-    geometry_            = std::move(world.geometry);
-    world_               = std::move(gpuWorld);
-    landscape_           = std::move(gpuLandscape);
-    trees_               = std::move(gpuTrees);
-    gpuSettlements_      = std::move(gpuSettlements);
-    terrain_             = std::move(world.terrain);
-    settlements_         = std::make_shared<const Settlements>(std::move(world.settlements));
-    physics_             = std::move(world.physics);
+    auto        gpuTransit = std::make_unique<GpuTransit>(device_.get(), world.track);
+    const Vec3d eye        = player_.eyePosition();
+    const bool  hadWorld   = geometry_ != nullptr;
+    geometry_              = std::move(world.geometry);
+    world_                 = std::move(gpuWorld);
+    landscape_             = std::move(gpuLandscape);
+    trees_                 = std::move(gpuTrees);
+    gpuSettlements_        = std::move(gpuSettlements);
+    gpuTransit_            = std::move(gpuTransit);
+    tramLines_             = std::move(world.tramLines);
+    terrain_               = std::move(world.terrain);
+    settlements_           = std::make_shared<const Settlements>(std::move(world.settlements));
+    physics_               = std::move(world.physics);
     player_.setMover(&physics_->character());
     metrics_ = computeMetrics(geometry_->spec());
     ball_.reset();
@@ -567,6 +583,15 @@ void Application::walkTo(double z, double theta, double yawDeg, double pitchDeg)
 {
     player_.setLocomotion(Locomotion::Walk);
     player_.placeOnGround(*geometry_, z, theta);
+    if (terrain_)
+    {
+        // Stand on the ground as it is drawn and collided with, which is not the bare analytic
+        // terrain wherever the tramway has cut or filled it.
+        const double base   = geometry_->profile().radiusAt(z).value_or(geometry_->radius());
+        const double radius = base - terrain_->groundHeight(z, theta);
+        const Vec3d  ground(radius * std::cos(theta), radius * std::sin(theta), z);
+        player_.teleport(ground + (HabitatGeometry::localUp(ground) * player_.settings.eyeHeight));
+    }
     look_.setFrame(player_.viewUp(), kNorth);
     look_.setAngles(degreesToRadians(yawDeg), degreesToRadians(pitchDeg));
 }
@@ -594,6 +619,56 @@ double Application::startViewZ() const
                       geometry.floorZMax() - margin);
 }
 
+/// The viewpoints on the tramway: a platform beside the valley line, the foot of the funicular up
+/// the endcap, or its top station at the axis where the gravity has gone.
+void Application::applyTransitView(std::string_view name)
+{
+    const HabitatGeometry& geometry = *geometry_;
+    const bool             endcap   = name != "tram";
+    const auto             wanted   = endcap ? LineKind::Endcap : LineKind::Valley;
+    std::size_t            found    = tramLines_.size();
+    for (std::size_t i = 0; i < tramLines_.size(); ++i)
+    {
+        const bool mine =
+            tramLines_[i].kind == wanted && (endcap || tramLines_[i].valley == startValley());
+        if (mine && !tramLines_[i].stops.empty())
+        {
+            found = i;
+            break;
+        }
+    }
+    if (found == tramLines_.size())
+    {
+        walkTo(startViewZ(), geometry.landCenter(startValley()), 0.0, 0.0);
+        return;
+    }
+    const TramLine& line = tramLines_[found];
+    if (name == "hub")
+    {
+        const TramStop& top = line.stops.back();
+        flyTo(top.position + (HabitatGeometry::localUp(top.position) * 6.0), 0.0, -10.0);
+        return;
+    }
+    if (endcap)
+    {
+        const TramStop& foot = line.stops.front();
+        walkTo(foot.position.z + 25.0, line.theta + (6.0 / geometry.radius()), 180.0, 6.0);
+        return;
+    }
+    // The stop nearest the habitat's starting point, standing beside the track.
+    const double    startZ  = startViewZ();
+    const TramStop* nearest = &line.stops.front();
+    for (const TramStop& stop : line.stops)
+    {
+        if (std::abs(stop.position.z - startZ) < std::abs(nearest->position.z - startZ))
+        {
+            nearest = &stop;
+        }
+    }
+    // On the level ground beside the platform, looking down the line.
+    walkTo(nearest->position.z, line.theta + (4.4 / geometry.radius()), 0.0, 0.0);
+}
+
 void Application::applyView(std::string_view name)
 {
     const HabitatGeometry& geometry = *geometry_;
@@ -615,6 +690,11 @@ void Application::applyView(std::string_view name)
     {
         // Off the lattice ribs (every 80 m), looking down and ahead at the mirror.
         walkTo(startZ + 37.0, geometry.windowCenter(0) + (19.0 / geometry.radius()), 0.0, -55.0);
+    }
+    else if (name == "tram" || name == "lift" || name == "hub")
+    {
+        // A tram platform, or the funicular up the endcap: its foot or its top at the axis.
+        applyTransitView(name);
     }
     else if (name == "endcap")
     {
@@ -1207,10 +1287,19 @@ HudActions Application::drawUi()
         .metrics        = &metrics_,
         .trees          = trees_ ? trees_->treeCount() : 0,
         .towns          = settlements_ ? settlements_->townCount() : 0,
-        .farms         = settlements_ ? settlements_->places.size() - settlements_->townCount() : 0,
-        .buildings     = settlements_ ? settlements_->buildings.size() : 0,
-        .movingProps   = physics_ ? physics_->awakeProps() : 0,
-        .birds         = birdPoses_.size(),
+        .farms       = settlements_ ? settlements_->places.size() - settlements_->townCount() : 0,
+        .buildings   = settlements_ ? settlements_->buildings.size() : 0,
+        .movingProps = physics_ ? physics_->awakeProps() : 0,
+        .birds       = birdPoses_.size(),
+        .people      = peoplePoses_.size(),
+        .tramLines   = tramLines_.size(),
+        .tramStops =
+            std::accumulate(tramLines_.begin(), tramLines_.end(), std::size_t{0},
+                            [](std::size_t n, const TramLine& l) { return n + l.stops.size(); }),
+        .trams = trams_.size(),
+        .trackKm =
+            std::accumulate(tramLines_.begin(), tramLines_.end(), 0.0,
+                            [](double km, const TramLine& l) { return km + (l.lengthM / 1000.0); }),
         .place         = placeName(),
         .player        = &player_,
         .mouseCaptured = input_.mouseCaptured(),
@@ -1226,15 +1315,21 @@ HudActions Application::drawUi()
     return drawHud(model, hudSettings_, editor_, player_.settings);
 }
 
-void Application::applyInput(const InputFrame& input, const HudActions& actions)
+/// Walking, flying, wings and the comfort toggle: how the player gets about.
+void Application::applyMoveInput(const InputFrame& input, const HudActions& actions)
 {
-    look_.setFrame(player_.viewUp(), kNorth);
-    look_.applyLook(-input.lookDelta.x * kLookSensitivity, -input.lookDelta.y * kLookSensitivity);
-
     if (input.toggleLocomotion || actions.toggleLocomotion)
     {
         player_.setLocomotion(player_.locomotion() == Locomotion::Walk ? Locomotion::Fly
                                                                        : Locomotion::Walk);
+    }
+    if (input.toggleWings || actions.toggleWings)
+    {
+        const bool on = player_.locomotion() != Locomotion::Wings;
+        player_.setLocomotion(on ? Locomotion::Wings : Locomotion::Walk);
+        status_ = on ? "Wings on: run and jump to take off (space flaps). They only carry you "
+                       "where the gravity has fallen away, up near the axis"
+                     : "Wings off";
     }
     if (input.toggleComfort)
     {
@@ -1242,6 +1337,19 @@ void Application::applyInput(const InputFrame& input, const HudActions& actions)
         status_ = player_.settings.comfortMode ? "Comfort mode: no Coriolis force on you"
                                                : "Comfort mode off: jumps drift with the spin";
     }
+    if (input.wheel != 0.0 && player_.locomotion() == Locomotion::Fly)
+    {
+        double& speed = player_.settings.flySpeed;
+        speed = std::clamp(speed * std::pow(kWheelStep, input.wheel), kMinFlySpeed, kMaxFlySpeed);
+    }
+}
+
+void Application::applyInput(const InputFrame& input, const HudActions& actions)
+{
+    look_.setFrame(player_.viewUp(), kNorth);
+    look_.applyLook(-input.lookDelta.x * kLookSensitivity, -input.lookDelta.y * kLookSensitivity);
+
+    applyMoveInput(input, actions);
     if (input.toggleEditor)
     {
         hudSettings_.showEditor = !hudSettings_.showEditor;
@@ -1255,11 +1363,6 @@ void Application::applyInput(const InputFrame& input, const HudActions& actions)
         const auto reloaded = renderer_.reloadShaders();
         status_             = reloaded ? std::string("Shaders reloaded")
                                        : "Shader reload failed:\n" + reloaded.error();
-    }
-    if (input.wheel != 0.0 && player_.locomotion() == Locomotion::Fly)
-    {
-        double& speed = player_.settings.flySpeed;
-        speed = std::clamp(speed * std::pow(kWheelStep, input.wheel), kMinFlySpeed, kMaxFlySpeed);
     }
     if (input.throwBall || actions.throwBall)
     {
@@ -1324,6 +1427,8 @@ void Application::simulate(const MoveIntent& intent, double realSeconds)
 {
     const int    steps = clock_.advance(realSeconds);
     const double dt    = clock_.stepSeconds();
+    physics_->setPeople(peoplePoses_, player_.eyePosition());
+    physics_->setTrams(trams_, player_.eyePosition());
     for (int step = 0; step < steps; ++step)
     {
         look_.setFrame(player_.viewUp(), kNorth);
@@ -1525,6 +1630,17 @@ std::optional<int> Application::render(int frame, bool screenshotRequested, ImDr
     flocks.windMS = 0.35 * weather_.windAlongMS;
     birdPoses_    = birdsNear(*geometry_, player_.eyePosition(), animationSeconds_,
                               scenario_.habitat.terrain.seed, flocks);
+    // The people, likewise: fewer of them out after dark and in the rain.
+    trams_ = tramsAt(tramLines_, animationSeconds_);
+    peoplePoses_.clear();
+    if (settlements_ && terrain_)
+    {
+        CrowdSettings crowd;
+        crowd.busy   = std::clamp(0.25 + (0.75 * daylightFactor(mirrorAngle())), 0.0, 1.0) *
+                       (1.0 - (0.6 * weather_.rain));
+        peoplePoses_ = peopleNear(*settlements_, *terrain_, player_.eyePosition(),
+                                  animationSeconds_, scenario_.habitat.terrain.seed, crowd);
+    }
 
     const SceneView scene{
         .camera      = camera(),
@@ -1536,6 +1652,10 @@ std::optional<int> Application::render(int frame, bool screenshotRequested, ImDr
         .propPoses   = propPoses_,
         .birds       = gpuBirds_.get(),
         .birdPoses   = birdPoses_,
+        .people      = gpuPeople_.get(),
+        .peoplePoses = peoplePoses_,
+        .transit     = gpuTransit_.get(),
+        .trams       = trams_,
         .shadow      = shadow,
         .habitat =
             gpu::makeHabitatUniforms(*geometry_, mirrorAngle(), lighting, weather_, cloudSettings_),

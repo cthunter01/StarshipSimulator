@@ -57,6 +57,9 @@ void SdlInput::handleKey(SDL_Keycode key, InputFrame& frame, ImGuiLayer& imgui)
         case SDLK_C:
             frame.toggleComfort = true;
             break;
+        case SDLK_V:
+            frame.toggleWings = true;
+            break;
         case SDLK_G:
             frame.throwBall = true;
             break;

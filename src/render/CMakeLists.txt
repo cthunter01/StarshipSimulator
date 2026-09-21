@@ -4,8 +4,10 @@ add_library(StarshipSimulator_render STATIC
     gpu_birds.cpp
     gpu_device.cpp
     gpu_landscape.cpp
+    gpu_people.cpp
     gpu_props.cpp
     gpu_settlements.cpp
+    gpu_transit.cpp
     gpu_trees.cpp
     gpu_world.cpp
     imgui_layer.cpp

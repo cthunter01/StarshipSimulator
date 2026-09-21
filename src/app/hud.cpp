@@ -159,6 +159,10 @@ void drawLocation(const HudModel& model, HudSettings& settings, PlayerSettings& 
     {
         mode = "flying";
     }
+    else if (you.locomotion() == Locomotion::Wings)
+    {
+        mode = you.grounded() ? "on foot, wings on" : "on the wing";
+    }
     else if (you.grounded())
     {
         mode = "walking";
@@ -168,10 +172,30 @@ void drawLocation(const HudModel& model, HudSettings& settings, PlayerSettings& 
     {
         ui::field("Fly speed", std::format("{:.0f} m/s (mouse wheel)", player.flySpeed));
     }
+    if (you.locomotion() == Locomotion::Wings)
+    {
+        const PlayerController::WingState& wings = you.wings();
+        ui::field("Wings", std::format("{:.1f} m/s through the air, lift {:.0f}% of your weight, "
+                                       "{:+.1f} m/s{}",
+                                       wings.airspeed, 100.0 * wings.liftOverWeight, wings.climbMS,
+                                       wings.stalled ? ", STALLED" : ""));
+    }
 
     if (ImGui::Button(you.locomotion() == Locomotion::Walk ? "Fly (F)" : "Walk (F)"))
     {
         actions.toggleLocomotion = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(you.locomotion() == Locomotion::Wings ? "Wings off (V)" : "Wings (V)"))
+    {
+        actions.toggleWings = true;
+    }
+    if (ImGui::BeginItemTooltip())
+    {
+        ImGui::TextUnformatted(
+            "Strap-on wings. Space flaps; they only carry you where the "
+            "gravity has fallen away, up near the axis.");
+        ImGui::EndTooltip();
     }
     ImGui::SameLine();
     if (ImGui::Button("Throw a ball (G)"))
@@ -309,7 +333,7 @@ void drawWeather(const HudModel& model, HudSettings& settings)
                                   now.windAroundMS));
     ui::field("Year", std::format("{} ({:.0f}% through), days {:.1f} h long",
                                   seasonName(now.season), 100.0 * now.season, now.dayLengthHours));
-    ui::field("Birds", std::format("{} in the air near you", model.birds));
+    ui::field("About", std::format("{} people and {} birds near you", model.people, model.birds));
     if (model.sound)
     {
         ImGui::SliderFloat("Volume", &settings.volume, 0.0F, 1.0F, "%.2f");
@@ -392,6 +416,8 @@ void drawMetrics(const HudModel& model)
                                     land.hasRivers() ? ", a river in each valley" : ""));
     ui::field("Towns", std::format("{} towns and {} farms, {} buildings", model.towns, model.farms,
                                    model.buildings));
+    ui::field("Transit", std::format("{} lines, {:.0f} km of track, {} stops, {} cars running",
+                                     model.tramLines, model.trackKm, model.tramStops, model.trams));
     ui::field("Axis air", std::format("{:.0f}% of floor pressure, {:.0f} K colder",
                                       100.0 * m.axisPressureRatio, m.axisTemperatureDropK));
     ui::field("Walking",
@@ -537,7 +563,7 @@ void drawHelp(const HudModel& model, HudSettings& settings)
         ui::textMuted(model.mouseCaptured ? "Mouse captured: Esc to release"
                                           : "Click the view to look around");
         ui::textMuted("WASD move, Shift run, Space jump (fly: rise), Ctrl descend");
-        ui::textMuted("F walk/fly, G throw a ball, E kick, C comfort, wheel fly speed");
+        ui::textMuted("F walk/fly, V wings, G throw a ball, E kick, C comfort, wheel fly speed");
         ui::textMuted("I identify, B binoculars, P pause time, comma/period slower/faster");
         ui::textMuted("Tab editor, F1 HUD, F12 screenshot");
     }

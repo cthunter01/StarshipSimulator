@@ -43,6 +43,11 @@ struct HabitatMetrics
 /// Pressure at distance r from the axis relative to the floor, for an isothermal atmosphere.
 [[nodiscard]] double pressureRatioAt(double omega, double radiusM, double r, double temperatureK);
 
+/// Density of the air (kg/m^3) at radius r. Isothermal air in spin gravity thins toward the axis,
+/// so there is less of it to fly on the higher you climb.
+[[nodiscard]] double airDensityAt(const AtmosphereSpec& atmosphere, double omega, double radiusM,
+                                  double r);
+
 [[nodiscard]] MaterialClass materialClassFor(double specificStrength);
 [[nodiscard]] const char*   materialClassName(MaterialClass material);
 [[nodiscard]] bool          buildableToday(MaterialClass material);

@@ -56,6 +56,8 @@ struct TerrainGrid
 
     /// Decoded height at a grid point (metres, toward the axis).
     [[nodiscard]] double height(std::uint32_t column, std::uint32_t row) const;
+    /// Moves a grid point's ground, for earthworks (it is clamped to the range the grid can hold).
+    void setHeight(std::uint32_t column, std::uint32_t row, double metres);
     /// Height at fractional grid coordinates, interpolated the way the GPU draws the terrain.
     [[nodiscard]] double heightAt(double column, double row) const;
     /// Fractional grid coordinates (column, row) of the surface point at (z, theta).

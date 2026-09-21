@@ -65,6 +65,8 @@ struct Renderer::Passes
     TreePass      trees;
     BuildingPass  buildings;
     PropPass      props;
+    PeoplePass    people;
+    TransitPass   transit;
     TerrainPass   terrain;
     MirrorPass    mirrors;
     GlassPass     glass;
@@ -99,7 +101,8 @@ GpuSampler createWrappingSampler(SDL_GPUDevice* device)
     }
     return sampler;
 }
-constexpr double kPropRange = 400.0;  // m: props farther away are too small to see
+constexpr double kPropRange    = 400.0;   // m: props farther away are too small to see
+constexpr double kTransitRange = 2500.0;  // the track runs the length of the valley
 
 std::optional<SDL_PixelFormat> pixelFormatOf(SDL_GPUTextureFormat format)
 {
@@ -184,6 +187,8 @@ std::unique_ptr<Renderer::Passes> Renderer::createPasses() const
         .trees     = TreePass(device, shaders_, formats),
         .buildings = BuildingPass(device, shaders_, formats),
         .props     = PropPass(device, shaders_, formats),
+        .people    = PeoplePass(device, shaders_, formats),
+        .transit   = TransitPass(device, shaders_, formats),
         .terrain   = TerrainPass(device, shaders_, formats),
         .mirrors   = MirrorPass(device, shaders_, formats),
         .glass     = GlassPass(device, shaders_, formats),
@@ -333,23 +338,7 @@ void Renderer::drawScene(SDL_GPUCommandBuffer* commands, const SceneView& view, 
         .stencil_store_op = SDL_GPU_STOREOP_DONT_CARE,
         .cycle            = true,
     };
-    if (view.landscape != nullptr || view.props != nullptr || view.birds != nullptr)
-    {
-        SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
-        if (view.landscape != nullptr)
-        {
-            view.landscape->prepare(copy, view.camera.position, frustum);
-        }
-        if (view.props != nullptr)
-        {
-            view.props->prepare(copy, view.camera.position, view.propPoses, kPropRange);
-        }
-        if (view.birds != nullptr)
-        {
-            view.birds->prepare(copy, view.camera.position, view.birdPoses);
-        }
-        SDL_EndGPUCopyPass(copy);
-    }
+    uploadPerFrameData(commands, view, frustum);
     drawShadows(commands, view, frame);
     SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &color, 1, &depth);
 
@@ -419,6 +408,15 @@ DrawStats Renderer::drawLand(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* 
         {
             add(passes_->props.draw(commands, pass, *view.props, *view.landscape, habitatFrame));
         }
+        if (view.people != nullptr)
+        {
+            add(passes_->people.draw(commands, pass, *view.people, *view.landscape, habitatFrame));
+        }
+        if (view.transit != nullptr)
+        {
+            add(passes_->transit.draw(commands, pass, *view.transit, *view.landscape,
+                                      habitatFrame));
+        }
     }
     if (view.trees != nullptr)
     {
@@ -428,6 +426,40 @@ DrawStats Renderer::drawLand(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* 
         add(passes_->trees.draw(commands, pass, *view.trees, draws, ranges, habitatFrame));
     }
     return stats;
+}
+
+/// Everything that changes every frame: which terrain patches are in view, and where the props,
+/// the birds, the people and the trams are now. All of it in one copy pass before the drawing.
+void Renderer::uploadPerFrameData(SDL_GPUCommandBuffer* commands, const SceneView& view,
+                                  const Frustum& frustum)
+{
+    if (view.landscape == nullptr && view.props == nullptr && view.birds == nullptr &&
+        view.people == nullptr && view.transit == nullptr)
+    {
+        return;
+    }
+    SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
+    if (view.landscape != nullptr)
+    {
+        view.landscape->prepare(copy, view.camera.position, frustum);
+    }
+    if (view.props != nullptr)
+    {
+        view.props->prepare(copy, view.camera.position, view.propPoses, kPropRange);
+    }
+    if (view.birds != nullptr)
+    {
+        view.birds->prepare(copy, view.camera.position, view.birdPoses);
+    }
+    if (view.people != nullptr)
+    {
+        view.people->prepare(copy, view.camera.position, view.peoplePoses);
+    }
+    if (view.transit != nullptr)
+    {
+        view.transit->prepare(copy, view.camera.position, frustum, view.trams, kTransitRange);
+    }
+    SDL_EndGPUCopyPass(copy);
 }
 
 void Renderer::drawShadows(SDL_GPUCommandBuffer* commands, const SceneView& view,
@@ -465,6 +497,14 @@ void Renderer::drawShadows(SDL_GPUCommandBuffer* commands, const SceneView& view
         if (view.props != nullptr)
         {
             passes_->props.drawShadow(commands, pass, *view.props, light);
+        }
+        if (view.people != nullptr)
+        {
+            passes_->people.drawShadow(commands, pass, *view.people, light, view.habitat);
+        }
+        if (view.transit != nullptr)
+        {
+            passes_->transit.drawShadow(commands, pass, *view.transit, light);
         }
     }
     SDL_EndGPURenderPass(pass);

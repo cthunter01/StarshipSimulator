@@ -5,7 +5,7 @@ the land overhead, and see an astronomically accurate sky. The goal: help people
 space that we could actually build, with the real physics of spin gravity (Coriolis drift, gravity that fades
 toward the axis) and real stars and planets outside.
 
-**Status: M5: a living atmosphere.** Walk the valleys of Gerard O'Neill's Island Three, an 8 km wide, 32 km long
+**Status: M6: people and transit.** Walk the valleys of Gerard O'Neill's Island Three, an 8 km wide, 32 km long
 cylinder at the Earth-Moon L5 point: farmland curving up overhead through blue haze, three window strips, three
 mirrors bringing in the sunlight, mountain ramps at one end and a dome at the other. The physics is real:
 gravity comes from spin (and fades as you climb toward the axis), jumps and thrown balls drift from the Coriolis
@@ -37,7 +37,18 @@ slant antispinward: Coriolis again), leaves the ground dark and wet, and lies as
 mornings. The mirrors run a year as well as a day, longer and shorter days by season, with spring blossom in the
 orchards and whole woods turning gold in autumn. Flocks of birds wheel over the fields. And you can hear it:
 wind, leaves, running water, rain, birdsong (crickets after dark), the murmur of a town and your own footsteps,
-all synthesised on the fly rather than played from files. Next up, M6: people and transit.
+all synthesised on the fly rather than played from files.
+
+The habitat is inhabited. People walk the streets of its towns, stand about the square and the market stalls
+and sit on the benches, fewer of them out after dark and in the rain; you bump into them rather than walking
+through. A tramway runs the length of every valley on a ballasted track, calling at each town and at halts out
+in the fields; stand on a tram and it carries you along. The lines are engineered rather than draped
+over the land: each alignment is smoothed until it could be built, the ground is cut and filled to
+meet it with embankments and cuttings sloped at a constant angle, and where the land falls away the
+track crosses it on a braced timber trestle. At the antisunward end a funicular climbs seven
+kilometres of endcap ramp to the hub at the axis, where the spin gravity has all but gone. And there you can strap on a pair of wings (V): a real aerofoil in the habitat's own
+air, which glides but cannot be kept up by muscle alone down in the valley, and which a fit person can climb on
+near the axis — the oldest promise of an O'Neill cylinder. Next up, M7: sharing the vision.
 
 ## Requirements
 - Linux with a Vulkan GPU
@@ -63,7 +74,8 @@ cmake --workflow --preset dev          # configure + build + test, Clang Debug
 ```
 
 Controls: click the view to capture the mouse (Esc releases it). WASD to move, Shift to run, Space to jump
-(walk) or rise (fly), Ctrl to descend, F toggles walking/flying, G throws a ball (its path is compared with the
+(walk), rise (fly) or flap (wings), Ctrl to descend, F toggles walking/flying, V straps on a pair of wings,
+G throws a ball (its path is compared with the
 same throw on a planet), E kicks whatever is in front of you, C toggles comfort mode (no Coriolis force on you), mouse wheel sets fly speed, Tab opens
 the habitat editor, I names the star, planet or moon under the crosshair, B toggles binoculars, P pauses time,
 comma and period slow down and speed up time (up to a day per second), F1 toggles the HUD, F5 reloads shaders,
@@ -74,6 +86,7 @@ Useful options (`--help` lists all):
 ```sh
 StarshipSimulator --view lookup                       # start looking up at the far side (or river, lake, ...)
 StarshipSimulator --view town                         # on a town square (or street, rooftops)
+StarshipSimulator --view tram                         # on a tram platform (or lift, hub)
 StarshipSimulator --time 2045-06-15T23:00             # night (UTC; the habitat's day runs 06:00-20:00)
 StarshipSimulator --look-at earth                     # look out of a window at Earth (or moon, jupiter, Vega, partner)
 StarshipSimulator --time-scale 3600                   # an hour per second: watch the day go by

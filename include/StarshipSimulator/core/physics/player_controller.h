@@ -12,8 +12,9 @@ namespace StarshipSimulator
 
 enum class Locomotion : std::uint8_t
 {
-    Walk,  // physical: spin gravity, Coriolis while airborne, ground contact
-    Fly,   // a drone camera for exploring: no gravity, stays above the ground
+    Walk,   // physical: spin gravity, Coriolis while airborne, ground contact
+    Fly,    // a drone camera for exploring: no gravity, stays above the ground
+    Wings,  // strapped into a pair of wings: real lift and drag, so it only works up near the axis
 };
 
 /// What the player is asking for this step, independent of the input device.
@@ -39,6 +40,12 @@ struct PlayerSettings
     double airThrust      = 0.6;    // m/s^2 of "swimming" control while airborne
     double responseTime   = 0.12;   // s, how quickly walking/flying velocity follows the input
     bool   comfortMode    = false;  // no Coriolis on the player (thrown objects keep it)
+    // Strap-on wings, as people were expected to fly with near the axis of an O'Neill cylinder.
+    double wingAreaM2   = 14.0;   // of both wings together
+    double wingMassKg   = 82.0;   // you and the wings
+    double flapPowerW   = 320.0;  // what a fit person can sustain
+    double maxLiftCoeff = 1.5;    // before the wing stalls
+    double dragCoeff    = 0.055;  // of the wing and you, at zero lift
 };
 
 /// Moves the player through a spinning habitat. Everything is in the rotating habitat frame: while
@@ -58,12 +65,28 @@ public:
     void placeOnGround(const HabitatGeometry& geometry, double z, double theta);
     /// Moves the eye to a position and stops all motion (no ground check).
     void teleport(const Vec3d& eyePosition);
+    /// Sets the player moving through the air (stepping off a platform, or a test launch).
+    void launch(const Vec3d& velocity)
+    {
+        velocity_ = velocity;
+        grounded_ = false;
+    }
     void setLocomotion(Locomotion locomotion);
 
     [[nodiscard]] const Vec3d& eyePosition() const { return eye_; }
     [[nodiscard]] const Vec3d& velocity() const { return velocity_; }
     [[nodiscard]] Locomotion   locomotion() const { return locomotion_; }
     [[nodiscard]] bool         grounded() const { return grounded_; }
+    /// How the wings are doing: airspeed, the lift they are making over your weight, and whether
+    /// they have stalled. Only meaningful in Locomotion::Wings.
+    struct WingState
+    {
+        double airspeed       = 0.0;  // m/s
+        double liftOverWeight = 0.0;
+        double climbMS        = 0.0;
+        bool   stalled        = false;
+    };
+    [[nodiscard]] const WingState& wings() const { return wings_; }
     /// The "up" the camera should use: local up, held steady while floating near the axis.
     [[nodiscard]] const Vec3d& viewUp() const { return viewUp_; }
 
@@ -75,6 +98,8 @@ private:
     void stepAirborne(const MoveIntent& intent, const LookRig& look,
                       const HabitatGeometry& geometry, double dt);
     void stepFlying(const MoveIntent& intent, const LookRig& look, const HabitatGeometry& geometry,
+                    double dt);
+    void stepWinged(const MoveIntent& intent, const LookRig& look, const HabitatGeometry& geometry,
                     double dt);
     /// With a mover: moves the body from the eye's position at `velocity`, then puts the eye on
     /// top of where it ended up.
@@ -90,7 +115,8 @@ private:
     Vec3d           viewUp_{1.0, 0.0, 0.0};
     Locomotion      locomotion_ = Locomotion::Walk;
     bool            grounded_   = false;
-    CharacterMover* mover_      = nullptr;
+    WingState       wings_;
+    CharacterMover* mover_ = nullptr;
 };
 
 }  // namespace StarshipSimulator

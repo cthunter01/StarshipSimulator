@@ -22,8 +22,10 @@
 #include "StarshipSimulator/render/gpu_birds.h"
 #include "StarshipSimulator/render/gpu_device.h"
 #include "StarshipSimulator/render/gpu_landscape.h"
+#include "StarshipSimulator/render/gpu_people.h"
 #include "StarshipSimulator/render/gpu_props.h"
 #include "StarshipSimulator/render/gpu_settlements.h"
+#include "StarshipSimulator/render/gpu_transit.h"
 #include "StarshipSimulator/render/gpu_trees.h"
 #include "StarshipSimulator/render/gpu_world.h"
 #include "StarshipSimulator/render/passes/habitat_passes.h"
@@ -64,6 +66,10 @@ struct SceneView
     std::span<const PropPlacement> propPoses;        // where each prop is now
     GpuBirds*                      birds = nullptr;  // the flocks over the valleys
     std::span<const Bird>          birdPoses;
+    GpuPeople*                     people = nullptr;  // the people about the towns and farms
+    std::span<const Person>        peoplePoses;
+    GpuTransit*                    transit = nullptr;  // the tramway
+    std::span<const Tram>          trams;
     gpu::ShadowUniforms            shadow;  // the trees' shadow map (params.x = 0: none)
     gpu::HabitatUniforms           habitat;
     gpu::SkyUniforms               sky;
@@ -141,10 +147,12 @@ private:
     void drawScene(SDL_GPUCommandBuffer* commands, const SceneView& view, std::uint32_t width,
                    std::uint32_t height, FrameResult& result);
     /// The inside of the habitat: terrain, buildings, props and trees.
-    DrawStats drawLand(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
-                       const SceneView& view, const HabitatFrame& habitatFrame);
-    void      drawShadows(SDL_GPUCommandBuffer* commands, const SceneView& view,
-                          const gpu::FrameUniforms& frame);
+    DrawStats   drawLand(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
+                         const SceneView& view, const HabitatFrame& habitatFrame);
+    static void uploadPerFrameData(SDL_GPUCommandBuffer* commands, const SceneView& view,
+                                   const Frustum& frustum);
+    void        drawShadows(SDL_GPUCommandBuffer* commands, const SceneView& view,
+                            const gpu::FrameUniforms& frame);
     void drawDisplay(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* target, const SceneView& view,
                      ImDrawData* ui);
     [[nodiscard]] std::expected<std::filesystem::path, std::string> captureAndSubmit(

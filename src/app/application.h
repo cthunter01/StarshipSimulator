@@ -29,10 +29,12 @@
 #include "StarshipSimulator/core/procgen/clouds.h"
 #include "StarshipSimulator/core/procgen/habitat_mesher.h"
 #include "StarshipSimulator/core/procgen/mesh.h"
+#include "StarshipSimulator/core/procgen/people.h"
 #include "StarshipSimulator/core/procgen/props.h"
 #include "StarshipSimulator/core/procgen/settlements.h"
 #include "StarshipSimulator/core/procgen/terrain_grid.h"
 #include "StarshipSimulator/core/procgen/terrain_lod.h"
+#include "StarshipSimulator/core/procgen/transit.h"
 #include "StarshipSimulator/core/procgen/trees.h"
 #include "StarshipSimulator/core/scenario/scenario.h"
 #include "StarshipSimulator/core/sim_clock.h"
@@ -40,8 +42,10 @@
 #include "StarshipSimulator/render/gpu_birds.h"
 #include "StarshipSimulator/render/gpu_device.h"
 #include "StarshipSimulator/render/gpu_landscape.h"
+#include "StarshipSimulator/render/gpu_people.h"
 #include "StarshipSimulator/render/gpu_props.h"
 #include "StarshipSimulator/render/gpu_settlements.h"
+#include "StarshipSimulator/render/gpu_transit.h"
 #include "StarshipSimulator/render/gpu_trees.h"
 #include "StarshipSimulator/render/gpu_world.h"
 #include "StarshipSimulator/render/imgui_layer.h"
@@ -80,6 +84,8 @@ struct GeneratedWorld
     Settlements                            settlements;
     std::vector<SettlementMesh>            settlementMeshes;
     CloudMap                               clouds;
+    std::vector<TramLine>                  tramLines;
+    std::vector<TrackChunk>                track;
     std::unique_ptr<PhysicsWorld>          physics;
     std::string                            error;
     double                                 seconds = 0.0;
@@ -129,6 +135,7 @@ private:
     void                 applyView(std::string_view name);
     void                 applyWaterView(std::string_view name);
     void                 applyTownView(std::string_view name);
+    void                 applyTransitView(std::string_view name);
     void                 walkTo(double z, double theta, double yawDeg, double pitchDeg);
     void                 flyTo(const Vec3d& eye, double yawDeg, double pitchDeg);
     [[nodiscard]] int    startValley() const;
@@ -161,6 +168,7 @@ private:
     void                      updateStats(double realSeconds);
     [[nodiscard]] HudActions  drawUi();
     void                      applyInput(const InputFrame& input, const HudActions& actions);
+    void                      applyMoveInput(const InputFrame& input, const HudActions& actions);
     void                      applySkyInput(const InputFrame& input, const HudActions& actions);
     void                      simulate(const MoveIntent& intent, double realSeconds);
     void                      throwBall();
@@ -189,10 +197,15 @@ private:
     std::unique_ptr<GpuSettlements>        gpuSettlements_;
     std::unique_ptr<GpuProps>              gpuProps_;
     std::unique_ptr<GpuBirds>              gpuBirds_;
+    std::unique_ptr<GpuPeople>             gpuPeople_;
+    std::unique_ptr<GpuTransit>            gpuTransit_;
     std::unique_ptr<PhysicsWorld>          physics_;
     std::vector<std::size_t>               thrown_;     // props: the balls thrown, oldest first
     std::vector<PropPlacement>             propPoses_;  // where the props are, for drawing
     std::vector<Bird>                      birdPoses_;
+    std::vector<Person>                    peoplePoses_;
+    std::vector<TramLine>                  tramLines_;
+    std::vector<Tram>                      trams_;
     HabitatMetrics                         metrics_;
     std::future<GeneratedWorld>            pending_;
     bool                                   placeWhenReady_ = false;

@@ -23,7 +23,8 @@ Each builds into `build/<preset>/`; never edit anything under `build/`.
 ## Checking visuals yourself
 The app can render and save a screenshot without interaction, then exit:
 `build/clang-debug/bin/StarshipSimulator --size 1280x720 --view lookup [--mirror 30] --capture out.png [--capture-ui]`
-Views: valley, river, lake, town, street, rooftops, lookup, window, endcap, ramp, sunward, axis, overview (or `--camera x,y,z,yaw,pitch` in the
+Views: valley, river, lake, town, street, rooftops, tram, lift, hub, lookup, window, endcap, ramp, sunward,
+axis, overview (or `--camera x,y,z,yaw,pitch` in the
 habitat frame; `--scenario data/presets/coriolis_playground.toml` for the small habitat). Write captures to the
 scratchpad and inspect them with the Read tool before reporting visual work as done. The window opens briefly
 on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
@@ -36,12 +37,14 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
   are repeatable; keep the window size small (e.g. 960x540), the compositor may resize large windows
 - Performance: `build/clang-release/bin/StarshipSimulator --size 1920x1080 --no-vsync --no-gpu-debug --benchmark`
   prints average/p99 frame times over a fixed tour and per view (M3 on the RTX A1000: ~6 ms average, ~13 ms
-  p99; towns and physics in M4 added about 1 ms; M5's clouds cost a few ms wherever sky fills the view, about
-  12 ms average and p99 19 ms at 1080p under thick cloud; the goal is p99 < 20 ms). Another app instance running
-  (uncapped, in mailbox mode) halves the GPU and ruins the numbers: check `nvidia-smi` first. Mailbox present
-  mode paces frames to whole refresh intervals (6.06 ms here), so small differences hide: compare two builds
-  under the same conditions (a `git worktree` of the previous commit) rather than against older numbers, and
-  check `nvidia-smi dmon` to see whether the GPU is the limit at all. The log
+  p99; towns and physics in M4 added about 1 ms; M6, with the clouds, the crowds and the tramway, measures
+  7.3 ms average and p99 15 ms at 1080p, or 7.1 / 14.9 under thick cloud; the goal is p99 < 20 ms). Another
+  app instance running (uncapped, in mailbox mode) halves the GPU and ruins the numbers: check `nvidia-smi`
+  first. Frame times sometimes come out quantized to whole refresh intervals (6.06 ms here) because the
+  compositor is pacing the presents, which inflates everything and hides small differences: if every view's
+  average is a multiple of the refresh interval, the numbers are not measuring the renderer. Compare two
+  builds under the same conditions (a `git worktree` of the previous commit) rather than against older
+  numbers, and check `nvidia-smi dmon` to see whether the GPU is the limit at all. The log
   reports the terrain, tree and town GPU memory at startup
 - ASan build of the app:
   `LSAN_OPTIONS=suppressions=tools/lsan.supp:fast_unwind_on_malloc=0 build/asan/bin/StarshipSimulator --no-gpu-debug ...`
@@ -65,8 +68,10 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
     `sky_objects` (phases, naming what the crosshair points at)
   - `assets/`: file reading, gzip/zlib, a minimal OpenEXR reader (NASA's Milky Way map), JPEG/PNG via stb
   - `physics/`: `RotatingFrame` (centrifugal + Coriolis, exact free flight, `stepFreeBody`), `PlayerController`
-    (walk/fly logic; collisions through a `CharacterMover`, or the bare analytic terrain without one),
-    `colliders.h` (static boxes and hulls as plain data, `floorOrientation`)
+    (walk/fly/wings logic; collisions through a `CharacterMover`, or the bare analytic terrain without one),
+    `colliders.h` (static boxes and hulls as plain data, `floorOrientation`). `Locomotion::Wings` is a real
+    aerofoil in the habitat's air (`airDensityAt` in `habitat/metrics`): it glides at one gravity but only
+    climbs on muscle power up near the axis, which is the whole point of the place
   - `procgen/`: deterministic noise, `terrain_grid` (the valley floor and endcaps sampled into a height field
     and land-cover map, the GPU's source), `terrain_lod` (CDLOD quadtree: patches and morph ranges),
     `trees` (procedural species meshes, planting in tiles), `habitat_mesher` (chunked meshes; the app
@@ -77,7 +82,16 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
     in the cover map), `buildings` (their meshes and colliders; facades are packed into
     `Vertex::material` and drawn by the shader), `props` (balls, crates, barrels, bales, cafe furniture:
     meshes and collision parts), `clouds` (the cloud map: cover and detail wrapped once round the habitat and
-    once along it), `birds` (flocks wheeling over fixed places on the floor, worked out fresh each frame)
+    once along it), `birds` (flocks wheeling over fixed places on the floor, worked out fresh each frame),
+    `people` (who is walking which street, sitting on which bench, and the one body mesh they all share),
+    `transit` (a tramway down each valley calling at its towns, a funicular up each endcap's ramp to the
+    hub, the track's mesh in chunks, and where every car is at a moment). A line's alignment is
+    smoothed into something buildable -- as straight as it can be inside a band around the ground,
+    then rounded into vertical curves -- and `gradeForTrack` cuts and fills the terrain grid to it,
+    with side slopes at a constant angle and the woods cleared. Where the ground falls more than a
+    few metres below the alignment it is left alone and the track goes on a trestle instead. The
+    grading runs before the towns, the woods and the level-of-detail tree are built, so everything
+    else stands on the ground the railway left
   - `audio/`: `Soundscape`, the synthesised ambience (wind, leaves, water, rain, birds or crickets, a town's
     murmur, footsteps). It fills a buffer of frames and knows nothing about devices, so it is unit tested
   - The terrain and settlement sources are compiled with `-O2` even in Debug (`src/core/CMakeLists.txt`),
@@ -94,19 +108,25 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
   Coriolis (leapfrog: launched bodies get a half kick), plus buoyancy in water. Terrain collision is
   built from the terrain grid in tiles (the drawn triangles) around the player and moving props, tree
   trunks per tree tile near the player; the player is a `CharacterVirtual` stood along the local up
-  every step. No SDL or render includes (layering test). Include Jolt only through `src/physics/jolt.h`
+  every step, and inherits the velocity of whatever it is standing on, so a tram carries you. `setPeople`
+  and `setTrams` keep pools of kinematic bodies where the nearest people and cars are, so you bump into
+  them and can ride on them. No SDL or render includes (layering test). Include Jolt only through
+  `src/physics/jolt.h`
   (Jolt.h must come first). Jolt is built with `-O2` even in Debug. Unit tests link core and physics
 - `audio` (`StarshipSimulator_audio`): `AudioDevice`, SDL's audio device pulling frames from `core/audio`'s
   `Soundscape` on its own thread (a mutex guards it). No renderer, ImGui or Jolt includes (layering test); a
   machine without sound just stays quiet
 - `render` (`StarshipSimulator_render`): SDL_GPU device, shader library, `GpuWorld` (all habitat chunks in one
   vertex/index buffer), `GpuLandscape` (height, cover and profile textures, the instanced CDLOD patch mesh),
-  `GpuTrees` (instances by tile, two detail levels), `ShadowMap` (trees, along the dominant mirror beam),
+  `GpuTrees` (instances by tile, two detail levels), `GpuPeople` (one body mesh, bent into a stride by
+  `person.vert`), `GpuTransit` (the track in chunks and the tram car, instanced),
+  `ShadowMap` (trees, along the dominant mirror beam),
   `DynamicBuffer` (per-frame storage uploads), `GpuSettlements` (town meshes, ground-map atlas), `GpuProps`
   (prop meshes, per-frame instances), `GpuBirds` (this frame's birds, no mesh: six vertices each in the
   shader), passes (Milky Way, stars, planets, Earth/Moon, partner hull, terrain disks, landscape, trees,
-  buildings, props, mirrors, birds, markers, water, glass, clouds, rain, tonemap with the grade LUT; drawn in
-  that order after the shadow pass, which holds trees, buildings and props), `texture.h` (2D uploads with
+  buildings, props, people, transit, mirrors, birds, markers, water, glass, clouds, rain, tonemap with the
+  grade LUT; drawn in that order after the shadow pass, which holds trees, buildings, props, people and the
+  tramway), `texture.h` (2D uploads with
   GPU mipmaps), `pipeline.h` helper, ImGui layer
   - The cloud deck is ray-marched, so it is drawn on a stand-in cylinder just outside the deck's base
     (`cloud_shell.vert`) rather than on a full-screen triangle, and writes no depth: the depth test then
@@ -114,7 +134,11 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
     makes sure it happens early. From below the deck the pass draws the faces where rays enter that cylinder,
     from inside it the faces where they leave, so each pixel is shaded exactly once
 - `src/app/`: the `StarshipSimulator` executable (main loop, input, HUD, sky data loading on a worker thread);
-  its headers are private. The weather and the season come from `weatherAt` each frame; the HUD's sliders
+  its headers are private. `walkTo` stands the player on the terrain grid rather than the analytic
+  terrain: the two differ wherever the tramway has graded the land. The people, the birds and the
+  trams are worked out fresh every frame from
+  `animationSeconds` and handed to both the renderer and the physics. The weather and the season come from
+  `weatherAt` each frame; the HUD's sliders
   follow them until "Hold the weather" is ticked, so holding starts from what is outside the window. The
   clouds drift, the birds fly and the rain falls in real time (like the spin), from `animationSeconds`
 - `third_party/`: vendored C code (Astronomy Engine, stb) in their own targets, never reformatted
@@ -125,7 +149,8 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
   `include/clouds.glsl` the cloud deck (its map, cover, density and the shade it casts) and
   `include/clouds_shell.glsl` the stand-in cylinder's radius (keep `SHELL_SEGMENTS` in step with `CloudPass`);
   `include/landscape.glsl` the height field and terrain shadow march, `include/shadow.glsl` the tree shadow
-  lookup, `include/terrain_colors.glsl` the fields, meadows, shore and town colours, `include/lit.glsl` the
+  lookup, `include/people.glsl` which part of a body a vertex belongs to (must match `personPart`),
+  `include/terrain_colors.glsl` the fields, meadows, shore and town colours, `include/lit.glsl` the
   light on buildings and props (hill and shadow-map shadows, lights at night), `include/town_ground.glsl`
   the ground-map lookup (take screen derivatives before calling: it samples in divergent control flow)
 - `data/presets/*.toml`: scenario presets, copied to `build/<preset>/bin/data` at build time

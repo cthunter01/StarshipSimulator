@@ -24,12 +24,16 @@ StarshipSimulator_add_shaders(StarshipSimulator_shaders
         mirror.frag
         mirror.vert
         planets.vert
+        person.frag
+        person.vert
         prop.frag
         prop.vert
         shadow.frag
         stars.frag
         stars.vert
         tonemap.frag
+        transit.frag
+        transit.vert
         tree.frag
         tree.vert
         water.frag)

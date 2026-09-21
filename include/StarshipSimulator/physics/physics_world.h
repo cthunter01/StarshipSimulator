@@ -9,8 +9,10 @@
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/physics/character_mover.h"
 #include "StarshipSimulator/core/physics/colliders.h"
+#include "StarshipSimulator/core/procgen/people.h"
 #include "StarshipSimulator/core/procgen/props.h"
 #include "StarshipSimulator/core/procgen/terrain_grid.h"
+#include "StarshipSimulator/core/procgen/transit.h"
 #include "StarshipSimulator/core/procgen/trees.h"
 
 // Rigid bodies in the spinning habitat (Jolt Physics, double precision, behind this interface).
@@ -70,6 +72,11 @@ public:
     void addColliders(const StaticColliders& colliders);
     /// Makes the trees' trunks solid, in tiles near the player (the layer is kept, not copied).
     void setTrees(std::shared_ptr<const TreeLayer> trees);
+    /// Makes the people near `focus` solid: a pool of standing capsules kept where they are, so
+    /// you bump into them instead of walking through. Call it before each step.
+    void setPeople(std::span<const Person> people, const Vec3d& focus, double radiusM = 30.0);
+    /// Makes the trams near `focus` solid, so you can stand on one and be carried along.
+    void setTrams(std::span<const Tram> trams, const Vec3d& focus, double radiusM = 90.0);
 
     /// Adds a prop. It sleeps where it is placed until something touches it, unless it is `awake`
     /// or given a velocity. Returns its index in props().

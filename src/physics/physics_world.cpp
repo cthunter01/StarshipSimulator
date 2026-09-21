@@ -21,8 +21,10 @@
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/physics/character_mover.h"
 #include "StarshipSimulator/core/physics/colliders.h"
+#include "StarshipSimulator/core/procgen/people.h"
 #include "StarshipSimulator/core/procgen/props.h"
 #include "StarshipSimulator/core/procgen/terrain_grid.h"
+#include "StarshipSimulator/core/procgen/transit.h"
 #include "StarshipSimulator/core/procgen/trees.h"
 #include "jolt.h"
 
@@ -597,7 +599,13 @@ public:
         // Walking presses on the ground (a step's worth of falling), which is what keeps the
         // character in contact with it.
         const Vec3d press = mode == MoveMode::Walk ? up * (-gravity * dt) : Vec3d(0.0);
-        body_->SetLinearVelocity(toJoltF(velocity + press));
+        // Standing on something that is moving (a tram, a lift) carries you along with it.
+        const Vec3d carried =
+            mode == MoveMode::Walk &&
+                    body_->GetGroundState() == JPH::CharacterBase::EGroundState::OnGround
+                ? fromJoltF(body_->GetGroundVelocity())
+                : Vec3d(0.0);
+        body_->SetLinearVelocity(toJoltF(velocity + press + carried));
 
         const JPH::Vec3        pull = joltUp * static_cast<float>(-gravity);
         const auto             bp   = system_->GetDefaultBroadPhaseLayerFilter(layers::kMoving);
@@ -623,7 +631,7 @@ public:
         moved.supported = body_->GetGroundState() == JPH::CharacterBase::EGroundState::OnGround;
         if (mode == MoveMode::Walk)
         {
-            moved.velocity -= press;
+            moved.velocity -= press + carried;  // what you are doing, not what is carrying you
         }
         moved.blocked = glm::distance(moved.velocity, velocity) > 1e-3;
         return moved;
@@ -787,6 +795,63 @@ struct PhysicsWorld::Impl
         JPH::BodyID id;
         double      lastUsed = 0.0;
     };
+    /// A pool of kinematic bodies kept where moving things are, so you bump into them and ride
+    /// on them: people near you, and the trams. They push you gently rather than being shoved.
+    struct Movers
+    {
+        std::vector<JPH::BodyID> bodies;
+        std::vector<Vec3d>       positions;  // where each of the used ones should be
+        std::vector<Quatd>       orientations;
+        std::size_t              used = 0;
+    };
+    Movers crowd;
+    Movers trams;
+
+    /// Grows a pool to hold what it has been given, and parks the bodies it does not need.
+    void fitPool(Movers& pool, const JPH::RefConst<JPH::Shape>& shape, float friction,
+                 std::size_t limit) const
+    {
+        while (pool.bodies.size() < std::min(pool.positions.size(), limit))
+        {
+            JPH::BodyCreationSettings settings(shape, JPH::RVec3(0.0, 0.0, 1.0e7),
+                                               JPH::Quat::sIdentity(), JPH::EMotionType::Kinematic,
+                                               layers::kMoving);
+            settings.mFriction = friction;
+            const JPH::BodyID id =
+                bodies().CreateAndAddBody(settings, JPH::EActivation::DontActivate);
+            if (id.IsInvalid())
+            {
+                break;
+            }
+            pool.bodies.push_back(id);
+        }
+        pool.used = std::min(pool.bodies.size(), pool.positions.size());
+        for (std::size_t i = pool.used; i < pool.bodies.size(); ++i)
+        {
+            bodies().DeactivateBody(pool.bodies[i]);
+        }
+    }
+
+    /// A person's capsule, and a tram car's box: one shape each, shared by the whole pool.
+    JPH::RefConst<JPH::Shape> personShape()
+    {
+        if (personShape_ == nullptr)
+        {
+            personShape_ = createShape(JPH::CapsuleShapeSettings(0.55F, 0.26F));
+        }
+        return personShape_;
+    }
+    JPH::RefConst<JPH::Shape> tramShape()
+    {
+        if (tramShape_ == nullptr)
+        {
+            tramShape_ = createShape(JPH::BoxShapeSettings(
+                JPH::Vec3(1.25F, static_cast<float>(0.5 * kTramBodyHeightM), 6.2F), 0.05F));
+        }
+        return tramShape_;
+    }
+    JPH::RefConst<JPH::Shape>                     personShape_;
+    JPH::RefConst<JPH::Shape>                     tramShape_;
     std::shared_ptr<const TreeLayer>              trees;
     std::unordered_map<std::size_t, TreeTileBody> treeTiles;
     double                                        treesChecked  = -1.0e9;
@@ -915,6 +980,61 @@ void PhysicsWorld::push(std::size_t index, const Vec3d& impulse, const Vec3d& at
     impl_->bodies().AddImpulse(impl_->propBodies.at(index).id, toJoltF(impulse), toJolt(at));
 }
 
+void PhysicsWorld::setPeople(std::span<const Person> people, const Vec3d& focus, double radiusM)
+{
+    constexpr std::size_t kMaxSolidPeople = 48;
+
+    Impl&        world   = *impl_;
+    const double reachSq = radiusM * radiusM;
+    world.crowd.positions.clear();
+    world.crowd.orientations.clear();
+    for (const Person& person : people)
+    {
+        if (world.crowd.positions.size() >= kMaxSolidPeople)
+        {
+            break;
+        }
+        const Vec3d offset = person.position - focus;
+        if (glm::dot(offset, offset) <= reachSq)
+        {
+            // The capsule stands on their feet, so its middle is half their height up.
+            const Vec3d up = HabitatGeometry::localUp(person.position);
+            world.crowd.positions.push_back(person.position + (up * (0.5 * person.heightM)));
+            world.crowd.orientations.push_back(floorOrientation(person.position));
+        }
+    }
+    world.fitPool(world.crowd, world.personShape(), 0.6F, kMaxSolidPeople);
+}
+
+void PhysicsWorld::setTrams(std::span<const Tram> trams, const Vec3d& focus, double radiusM)
+{
+    constexpr std::size_t kMaxSolidTrams = 6;
+
+    Impl&        world   = *impl_;
+    const double reachSq = radiusM * radiusM;
+    world.trams.positions.clear();
+    world.trams.orientations.clear();
+    for (const Tram& tram : trams)
+    {
+        if (world.trams.positions.size() >= kMaxSolidTrams)
+        {
+            break;
+        }
+        const Vec3d offset = tram.position - focus;
+        if (glm::dot(offset, offset) > reachSq)
+        {
+            continue;
+        }
+        // The body is the car: its middle is half its height above the rails.
+        const Vec3d up    = HabitatGeometry::localUp(tram.position);
+        const Vec3d ahead = glm::normalize(tram.forward - (up * glm::dot(tram.forward, up)));
+        const Vec3d side  = glm::cross(up, ahead);
+        world.trams.positions.push_back(tram.position + (up * (0.5 * kTramBodyHeightM)));
+        world.trams.orientations.push_back(glm::normalize(glm::quat_cast(Mat3d(side, up, ahead))));
+    }
+    world.fitPool(world.trams, world.tramShape(), 0.9F, kMaxSolidTrams);
+}
+
 void PhysicsWorld::step(double dt, const Vec3d& focus)
 {
     if (!(dt > 0.0))
@@ -922,6 +1042,23 @@ void PhysicsWorld::step(double dt, const Vec3d& focus)
         return;
     }
     Impl& world = *impl_;
+    // Walk the kinematic bodies to where the people and the trams are now.
+    JPH::BodyInterface& bodies = world.bodies();
+    for (Impl::Movers* pool : {&world.crowd, &world.trams})
+    {
+        for (std::size_t i = 0; i < pool->used; ++i)
+        {
+            const JPH::RVec3 at   = toJolt(pool->positions[i]);
+            const JPH::Quat  turn = toJolt(pool->orientations[i]);
+            if (!bodies.IsActive(pool->bodies[i]))
+            {
+                bodies.SetPositionAndRotation(pool->bodies[i], at, turn,
+                                              JPH::EActivation::Activate);
+                continue;
+            }
+            bodies.MoveKinematic(pool->bodies[i], at, turn, static_cast<float>(dt));
+        }
+    }
     world.seconds += dt;
     world.tiles->require(focus, world.terrainRadius, world.seconds);
     world.requireTrees(focus);

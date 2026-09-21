@@ -30,6 +30,14 @@ double pressureRatioAt(double omega, double radiusM, double r, double temperatur
                     (2.0 * units::kSpecificGasConstantAir * temperatureK));
 }
 
+double airDensityAt(const AtmosphereSpec& atmosphere, double omega, double radiusM, double r)
+{
+    // Ideal gas at the floor, thinning toward the axis with the pressure.
+    const double floorDensity =
+        atmosphere.surfacePressurePa / (units::kSpecificGasConstantAir * atmosphere.temperatureK);
+    return floorDensity * pressureRatioAt(omega, radiusM, r, atmosphere.temperatureK);
+}
+
 MaterialClass materialClassFor(double specificStrength)
 {
     // Rough working specific strengths (J/kg) with a safety margin.

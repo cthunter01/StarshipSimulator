@@ -24,6 +24,7 @@ struct InputFrame
     bool       reloadShaders    = false;
     bool       screenshot       = false;
     bool       toggleComfort    = false;
+    bool       toggleWings      = false;  // strap the wings on, or take them off
     bool       throwBall        = false;
     bool       kick             = false;  // push whatever is in front of you
     bool       toggleEditor     = false;

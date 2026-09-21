@@ -5,6 +5,8 @@
 
 #include "StarshipSimulator/core/camera.h"
 #include "StarshipSimulator/core/habitat/habitat_geometry.h"
+#include "StarshipSimulator/core/habitat/habitat_spec.h"
+#include "StarshipSimulator/core/habitat/metrics.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/physics/character_mover.h"
 #include "StarshipSimulator/core/physics/rotating_frame.h"
@@ -89,6 +91,10 @@ void PlayerController::step(const MoveIntent& intent, const LookRig& look,
     {
         stepFlying(intent, look, geometry, dt);
     }
+    else if (locomotion_ == Locomotion::Wings && !grounded_)
+    {
+        stepWinged(intent, look, geometry, dt);
+    }
     else if (grounded_)
     {
         stepWalking(intent, look, geometry, dt);
@@ -167,6 +173,87 @@ void PlayerController::stepAirborne(const MoveIntent& intent, const LookRig& loo
     if (mover_ != nullptr)
     {
         // The exact free flight decides where the body wants to go; the mover what's in the way.
+        const CharacterMove moved =
+            moveBody((state.position - eye_) / dt, geometry, dt, MoveMode::Free);
+        const Vec3d landingUp = HabitatGeometry::localUp(eye_);
+        if (moved.supported && glm::dot(state.velocity, landingUp) <= 0.0)
+        {
+            grounded_ = true;
+            velocity_ = removeComponent(state.velocity, landingUp);
+        }
+        else
+        {
+            velocity_ = moved.blocked ? moved.velocity : state.velocity;
+        }
+        return;
+    }
+    eye_      = state.position;
+    velocity_ = state.velocity;
+    if (constrain(geometry))
+    {
+        grounded_ = true;
+        velocity_ = removeComponent(velocity_, HabitatGeometry::localUp(eye_));
+    }
+}
+
+void PlayerController::stepWinged(const MoveIntent& intent, const LookRig& look,
+                                  const HabitatGeometry& geometry, double dt)
+{
+    // Strap-on wings, in the air that turns with the habitat. Near the floor a person cannot lift
+    // their own weight; a few hundred metres up, where the spin gravity has fallen away, they can.
+    const OneillCylinderSpec& spec   = geometry.spec();
+    const double              radius = std::hypot(eye_.x, eye_.y);
+    const double              density =
+        airDensityAt(spec.atmosphere, geometry.omega(), geometry.radius(), radius);
+    const double weight = settings.wingMassKg * geometry.gravityAt(radius);
+
+    // The air co-rotates, so what the wings feel is simply the velocity in this frame.
+    const double airspeed = glm::length(velocity_);
+    const Vec3d  up       = HabitatGeometry::localUp(eye_);
+    Vec3d        thrust(0.0);
+    Vec3d        force(0.0);
+    wings_ = WingState{};
+    if (airspeed > 0.5)
+    {
+        const Vec3d ahead = velocity_ / airspeed;
+        // The wing is held across the way you are looking: its angle of attack is how far your
+        // aim is above the path you are actually flying.
+        const Vec3d  aim    = look.forward();
+        const Vec3d  lift   = glm::length(glm::cross(ahead, aim)) > 1e-6
+                                  ? glm::normalize(glm::cross(glm::cross(ahead, aim), ahead))
+                                  : up;
+        const double attack = std::asin(std::clamp(glm::dot(aim, lift), -1.0, 1.0));
+        // A thin wing: lift climbs with the angle of attack until it stalls, and drag climbs with
+        // the square of the lift it is making.
+        const double stallAt = degreesToRadians(15.0);
+        const bool   stalled = attack > stallAt;
+        const double coeff =
+            stalled ? settings.maxLiftCoeff * std::max(0.25, 1.0 - ((attack - stallAt) * 2.2))
+                    : settings.maxLiftCoeff * (attack / stallAt);
+        const double pressure = 0.5 * density * airspeed * airspeed * settings.wingAreaM2;
+        const double lifted   = coeff * pressure;
+        const double dragged  = (settings.dragCoeff + (0.045 * coeff * coeff)) * pressure;
+        force                 = (lift * lifted) - (ahead * dragged);
+        wings_.airspeed       = airspeed;
+        wings_.liftOverWeight = weight > 1e-6 ? lifted / weight : 1e3;
+        wings_.stalled        = stalled;
+    }
+    // Flapping: a fit person's power, which buys speed rather than a hover.
+    if (intent.jump)
+    {
+        const double push =
+            settings.flapPowerW / std::max(2.0, airspeed);  // newtons, from power over speed
+        thrust += look.forward() * (push / settings.wingMassKg);
+    }
+    // Leaning with A and D banks you, which is all the steering there is: the wings do the rest.
+    thrust += look.right() * (intent.right * 1.2);
+    thrust += force / settings.wingMassKg;
+
+    BodyState state{.position = eye_, .velocity = velocity_};
+    stepFreeBody(state, RotatingFrame(geometry.omega()), thrust, dt, !settings.comfortMode);
+    wings_.climbMS = glm::dot(state.velocity, up);
+    if (mover_ != nullptr)
+    {
         const CharacterMove moved =
             moveBody((state.position - eye_) / dt, geometry, dt, MoveMode::Free);
         const Vec3d landingUp = HabitatGeometry::localUp(eye_);
