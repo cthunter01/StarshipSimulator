@@ -200,7 +200,7 @@ struct GroundCheck
             return false;
         }
         const Region region = site.geometry->regionAt(z, theta);
-        return region.kind == RegionKind::Land && region.index == valley &&
+        return region.kind == RegionKind::LAND && region.index == valley &&
                distanceToWindow(p) > kWalkwayMarginM;
     }
 
@@ -666,7 +666,7 @@ private:
             const double t = 9.0 + (13.0 * i);
             for (const double offset : {-4.6, 4.6})
             {
-                addTree(pointAt(t, offset), TreeSpecies::Broadleaf, random_->uniform(8.0, 11.0));
+                addTree(pointAt(t, offset), TreeSpecies::BROADLEAF, random_->uniform(8.0, 11.0));
             }
         }
     }
@@ -686,7 +686,7 @@ private:
             return;
         }
         plan_.lamps.push_back(p);
-        plan_.furniture.push_back({.kind       = FurnitureKind::Lamp,
+        plan_.furniture.push_back({.kind       = FurnitureKind::LAMP,
                                    .settlement = index_,
                                    .position   = p,
                                    .angle      = 0.0,
@@ -787,7 +787,7 @@ private:
                                  bool shop)
     {
         Building b;
-        b.use      = shop ? BuildingUse::Shop : BuildingUse::House;
+        b.use      = shop ? BuildingUse::SHOP : BuildingUse::HOUSE;
         b.centre   = centre;
         b.halfSize = half;
         b.angle    = angle;
@@ -798,12 +798,12 @@ private:
         const double pick = random_->uniform();
         if (pick < 0.1)
         {
-            b.roof = RoofKind::Flat;
+            b.roof = RoofKind::FLAT;
         }
         else
         {
             b.roof =
-                half.x > 1.35 * half.y || half.y > 1.35 * half.x ? RoofKind::Gable : RoofKind::Hip;
+                half.x > 1.35 * half.y || half.y > 1.35 * half.x ? RoofKind::GABLE : RoofKind::HIP;
         }
         b.roofPitchDeg  = random_->uniform(22.0, 32.0);
         b.wallColour    = static_cast<std::uint8_t>(random_->next() % 8);
@@ -915,8 +915,8 @@ private:
         wing.centre       = main.centre + (y * (main.halfSize.y + wing.halfSize.y)) +
                             (x * side * (main.halfSize.x - wing.halfSize.x));
         wing.storeys      = std::max(1, main.storeys - 1);
-        wing.use          = BuildingUse::House;
-        wing.roof         = wing.roof == RoofKind::Flat ? RoofKind::Flat : RoofKind::Hip;
+        wing.use          = BuildingUse::HOUSE;
+        wing.roof         = wing.roof == RoofKind::FLAT ? RoofKind::FLAT : RoofKind::HIP;
         wing.frontSide    = -1;  // no door
         if (!overlapsOthers(wing, first))
         {
@@ -966,7 +966,7 @@ private:
                              });
             if (clear)
             {
-                addTree(p, TreeSpecies::Broadleaf, random_->uniform(5.0, 8.5));
+                addTree(p, TreeSpecies::BROADLEAF, random_->uniform(5.0, 8.5));
             }
         }
     }
@@ -986,16 +986,16 @@ private:
                 b.centre - (rotate90(x) * (b.halfSize.y + 0.8)) + (x * (b.halfSize.x - 1.0));
             if (random_->uniform() < 0.5)
             {
-                addProp(PropKind::Crate, front, b.angle);
+                addProp(PropKind::CRATE, front, b.angle);
                 if (random_->uniform() < 0.5)
                 {
-                    addProp(PropKind::Crate, front, b.angle + 0.3, 0.6);
+                    addProp(PropKind::CRATE, front, b.angle + 0.3, 0.6);
                 }
             }
             else
             {
-                addProp(PropKind::Barrel, front, 0.0);
-                addProp(PropKind::Barrel, front - (x * 0.7), 0.0);
+                addProp(PropKind::BARREL, front, 0.0);
+                addProp(PropKind::BARREL, front - (x * 0.7), 0.0);
             }
         }
     }
@@ -1032,30 +1032,30 @@ private:
         const double hallW = std::min(26.0, u1 - u0 - 10.0);
         Building     hall  = house(at(uMid - 2.5, w1 - 1.0 - (0.5 * hallD)),
                                    Vec2d(0.5 * hallW, 0.5 * hallD), angle, 0.0, false);
-        hall.use           = BuildingUse::Hall;
+        hall.use           = BuildingUse::HALL;
         hall.storeys       = 2;
         hall.storeyHeightM = 4.2;
-        hall.roof          = RoofKind::Hip;
+        hall.roof          = RoofKind::HIP;
         hall.wallColour    = 0;
         hall.shutterColour = 0;
         addBuilding(hall);
         Building tower      = hall;
-        tower.use           = BuildingUse::Tower;
+        tower.use           = BuildingUse::TOWER;
         tower.centre        = at(uMid - 2.5 + (0.5 * hallW) + 3.2, w1 - 1.0 - 3.0);
         tower.halfSize      = Vec2d(2.6);
         tower.storeys       = static_cast<int>(random_->uniform(5.0, 7.0));
         tower.storeyHeightM = 3.4;
-        tower.roof          = RoofKind::Pyramid;
+        tower.roof          = RoofKind::PYRAMID;
         tower.roofPitchDeg  = 55.0;
         addBuilding(tower);
 
         // The fountain in the middle, benches and lamps around it.
         const Vec2d centre = at(uMid, wSquare);
-        addFurniture(FurnitureKind::Fountain, centre, angle);
+        addFurniture(FurnitureKind::FOUNTAIN, centre, angle);
         for (int i = 0; i < 4; ++i)
         {
             const double a = angle + (0.25 * kPi) + (0.5 * kPi * i);
-            addFurniture(FurnitureKind::Bench, centre + (Vec2d(std::cos(a), std::sin(a)) * 7.5),
+            addFurniture(FurnitureKind::BENCH, centre + (Vec2d(std::cos(a), std::sin(a)) * 7.5),
                          a + (0.5 * kPi));
             const double b = a + (0.25 * kPi);
             addLamp(centre + (Vec2d(std::cos(b), std::sin(b)) * 9.0));
@@ -1067,8 +1067,8 @@ private:
             {
                 const Vec2d corner = at(uMid + (su * ((0.5 * (u1 - u0)) - 4.0)),
                                         wSquare + (sw * ((0.5 * open) - 4.0)));
-                addTree(corner, TreeSpecies::Broadleaf, random_->uniform(9.0, 12.0));
-                addFurniture(FurnitureKind::Planter,
+                addTree(corner, TreeSpecies::BROADLEAF, random_->uniform(9.0, 12.0));
+                addFurniture(FurnitureKind::PLANTER,
                              at(uMid + (su * ((0.5 * (u1 - u0)) - 9.0)),
                                 wSquare + (sw * ((0.5 * open) - 2.0))),
                              angle);
@@ -1079,23 +1079,23 @@ private:
         for (int i = 0; i < 3; ++i)
         {
             const Vec2d stall = at(u0 + 3.0, wSquare - 7.0 + (7.0 * i));
-            addFurniture(FurnitureKind::Stall, stall, angle + (0.5 * kPi));
-            addProp(PropKind::Crate, stall + (town_.along * 1.8), angle);
+            addFurniture(FurnitureKind::STALL, stall, angle + (0.5 * kPi));
+            addProp(PropKind::CRATE, stall + (town_.along * 1.8), angle);
         }
         for (int i = 0; i < 4; ++i)
         {
             const Vec2d table =
                 at(u1 - 4.0 - (random_->uniform(0.0, 1.0)), wSquare - 7.5 + (5.0 * i));
-            addProp(PropKind::Table, table, 0.0);
+            addProp(PropKind::TABLE, table, 0.0);
             const int chairs = 2 + static_cast<int>(random_->uniform(0.0, 2.0));
             for (int c = 0; c < chairs; ++c)
             {
                 const double a = (2.0 * kPi * c / chairs) + random_->uniform(-0.3, 0.3);
-                addProp(PropKind::Chair, table + (Vec2d(std::cos(a), std::sin(a)) * 0.75),
+                addProp(PropKind::CHAIR, table + (Vec2d(std::cos(a), std::sin(a)) * 0.75),
                         a + (0.5 * kPi));
             }
         }
-        addProp(PropKind::Ball, centre + (town_.across * 5.0) + (town_.along * 4.0), 0.0);
+        addProp(PropKind::BALL, centre + (town_.across * 5.0) + (town_.along * 4.0), 0.0);
         return true;
     }
 
@@ -1141,12 +1141,12 @@ private:
             }
             if (n % 4 == 1)
             {
-                addFurniture(FurnitureKind::Bench, *bank + (inland * 0.2),
+                addFurniture(FurnitureKind::BENCH, *bank + (inland * 0.2),
                              std::atan2(-inland.y, -inland.x) + (0.5 * kPi));
             }
             if (n % 2 == 1)
             {
-                addTree(*bank + (inland * 6.5), TreeSpecies::Poplar, random_->uniform(14.0, 19.0));
+                addTree(*bank + (inland * 6.5), TreeSpecies::POPLAR, random_->uniform(14.0, 19.0));
             }
         }
     }
@@ -1436,7 +1436,7 @@ std::optional<Settlement> planFarm(const Site& site, int valley, std::size_t ind
         const GroundCheck check{.site = site, .plane = plane, .valley = valley};
         const Vec3d       here    = plane.point(Vec2d(0.0), 0.0);
         const bool        crowded = std::ranges::any_of(others, [&](const Settlement& other) {
-            const double room = other.kind == SettlementKind::Town ? other.radiusM + 250.0 : 400.0;
+            const double room = other.kind == SettlementKind::TOWN ? other.radiusM + 250.0 : 400.0;
             return glm::distance(other.plane.point(Vec2d(0.0), 0.0), here) < room;
         });
         if (crowded || !check.dry(Vec2d(0.0), 70.0) || check.distanceToWindow(Vec2d(0.0)) < 150.0 ||
@@ -1447,7 +1447,7 @@ std::optional<Settlement> planFarm(const Site& site, int valley, std::size_t ind
         const double angle = random.uniform(0.0, 2.0 * kPi);
         const Vec2d  dir(std::cos(angle), std::sin(angle));
         Building     house;
-        house.use        = BuildingUse::Farmhouse;
+        house.use        = BuildingUse::FARMHOUSE;
         house.settlement = index;
         house.centre     = Vec2d(0.0);
         // One draw to a line: which argument of a call is worked out first is up to the
@@ -1457,14 +1457,14 @@ std::optional<Settlement> planFarm(const Site& site, int valley, std::size_t ind
         house.halfSize         = Vec2d(houseLong, houseDeep);
         house.angle            = angle;
         house.storeys          = 2;
-        house.roof             = RoofKind::Gable;
+        house.roof             = RoofKind::GABLE;
         house.roofPitchDeg     = random.uniform(30.0, 38.0);
         house.wallColour       = static_cast<std::uint8_t>(random.next() % 3);
         house.roofColour       = static_cast<std::uint8_t>(random.next() % 4);
         house.shutterColour    = static_cast<std::uint8_t>(1 + (random.next() % 4));
         house.seed             = static_cast<std::uint32_t>(random.next());
         Building barn          = house;
-        barn.use               = BuildingUse::Barn;
+        barn.use               = BuildingUse::BARN;
         const double barnAway  = random.uniform(20.0, 26.0);
         const double barnAside = random.uniform(-6.0, 6.0);
         barn.centre            = (dir * barnAway) + (rotate90(dir) * barnAside);
@@ -1490,7 +1490,7 @@ std::optional<Settlement> planFarm(const Site& site, int valley, std::size_t ind
         barn.foundation   = barnLevel->y;
 
         Settlement farm;
-        farm.kind          = SettlementKind::Farm;
+        farm.kind          = SettlementKind::FARM;
         farm.name          = "a farmstead";
         farm.valley        = valley;
         farm.plane         = plane;
@@ -1512,7 +1512,7 @@ std::optional<Settlement> planFarm(const Site& site, int valley, std::size_t ind
             if (check.dry(p, 2.0))
             {
                 const Vec3d ground = plane.point(p, check.height(p));
-                props.push_back({.kind        = PropKind::HayBale,
+                props.push_back({.kind        = PropKind::HAY_BALE,
                                  .position    = ground,
                                  .orientation = floorOrientation(ground),
                                  .tint        = static_cast<float>(random.uniform())});
@@ -1525,7 +1525,7 @@ std::optional<Settlement> planFarm(const Site& site, int valley, std::size_t ind
             {
                 trees.push_back({.settlement = index,
                                  .position   = plane.point(p, check.height(p)),
-                                 .species    = TreeSpecies::Broadleaf,
+                                 .species    = TreeSpecies::BROADLEAF,
                                  .heightM    = random.uniform(9.0, 13.0)});
             }
         }
@@ -1603,7 +1603,7 @@ bool Settlements::keepsTreesOff(double z, double theta) const
         {
             return false;
         }
-        if (place.kind == SettlementKind::Farm)
+        if (place.kind == SettlementKind::FARM)
         {
             return glm::length(p) < place.radiusM;
         }
@@ -1615,7 +1615,7 @@ const Settlement* Settlements::townAt(double z, double theta) const
 {
     for (const Settlement& place : places)
     {
-        if (place.kind != SettlementKind::Town)
+        if (place.kind != SettlementKind::TOWN)
         {
             continue;
         }
@@ -1632,7 +1632,7 @@ const Settlement* Settlements::townAt(double z, double theta) const
 std::size_t Settlements::townCount() const
 {
     return static_cast<std::size_t>(
-        std::ranges::count(places, SettlementKind::Town, &Settlement::kind));
+        std::ranges::count(places, SettlementKind::TOWN, &Settlement::kind));
 }
 
 Settlements planSettlements(const HabitatGeometry& geometry, const TerrainGrid& grid)
@@ -1668,7 +1668,7 @@ Settlements planSettlements(const HabitatGeometry& geometry, const TerrainGrid& 
                 continue;
             }
             Settlement town;
-            town.kind      = SettlementKind::Town;
+            town.kind      = SettlementKind::TOWN;
             town.name      = names[index % names.size()];
             town.valley    = valley;
             town.plane     = frame->plane;
@@ -1740,7 +1740,7 @@ void stampSettlements(TerrainGrid& grid, const Settlements& settlements)
                 {
                     grid.cover[at] = 0;
                 }
-                if (place.kind == SettlementKind::Town)
+                if (place.kind == SettlementKind::TOWN)
                 {
                     grid.cover[at + 2] = 255;
                 }

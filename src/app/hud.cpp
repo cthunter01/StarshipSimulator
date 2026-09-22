@@ -158,11 +158,11 @@ void drawLocation(const HudModel& model, HudSettings& settings, PlayerSettings& 
     ui::field("Coriolis", std::format("{:.3f} m/s^2 ({:.1f}% of your weight)", coriolis,
                                       100.0 * coriolis / std::max(gravity, 1e-6)));
     const char* mode = "airborne";
-    if (you.locomotion() == Locomotion::Fly)
+    if (you.locomotion() == Locomotion::FLY)
     {
         mode = "flying";
     }
-    else if (you.locomotion() == Locomotion::Wings)
+    else if (you.locomotion() == Locomotion::WINGS)
     {
         mode = you.grounded() ? "on foot, wings on" : "on the wing";
     }
@@ -171,11 +171,11 @@ void drawLocation(const HudModel& model, HudSettings& settings, PlayerSettings& 
         mode = "walking";
     }
     ui::field("Moving", std::format("{:.1f} m/s, {}", glm::length(you.velocity()), mode));
-    if (you.locomotion() == Locomotion::Fly)
+    if (you.locomotion() == Locomotion::FLY)
     {
         ui::field("Fly speed", std::format("{:.0f} m/s (mouse wheel)", player.flySpeed));
     }
-    if (you.locomotion() == Locomotion::Wings)
+    if (you.locomotion() == Locomotion::WINGS)
     {
         const PlayerController::WingState& wings = you.wings();
         ui::field("Wings", std::format("{:.1f} m/s through the air, lift {:.0f}% of your weight, "
@@ -184,12 +184,12 @@ void drawLocation(const HudModel& model, HudSettings& settings, PlayerSettings& 
                                        wings.stalled ? ", STALLED" : ""));
     }
 
-    if (ImGui::Button(you.locomotion() == Locomotion::Walk ? "Fly (F)" : "Walk (F)"))
+    if (ImGui::Button(you.locomotion() == Locomotion::WALK ? "Fly (F)" : "Walk (F)"))
     {
         actions.toggleLocomotion = true;
     }
     ImGui::SameLine();
-    if (ImGui::Button(you.locomotion() == Locomotion::Wings ? "Wings off (V)" : "Wings (V)"))
+    if (ImGui::Button(you.locomotion() == Locomotion::WINGS ? "Wings off (V)" : "Wings (V)"))
     {
         actions.toggleWings = true;
     }

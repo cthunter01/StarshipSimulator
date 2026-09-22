@@ -35,10 +35,10 @@ void appendEndcap(std::vector<Vec2d>& points, const EndcapSpec& endcap, double r
 {
     switch (endcap.shape)
     {
-        case EndcapShape::Flat:
+        case EndcapShape::FLAT:
             points.emplace_back(zEnd, radius);
             break;
-        case EndcapShape::Hemisphere:
+        case EndcapShape::HEMISPHERE:
             // A dome beyond the cylinder: pole at zEnd - direction * R, rim at zEnd.
             for (int i = kHemisphereSegments; i >= 0; --i)
             {
@@ -47,7 +47,7 @@ void appendEndcap(std::vector<Vec2d>& points, const EndcapSpec& endcap, double r
                                     radius * std::cos(angle));
             }
             break;
-        case EndcapShape::ConicalRamp:
+        case EndcapShape::CONICAL_RAMP:
         {
             const double topRadius = endcap.rampTopRadiusFraction * radius;
             const double upper =

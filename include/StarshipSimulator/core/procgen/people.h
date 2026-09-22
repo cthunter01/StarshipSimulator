@@ -17,9 +17,9 @@ namespace StarshipSimulator
 
 enum class Activity : std::uint8_t
 {
-    Walking,
-    Standing,
-    Sitting,
+    WALKING,
+    STANDING,
+    SITTING,
 };
 
 /// One person as they are drawn.
@@ -29,7 +29,7 @@ struct Person
     Vec3d        forward{0.0, 0.0, 1.0};  // unit, along the ground
     double       gait    = 0.0;           // 0..1 through a stride
     double       speedMS = 0.0;           // 0 when standing or sitting
-    Activity     doing   = Activity::Standing;
+    Activity     doing   = Activity::STANDING;
     double       heightM = 1.75;
     std::uint8_t clothes = 0;  // which of kPersonClothes
     std::uint8_t skin    = 0;  // which of kPersonSkins

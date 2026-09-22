@@ -15,8 +15,8 @@ namespace StarshipSimulator
 
 enum class MarkerShape : std::uint8_t
 {
-    Box,
-    Sphere,
+    BOX,
+    SPHERE,
 };
 
 /// A simple shape placed in the world: thrown balls, trajectory dots, reference markers.
@@ -26,7 +26,7 @@ struct Marker
     Vec3f       halfExtents{0.5F};  // metres (radius for spheres)
     Vec3f       color{0.8F};        // linear RGB
     Vec3f       emission{0.0F};     // linear RGB, glows regardless of lighting
-    MarkerShape shape = MarkerShape::Box;
+    MarkerShape shape = MarkerShape::BOX;
 };
 
 /// Draws markers as lit shapes. Each one's camera-relative transform is computed in double

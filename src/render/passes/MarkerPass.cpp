@@ -28,7 +28,7 @@ MarkerPass::MarkerPass(SDL_GPUDevice* device, const ShaderLibrary& shaders,
     description.fragmentShader      = fragment.get();
     description.meshVertices        = true;
     description.cull                = SDL_GPU_CULLMODE_BACK;
-    description.depth               = DepthMode::TestWrite;
+    description.depth               = DepthMode::TEST_WRITE;
     pipeline_                       = createPipeline(device, description, "marker");
 
     // Both shapes in one pair of buffers.
@@ -77,7 +77,7 @@ void MarkerPass::draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
             .color    = Vec4f(marker.color, 1.0F),
             .emission = Vec4f(marker.emission, 0.0F),
         };
-        const Range& range = marker.shape == MarkerShape::Sphere ? sphere_ : box_;
+        const Range& range = marker.shape == MarkerShape::SPHERE ? sphere_ : box_;
         SDL_PushGPUVertexUniformData(commands, 0, &draw, sizeof(draw));
         SDL_PushGPUFragmentUniformData(commands, 0, &material, sizeof(material));
         SDL_DrawGPUIndexedPrimitives(pass, range.indexCount, 1, range.firstIndex,

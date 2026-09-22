@@ -44,7 +44,7 @@ struct AlmanacState
     double                 localHour      = 0.0;
     Vec3d                  eye{0.0};
     Vec3d                  velocity{0.0};
-    astro::Location        location = astro::Location::EarthMoonL5;
+    astro::Location        location = astro::Location::EARTH_MOON_L5;
     const astro::SkyState* sky      = nullptr;  // null while the sky data is still loading
     bool                   partner  = false;
     double                 partnerSeparationM = 0.0;

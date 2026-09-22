@@ -117,12 +117,12 @@ TEST(BodyUniforms, EarthSeenFromL5)
 {
     namespace astro           = StarshipSimulator::astro;
     const astro::SkyState sky = astro::computeSky(
-        astro::Location::EarthMoonL5, astro::parseIsoTime("2045-06-15T09:00:00Z").value());
+        astro::Location::EARTH_MOON_L5, astro::parseIsoTime("2045-06-15T09:00:00Z").value());
     const StarshipSimulator::Mat3d habitatFromInertial =
         astro::habitatFromEqj(sky.sunDirection, 0.3);
     for (const astro::VisibleBody& body : sky.bodies)
     {
-        if (body.body != astro::Body::Earth)
+        if (body.body != astro::Body::EARTH)
         {
             continue;
         }
@@ -142,7 +142,7 @@ TEST(PlanetUniforms, CarriesTheSevenPlanets)
 {
     namespace astro           = StarshipSimulator::astro;
     const astro::SkyState sky = astro::computeSky(
-        astro::Location::EarthMoonL5, astro::parseIsoTime("2045-06-15T09:00:00Z").value());
+        astro::Location::EARTH_MOON_L5, astro::parseIsoTime("2045-06-15T09:00:00Z").value());
     const gpu::PlanetUniforms planets = gpu::makePlanetUniforms(sky);
     EXPECT_EQ(planets.count.x, 7.0F);
     for (std::size_t i = 0; i < 7; ++i)

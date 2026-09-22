@@ -39,14 +39,14 @@ struct TrackPoint
 
 enum class LineKind : std::uint8_t
 {
-    Valley,  // a tramway down the valley floor, calling at the towns
-    Endcap,  // a funicular up the endcap's ramp to the hub, where there is no gravity left
+    VALLEY,  // a tramway down the valley floor, calling at the towns
+    ENDCAP,  // a funicular up the endcap's ramp to the hub, where there is no gravity left
 };
 
 /// One line, running the length of a valley (or up an endcap) and back.
 struct TramLine
 {
-    LineKind                kind    = LineKind::Valley;
+    LineKind                kind    = LineKind::VALLEY;
     int                     valley  = 0;
     double                  theta   = 0.0;  // the line runs around the habitat at this angle
     double                  radiusM = 1.0;  // of the floor it runs on, for arc lengths

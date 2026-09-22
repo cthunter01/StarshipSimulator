@@ -14,15 +14,15 @@ namespace StarshipSimulator
 
 enum class RegionKind : std::uint8_t
 {
-    Land,     // a valley floor strip
-    Window,   // a window strip (walkable glass)
-    Endcap,   // endcap slopes or domes
-    Outside,  // beyond the ends of the habitat
+    LAND,     // a valley floor strip
+    WINDOW,   // a window strip (walkable glass)
+    ENDCAP,   // endcap slopes or domes
+    OUTSIDE,  // beyond the ends of the habitat
 };
 
 struct Region
 {
-    RegionKind kind  = RegionKind::Outside;
+    RegionKind kind  = RegionKind::OUTSIDE;
     int        index = -1;  // strip number for Land and Window
 };
 

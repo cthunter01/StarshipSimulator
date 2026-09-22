@@ -27,7 +27,7 @@ struct StartSpec
 /// Where in the solar system the habitat is, and when the visit starts.
 struct SkySpec
 {
-    astro::Location location       = astro::Location::EarthMoonL5;
+    astro::Location location       = astro::Location::EARTH_MOON_L5;
     astro::SimTime  start          = defaultStartTime();
     double          utcOffsetHours = 0.0;  // the habitat's local clock (drives the day schedule)
 

@@ -60,7 +60,7 @@ void PlayerController::placeOnGround(const HabitatGeometry& geometry, double z, 
     eye_                 = ground + (HabitatGeometry::localUp(ground) * settings.eyeHeight);
     velocity_            = Vec3d(0.0);
     viewUp_              = HabitatGeometry::localUp(ground);
-    grounded_            = locomotion_ == Locomotion::Walk;
+    grounded_            = locomotion_ == Locomotion::WALK;
 }
 
 void PlayerController::teleport(const Vec3d& eyePosition)
@@ -87,11 +87,11 @@ void PlayerController::step(const MoveIntent& intent, const LookRig& look,
     {
         return;
     }
-    if (locomotion_ == Locomotion::Fly)
+    if (locomotion_ == Locomotion::FLY)
     {
         stepFlying(intent, look, geometry, dt);
     }
-    else if (locomotion_ == Locomotion::Wings && !grounded_)
+    else if (locomotion_ == Locomotion::WINGS && !grounded_)
     {
         stepWinged(intent, look, geometry, dt);
     }
@@ -125,7 +125,7 @@ void PlayerController::stepWalking(const MoveIntent& intent, const LookRig& look
     }
     if (mover_ != nullptr)
     {
-        const CharacterMove moved = moveBody(walk, geometry, dt, MoveMode::Walk);
+        const CharacterMove moved = moveBody(walk, geometry, dt, MoveMode::WALK);
         velocity_                 = removeComponent(moved.velocity, HabitatGeometry::localUp(eye_));
         grounded_                 = moved.supported;  // walked off an edge: falling
         return;
@@ -174,7 +174,7 @@ void PlayerController::stepAirborne(const MoveIntent& intent, const LookRig& loo
     {
         // The exact free flight decides where the body wants to go; the mover what's in the way.
         const CharacterMove moved =
-            moveBody((state.position - eye_) / dt, geometry, dt, MoveMode::Free);
+            moveBody((state.position - eye_) / dt, geometry, dt, MoveMode::FREE);
         const Vec3d landingUp = HabitatGeometry::localUp(eye_);
         if (moved.supported && glm::dot(state.velocity, landingUp) <= 0.0)
         {
@@ -255,7 +255,7 @@ void PlayerController::stepWinged(const MoveIntent& intent, const LookRig& look,
     if (mover_ != nullptr)
     {
         const CharacterMove moved =
-            moveBody((state.position - eye_) / dt, geometry, dt, MoveMode::Free);
+            moveBody((state.position - eye_) / dt, geometry, dt, MoveMode::FREE);
         const Vec3d landingUp = HabitatGeometry::localUp(eye_);
         if (moved.supported && glm::dot(state.velocity, landingUp) <= 0.0)
         {
@@ -286,7 +286,7 @@ void PlayerController::stepFlying(const MoveIntent& intent, const LookRig& look,
     velocity_ += ((direction * speed) - velocity_) * responseFactor(dt, settings.responseTime);
     if (mover_ != nullptr)
     {
-        velocity_ = moveBody(velocity_, geometry, dt, MoveMode::Free).velocity;
+        velocity_ = moveBody(velocity_, geometry, dt, MoveMode::FREE).velocity;
         return;
     }
     eye_ += velocity_ * dt;

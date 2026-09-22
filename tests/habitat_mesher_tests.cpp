@@ -67,7 +67,7 @@ TEST(HabitatMesher, ProducesTerrainAndGlass)
     std::size_t          glass   = 0;
     for (const MeshChunk& chunk : meshes.chunks)
     {
-        (chunk.kind == ChunkKind::Glass ? glass : terrain) += 1;
+        (chunk.kind == ChunkKind::GLASS ? glass : terrain) += 1;
         EXPECT_FALSE(chunk.mesh.indices.empty());
     }
     EXPECT_GT(terrain, 10U);
@@ -117,7 +117,7 @@ TEST(HabitatMesher, NeighbouringChunksShareTheirEdgesExactly)
     std::size_t                                            shared = 0;
     for (const MeshChunk& chunk : coarseIslandThree().chunks)
     {
-        if (chunk.kind != ChunkKind::Terrain ||
+        if (chunk.kind != ChunkKind::TERRAIN ||
             chunk.mesh.vertices.front().material == material::kMetal)
         {
             continue;
@@ -146,7 +146,7 @@ TEST(HabitatMesher, OutputDoesNotDependOnTheThreadCount)
     OneillCylinderSpec spec;
     spec.radiusM           = 1000.0;
     spec.lengthM           = 8000.0;
-    spec.antisunwardEndcap = makeEndcap(EndcapShape::Hemisphere);
+    spec.antisunwardEndcap = makeEndcap(EndcapShape::HEMISPHERE);
     const HabitatGeometry geometry(spec);
     const auto            build = [&](unsigned threads) {
         return buildHabitatMeshes(geometry, MeshingSettings{.cellSizeM      = 100.0,
@@ -201,7 +201,7 @@ TEST(HullMesh, ClosedOutwardFacingShellWithWindowStrips)
             EXPECT_LE(a.position.z, geometry.floorZMax() + 0.01);
             const Vec3d centre = Vec3d(a.position + b.position + c.position) / 3.0;
             EXPECT_EQ(geometry.regionAt(centre.z, HabitatGeometry::angleOf(centre)).kind,
-                      RegionKind::Window);
+                      RegionKind::WINDOW);
         }
     }
     EXPECT_GT(glass, 0U);

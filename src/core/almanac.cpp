@@ -315,10 +315,10 @@ AlmanacPage theSkyOutside(const AlmanacState& state)
     {
         for (const astro::VisibleBody& body : state.sky->bodies)
         {
-            if (body.body == astro::Body::Earth || body.body == astro::Body::Moon)
+            if (body.body == astro::Body::EARTH || body.body == astro::Body::MOON)
             {
                 page.facts.push_back(
-                    {.label = body.body == astro::Body::Earth ? "Earth" : "The Moon",
+                    {.label = body.body == astro::Body::EARTH ? "Earth" : "The Moon",
                      .value = std::format("{:.2f} degrees across",
                                           radiansToDegrees(2.0 * body.angularRadius)),
                      .note  = std::format("{:.0f}% lit ({}), {:.0f} thousand km away",

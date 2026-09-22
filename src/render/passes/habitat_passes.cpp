@@ -87,7 +87,7 @@ StarPass::StarPass(SDL_GPUDevice* device, const ShaderLibrary& shaders, const Sc
     PipelineDescription description = scenePipeline(formats);
     description.vertexShader        = vertex.get();
     description.fragmentShader      = fragment.get();
-    description.blend               = BlendMode::Additive;
+    description.blend               = BlendMode::ADDITIVE;
     pipeline_                       = createPipeline(device, description, "star");
     if (!stars.empty())
     {
@@ -129,7 +129,7 @@ LandscapePass::LandscapePass(SDL_GPUDevice* device, const ShaderLibrary& shaders
     description.vertexBuffers       = std::span(&grid, 1);
     description.vertexAttributes    = std::span(&position, 1);
     description.cull                = SDL_GPU_CULLMODE_BACK;
-    description.depth               = DepthMode::TestWrite;
+    description.depth               = DepthMode::TEST_WRITE;
     pipeline_                       = createPipeline(device, description, "landscape");
 }
 
@@ -219,7 +219,7 @@ TreePass::TreePass(SDL_GPUDevice* device, const ShaderLibrary& shaders, const Sc
     description.vertexBuffers                                       = buffers;
     description.vertexAttributes                                    = attributes;
     description.cull                                                = SDL_GPU_CULLMODE_BACK;
-    description.depth                                               = DepthMode::TestWrite;
+    description.depth                                               = DepthMode::TEST_WRITE;
     pipeline_ = createPipeline(device, description, "tree");
 
     const GpuShader depthOnly     = shaders.load("shadow.frag");
@@ -228,7 +228,7 @@ TreePass::TreePass(SDL_GPUDevice* device, const ShaderLibrary& shaders, const Sc
     description.depthFormat       = ShadowMap::kFormat;
     description.samples           = SDL_GPU_SAMPLECOUNT_1;
     description.cull              = SDL_GPU_CULLMODE_NONE;
-    description.depth             = DepthMode::ShadowWrite;
+    description.depth             = DepthMode::SHADOW_WRITE;
     description.depthBiasConstant = 2.0F;
     description.depthBiasSlope    = 2.0F;
     shadow_                       = createPipeline(device, description, "tree shadow");
@@ -320,8 +320,8 @@ CloudPass::CloudPass(SDL_GPUDevice* device, const ShaderLibrary& shaders,
     PipelineDescription description = scenePipeline(formats);
     description.vertexShader        = vertex.get();
     description.fragmentShader      = fragment.get();
-    description.depth               = DepthMode::TestOnly;
-    description.blend               = BlendMode::Alpha;
+    description.depth               = DepthMode::TEST_ONLY;
+    description.blend               = BlendMode::ALPHA;
     description.cull                = SDL_GPU_CULLMODE_BACK;  // the near faces, where rays enter
     below_                          = createPipeline(device, description, "cloud (below)");
     description.cull                = SDL_GPU_CULLMODE_FRONT;  // the far faces, where they leave
@@ -362,7 +362,7 @@ BirdPass::BirdPass(SDL_GPUDevice* device, const ShaderLibrary& shaders, const Sc
     description.fragmentShader                                      = fragment.get();
     description.vertexBuffers                                       = buffers;
     description.vertexAttributes                                    = attributes;
-    description.depth                                               = DepthMode::TestWrite;
+    description.depth                                               = DepthMode::TEST_WRITE;
     pipeline_ = createPipeline(device, description, "bird");
 }
 
@@ -392,8 +392,8 @@ RainPass::RainPass(SDL_GPUDevice* device, const ShaderLibrary& shaders, const Sc
     PipelineDescription description = scenePipeline(formats);
     description.vertexShader        = vertex.get();
     description.fragmentShader      = fragment.get();
-    description.depth               = DepthMode::TestOnly;  // the shader writes its own depth
-    description.blend               = BlendMode::Alpha;
+    description.depth               = DepthMode::TEST_ONLY;  // the shader writes its own depth
+    description.blend               = BlendMode::ALPHA;
     pipeline_                       = createPipeline(device, description, "rain");
 }
 
@@ -445,10 +445,10 @@ WaterPass::WaterPass(SDL_GPUDevice* device, const ShaderLibrary& shaders,
     description.vertexBuffers       = std::span(&grid, 1);
     description.vertexAttributes    = std::span(&position, 1);
     description.cull                = SDL_GPU_CULLMODE_BACK;
-    description.depth               = DepthMode::TestOnly;
-    description.blend               = BlendMode::Multiply;
+    description.depth               = DepthMode::TEST_ONLY;
+    description.blend               = BlendMode::MULTIPLY;
     transmit_                       = createPipeline(device, description, "water transmittance");
-    description.blend               = BlendMode::Additive;
+    description.blend               = BlendMode::ADDITIVE;
     emit_                           = createPipeline(device, description, "water surface");
 }
 
@@ -501,7 +501,7 @@ TerrainPass::TerrainPass(SDL_GPUDevice* device, const ShaderLibrary& shaders,
     description.fragmentShader      = fragment.get();
     description.meshVertices        = true;
     description.cull                = SDL_GPU_CULLMODE_BACK;
-    description.depth               = DepthMode::TestWrite;
+    description.depth               = DepthMode::TEST_WRITE;
     pipeline_                       = createPipeline(device, description, "terrain");
 }
 
@@ -511,7 +511,7 @@ DrawStats TerrainPass::draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* p
     SDL_BindGPUGraphicsPipeline(pass, pipeline_.get());
     bindWorld(pass, world);
     pushHabitatFragmentUniforms(commands, view);
-    return drawChunks(commands, pass, world, view, ChunkKind::Terrain);
+    return drawChunks(commands, pass, world, view, ChunkKind::TERRAIN);
 }
 
 // ---- Mirrors -----------------------------------------------------------------------------------
@@ -524,7 +524,7 @@ MirrorPass::MirrorPass(SDL_GPUDevice* device, const ShaderLibrary& shaders,
     PipelineDescription description = scenePipeline(formats);
     description.vertexShader        = vertex.get();
     description.fragmentShader      = fragment.get();
-    description.depth               = DepthMode::TestWrite;
+    description.depth               = DepthMode::TEST_WRITE;
     pipeline_                       = createPipeline(device, description, "mirror");
 }
 
@@ -553,10 +553,10 @@ GlassPass::GlassPass(SDL_GPUDevice* device, const ShaderLibrary& shaders,
     description.vertexShader        = vertex.get();
     description.fragmentShader      = fragment.get();
     description.meshVertices        = true;
-    description.depth               = DepthMode::TestOnly;
-    description.blend               = BlendMode::Multiply;
+    description.depth               = DepthMode::TEST_ONLY;
+    description.blend               = BlendMode::MULTIPLY;
     transmit_                       = createPipeline(device, description, "glass transmittance");
-    description.blend               = BlendMode::Additive;
+    description.blend               = BlendMode::ADDITIVE;
     emit_                           = createPipeline(device, description, "glass emission");
 }
 
@@ -571,7 +571,7 @@ DrawStats GlassPass::draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pas
         bindWorld(pass, world);
         pushHabitatFragmentUniforms(commands, view);
         SDL_PushGPUFragmentUniformData(commands, 2, &mode, sizeof(mode));
-        stats = drawChunks(commands, pass, world, view, ChunkKind::Glass);
+        stats = drawChunks(commands, pass, world, view, ChunkKind::GLASS);
     }
     return stats;
 }

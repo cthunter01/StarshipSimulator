@@ -72,7 +72,7 @@ Person walker(const Settlement& place, const TerrainGrid& grid, const Street& st
     const Vec2d at     = street.from + (along * (there * length)) + (across * (edge * facing));
     Person      person = standing(place, grid, at, along * facing);
     dress(person, rng);
-    person.doing   = Activity::Walking;
+    person.doing   = Activity::WALKING;
     person.speedMS = speed;
     person.gait    = std::fmod(((there * length) / kPaceM) + rng.uniform(0.0, 1.0), 1.0);
     return person;
@@ -114,8 +114,8 @@ void aboutTheFurniture(const Settlements& settlements, const TerrainGrid& grid, 
 {
     const Furniture&  item  = settlements.furniture[index];
     const Settlement& place = settlements.places[item.settlement];
-    const bool        bench = item.kind == FurnitureKind::Bench;
-    if (!bench && item.kind != FurnitureKind::Fountain && item.kind != FurnitureKind::Stall)
+    const bool        bench = item.kind == FurnitureKind::BENCH;
+    if (!bench && item.kind != FurnitureKind::FOUNTAIN && item.kind != FurnitureKind::STALL)
     {
         return;
     }
@@ -132,12 +132,12 @@ void aboutTheFurniture(const Settlements& settlements, const TerrainGrid& grid, 
         const Vec2d at     = item.position + (across * rng.uniform(-kBenchSitM, kBenchSitM));
         Person      person = standing(place, grid, at, facing);
         dress(person, rng);
-        person.doing = Activity::Sitting;
+        person.doing = Activity::SITTING;
         add(person);
         return;
     }
     // Standing about: turned toward whatever they are looking at, shifting their weight.
-    const bool fountain = item.kind == FurnitureKind::Fountain;
+    const bool fountain = item.kind == FurnitureKind::FOUNTAIN;
     const int  knot     = static_cast<int>(rng.uniform(1.0, fountain ? 3.99 : 2.99));
     for (int i = 0; i < knot; ++i)
     {
@@ -147,7 +147,7 @@ void aboutTheFurniture(const Settlements& settlements, const TerrainGrid& grid, 
         const Vec2d  at     = item.position + (Vec2d(std::cos(angle), std::sin(angle)) * reach);
         Person       person = standing(place, grid, at, item.position - at);
         dress(person, rng);
-        person.doing = Activity::Standing;
+        person.doing = Activity::STANDING;
         person.gait  = rng.uniform(0.0, 1.0);
         add(person);
     }

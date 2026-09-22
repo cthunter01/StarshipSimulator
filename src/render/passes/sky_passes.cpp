@@ -112,7 +112,7 @@ PlanetPass::PlanetPass(SDL_GPUDevice* device, const ShaderLibrary& shaders,
     PipelineDescription description = scenePipeline(formats);
     description.vertexShader        = vertex.get();
     description.fragmentShader      = fragment.get();
-    description.blend               = BlendMode::Additive;
+    description.blend               = BlendMode::ADDITIVE;
     pipeline_                       = createPipeline(device, description, "planet");
 }
 
@@ -141,7 +141,7 @@ BodyPass::BodyPass(SDL_GPUDevice* device, const ShaderLibrary& shaders, const Sc
     PipelineDescription description = scenePipeline(formats);
     description.vertexShader        = vertex.get();
     description.fragmentShader      = fragment.get();
-    description.blend               = BlendMode::Alpha;
+    description.blend               = BlendMode::ALPHA;
     pipeline_                       = createPipeline(device, description, "body");
 }
 
@@ -173,7 +173,7 @@ HullPass::HullPass(SDL_GPUDevice* device, const ShaderLibrary& shaders, const Sc
     description.fragmentShader      = fragment.get();
     description.meshVertices        = true;
     description.cull                = SDL_GPU_CULLMODE_BACK;
-    description.depth               = DepthMode::TestWrite;
+    description.depth               = DepthMode::TEST_WRITE;
     pipeline_                       = createPipeline(device, description, "hull");
 }
 

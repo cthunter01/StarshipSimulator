@@ -18,7 +18,7 @@ namespace StarshipSimulator
 /// Where one mesh chunk lives in the shared GPU buffers.
 struct ChunkDraw
 {
-    ChunkKind     kind = ChunkKind::Terrain;
+    ChunkKind     kind = ChunkKind::TERRAIN;
     Vec3d         origin{0.0};
     Vec3f         boundsMin{0.0F};
     Vec3f         boundsMax{0.0F};

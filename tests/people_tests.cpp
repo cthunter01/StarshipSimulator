@@ -99,7 +99,7 @@ TEST(People, AreTheSameEveryTimeAndWalkOn)
     {
         const double moved = glm::distance(now[i].position, later[i].position);
         EXPECT_LT(moved, 2.0 * 2.0);  // nobody covers more than 2 m/s
-        if (now[i].doing == Activity::Walking)
+        if (now[i].doing == Activity::WALKING)
         {
             walked = std::max(walked, moved);
         }
@@ -129,19 +129,19 @@ TEST(People, SitOnTheBenchesAndStandAboutTheSquare)
     const auto doing = [&people](Activity what) {
         return std::ranges::count_if(people, [what](const Person& p) { return p.doing == what; });
     };
-    EXPECT_GT(doing(Activity::Walking), 0);
-    EXPECT_GT(doing(Activity::Sitting) + doing(Activity::Standing), 0);
+    EXPECT_GT(doing(Activity::WALKING), 0);
+    EXPECT_GT(doing(Activity::SITTING) + doing(Activity::STANDING), 0);
     // Everyone sitting is on a bench, and every bench holds at most one person.
     for (const Person& person : people)
     {
-        if (person.doing != Activity::Sitting)
+        if (person.doing != Activity::SITTING)
         {
             continue;
         }
         double nearest = 1e9;
         for (const Furniture& item : town().places.furniture)
         {
-            if (item.kind != FurnitureKind::Bench)
+            if (item.kind != FurnitureKind::BENCH)
             {
                 continue;
             }

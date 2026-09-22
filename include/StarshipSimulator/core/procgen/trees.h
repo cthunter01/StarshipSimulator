@@ -18,9 +18,9 @@ namespace StarshipSimulator
 
 enum class TreeSpecies : std::uint8_t
 {
-    Broadleaf,  // oak-like: a clump of rounded crowns
-    Conifer,    // pine-like: stacked cones
-    Poplar,     // tall, narrow: along rivers
+    BROADLEAF,  // oak-like: a clump of rounded crowns
+    CONIFER,    // pine-like: stacked cones
+    POPLAR,     // tall, narrow: along rivers
 };
 inline constexpr std::size_t kTreeSpeciesCount = 3;
 

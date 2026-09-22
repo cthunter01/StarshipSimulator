@@ -36,26 +36,26 @@ struct FloorPlane
 
 enum class RoofKind : std::uint8_t
 {
-    Hip,
-    Gable,
-    Flat,     // a roof terrace behind a parapet
-    Pyramid,  // bell towers
+    HIP,
+    GABLE,
+    FLAT,     // a roof terrace behind a parapet
+    PYRAMID,  // bell towers
 };
 
 enum class BuildingUse : std::uint8_t
 {
-    House,
-    Shop,  // shop windows and an awning on the ground floor
-    Hall,  // the town hall on the square
-    Tower,
-    Farmhouse,
-    Barn,
+    HOUSE,
+    SHOP,  // shop windows and an awning on the ground floor
+    HALL,  // the town hall on the square
+    TOWER,
+    FARMHOUSE,
+    BARN,
 };
 
 /// A building: storeys on a rectangular footprint, and a roof.
 struct Building
 {
-    BuildingUse   use        = BuildingUse::House;
+    BuildingUse   use        = BuildingUse::HOUSE;
     std::size_t   settlement = 0;
     Vec2d         centre{0.0};          // on the settlement's plan
     double        angle = 0.0;          // radians from the plan's x axis to the footprint's x axis
@@ -64,7 +64,7 @@ struct Building
     double        foundation    = 1.0;  // the walls reach this far below the ground floor (m)
     int           storeys       = 1;
     double        storeyHeightM = 3.0;
-    RoofKind      roof          = RoofKind::Hip;
+    RoofKind      roof          = RoofKind::HIP;
     double        roofPitchDeg  = 30.0;
     std::uint8_t  wallColour    = 0;
     std::uint8_t  roofColour    = 0;
@@ -77,16 +77,16 @@ struct Building
 
 enum class FurnitureKind : std::uint8_t
 {
-    Lamp,  // a street lamp, lit at night
-    Bench,
-    Planter,   // a stone trough of flowers
-    Fountain,  // the square's fountain
-    Stall,     // a market stall with an awning
+    LAMP,  // a street lamp, lit at night
+    BENCH,
+    PLANTER,   // a stone trough of flowers
+    FOUNTAIN,  // the square's fountain
+    STALL,     // a market stall with an awning
 };
 
 struct Furniture
 {
-    FurnitureKind kind       = FurnitureKind::Lamp;
+    FurnitureKind kind       = FurnitureKind::LAMP;
     std::size_t   settlement = 0;
     Vec2d         position{0.0};  // on the plan
     double        angle  = 0.0;   // radians, like Building::angle
@@ -136,13 +136,13 @@ inline constexpr double kGroundMapDistanceRange = 8.0;  // R spans -4..4 m
 
 enum class SettlementKind : std::uint8_t
 {
-    Town,
-    Farm,
+    TOWN,
+    FARM,
 };
 
 struct Settlement
 {
-    SettlementKind      kind = SettlementKind::Town;
+    SettlementKind      kind = SettlementKind::TOWN;
     std::string         name;
     int                 valley = 0;
     FloorPlane          plane;           // centred on the settlement
@@ -159,7 +159,7 @@ struct StandingTree
 {
     std::size_t settlement = 0;
     Vec3d       position{0.0};  // habitat frame, on the ground
-    TreeSpecies species = TreeSpecies::Broadleaf;
+    TreeSpecies species = TreeSpecies::BROADLEAF;
     double      heightM = 8.0;
 };
 

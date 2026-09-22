@@ -170,18 +170,18 @@ FacadeStyle styleOf(BuildingUse use)
 {
     switch (use)
     {
-        case BuildingUse::Tower:
-            return FacadeStyle::Tower;
-        case BuildingUse::Barn:
-            return FacadeStyle::Barn;
-        case BuildingUse::Hall:
-            return FacadeStyle::Hall;
-        case BuildingUse::House:
-        case BuildingUse::Shop:
-        case BuildingUse::Farmhouse:
+        case BuildingUse::TOWER:
+            return FacadeStyle::TOWER;
+        case BuildingUse::BARN:
+            return FacadeStyle::BARN;
+        case BuildingUse::HALL:
+            return FacadeStyle::HALL;
+        case BuildingUse::HOUSE:
+        case BuildingUse::SHOP:
+        case BuildingUse::FARMHOUSE:
             break;
     }
-    return FacadeStyle::House;
+    return FacadeStyle::HOUSE;
 }
 
 /// The roof's outline: where its faces meet, in the building's frame (for the mesh and collider).
@@ -223,7 +223,7 @@ RoofShape roofShape(const Building& b)
         }
     };
 
-    if (b.roof == RoofKind::Gable)
+    if (b.roof == RoofKind::GABLE)
     {
         const double end = longHalf + kEaveM;
         for (const double side : {-1.0, 1.0})
@@ -240,8 +240,8 @@ RoofShape roofShape(const Building& b)
         return roof;
     }
     // Hip roofs, and pyramids when the footprint is square.
-    const double ridge = b.roof == RoofKind::Pyramid ? 0.0 : std::max(longHalf - shortHalf, 0.0);
-    const double peak  = b.roof == RoofKind::Pyramid ? wall + (shortHalf * t) : yRidge;
+    const double ridge = b.roof == RoofKind::PYRAMID ? 0.0 : std::max(longHalf - shortHalf, 0.0);
+    const double peak  = b.roof == RoofKind::PYRAMID ? wall + (shortHalf * t) : yRidge;
     for (const double side : {-1.0, 1.0})
     {
         add({at(-(longHalf + kEaveM), side * (shortHalf + kEaveM), yEave),
@@ -302,7 +302,7 @@ void writeWall(MeshWriter& writer, const Vec3d& a, const Vec3d& b, double y0, do
                Facade facade, const Vec3d& outward)
 {
     const double length = glm::distance(a, b);
-    const int    bays   = facade.surface == kWall && facade.style != FacadeStyle::Barn
+    const int    bays   = facade.surface == kWall && facade.style != FacadeStyle::BARN
                               ? static_cast<int>(std::floor((length - 1.0) / kWindowBayM))
                               : 0;
     facade.windows      = static_cast<std::uint32_t>(std::clamp(bays, 0, 63));
@@ -351,7 +351,7 @@ void writeFlatRoof(MeshWriter& writer, const Building& b)
 void writeBuilding(MeshWriter& writer, const Building& b)
 {
     const FacadeStyle style = styleOf(b.use);
-    const double      top   = b.wallHeight() + (b.roof == RoofKind::Flat ? kParapetM : 0.0);
+    const double      top   = b.wallHeight() + (b.roof == RoofKind::FLAT ? kParapetM : 0.0);
     const double      hx    = b.halfSize.x;
     const double      hz    = b.halfSize.y;
     SplitMix64        random(b.seed);
@@ -367,12 +367,12 @@ void writeBuilding(MeshWriter& writer, const Building& b)
         const bool   front   = side == b.frontSide;
         const Facade facade{.surface = kWall,
                             .colour  = b.wallColour,
-                            .door    = front && b.use != BuildingUse::Tower,
-                            .shop    = front && b.use == BuildingUse::Shop,
+                            .door    = front && b.use != BuildingUse::TOWER,
+                            .shop    = front && b.use == BuildingUse::SHOP,
                             .style   = style,
                             .shutter = b.shutterColour,
                             // Towers keep their height in storeys here, for the belfry and clock.
-                            .seed = b.use == BuildingUse::Tower
+                            .seed = b.use == BuildingUse::TOWER
                                         ? static_cast<std::uint32_t>(b.storeys)
                                         : static_cast<std::uint32_t>(random.next())};
         writeWall(writer, centre - (along * halfLen), centre + (along * halfLen), -b.foundation,
@@ -393,13 +393,13 @@ void writeBuilding(MeshWriter& writer, const Building& b)
         }
     }
     const Facade plain{.surface = kWall, .colour = b.wallColour, .style = style, .seed = b.seed};
-    if (b.roof == RoofKind::Flat)
+    if (b.roof == RoofKind::FLAT)
     {
         writeFlatRoof(writer, b);
         return;
     }
     writeRoof(writer, b, roofShape(b), plain);
-    if (b.use != BuildingUse::Tower && random.uniform() < 0.45)
+    if (b.use != BuildingUse::TOWER && random.uniform() < 0.45)
     {
         // A chimney through the roof.
         const double t         = std::tan(degreesToRadians(b.roofPitchDeg));
@@ -425,7 +425,7 @@ void writeFurniture(MeshWriter& writer, const Furniture& item, SplitMix64& rando
     const std::uint32_t stone = packFacade({.surface = kStone});
     switch (item.kind)
     {
-        case FurnitureKind::Lamp:
+        case FurnitureKind::LAMP:
             writer.mesh([&] {
                 CpuMesh post;
                 appendMesh(post, makeCylinder(0.06F, 1.8F, 8, metal),
@@ -436,7 +436,7 @@ void writeFurniture(MeshWriter& writer, const Furniture& item, SplitMix64& rando
                        packFacade({.surface = kLampGlass}));
             writer.box(Vec3d(0.0, 4.14, 0.0), Vec3d(0.23, 0.05, 0.23), metal);
             break;
-        case FurnitureKind::Bench:
+        case FurnitureKind::BENCH:
             writer.box(Vec3d(0.0, 0.45, 0.0), Vec3d(0.8, 0.03, 0.22), wood);
             writer.box(Vec3d(0.0, 0.74, -0.2), Vec3d(0.8, 0.2, 0.03), wood);
             for (const double x : {-0.7, 0.7})
@@ -444,7 +444,7 @@ void writeFurniture(MeshWriter& writer, const Furniture& item, SplitMix64& rando
                 writer.box(Vec3d(x, 0.21, 0.0), Vec3d(0.03, 0.21, 0.2), metal);
             }
             break;
-        case FurnitureKind::Planter:
+        case FurnitureKind::PLANTER:
         {
             writer.box(Vec3d(0.0, 0.3, 0.0), Vec3d(0.6, 0.3, 0.3), stone);
             CpuMesh flowers;
@@ -458,7 +458,7 @@ void writeFurniture(MeshWriter& writer, const Furniture& item, SplitMix64& rando
             writer.mesh(flowers);
             break;
         }
-        case FurnitureKind::Fountain:
+        case FurnitureKind::FOUNTAIN:
         {
             // A round basin (a ring wall around water), a column and a bowl.
             constexpr int kSides = 24;
@@ -494,7 +494,7 @@ void writeFurniture(MeshWriter& writer, const Furniture& item, SplitMix64& rando
             writer.mesh(column);
             break;
         }
-        case FurnitureKind::Stall:
+        case FurnitureKind::STALL:
         {
             writer.box(Vec3d(0.0, 0.45, 0.0), Vec3d(1.2, 0.45, 0.45), wood);
             for (const double x : {-1.15, 1.15})
@@ -627,13 +627,13 @@ double storeyHeight(FacadeStyle style)
 {
     switch (style)
     {
-        case FacadeStyle::Tower:
+        case FacadeStyle::TOWER:
             return 3.4;
-        case FacadeStyle::Barn:
+        case FacadeStyle::BARN:
             return 6.0;
-        case FacadeStyle::Hall:
+        case FacadeStyle::HALL:
             return 4.2;
-        case FacadeStyle::House:
+        case FacadeStyle::HOUSE:
             break;
     }
     return 3.0;
@@ -700,10 +700,10 @@ StaticColliders settlementColliders(const Settlements& settlements)
     {
         const BuildingFrame frame =
             frameOf(settlements.places.at(b.settlement), b.centre, b.floorHeight, b.angle);
-        const double top = b.wallHeight() + (b.roof == RoofKind::Flat ? kParapetM : 0.0);
+        const double top = b.wallHeight() + (b.roof == RoofKind::FLAT ? kParapetM : 0.0);
         addBox(out, frame, Vec3d(0.0, 0.5 * (top - b.foundation), 0.0),
                Vec3d(b.halfSize.x, 0.5 * (top + b.foundation), b.halfSize.y));
-        if (b.roof != RoofKind::Flat)
+        if (b.roof != RoofKind::FLAT)
         {
             const RoofShape roof = roofShape(b);
             StaticHull hull{.origin = frame.base, .orientation = frame.orientation, .points = {}};
@@ -720,19 +720,19 @@ StaticColliders settlementColliders(const Settlements& settlements)
             frameOf(settlements.places.at(item.settlement), item.position, item.height, item.angle);
         switch (item.kind)
         {
-            case FurnitureKind::Lamp:
+            case FurnitureKind::LAMP:
                 addBox(out, frame, Vec3d(0.0, 2.1, 0.0), Vec3d(0.12, 2.1, 0.12));
                 break;
-            case FurnitureKind::Bench:
+            case FurnitureKind::BENCH:
                 addBox(out, frame, Vec3d(0.0, 0.4, -0.05), Vec3d(0.8, 0.4, 0.25));
                 break;
-            case FurnitureKind::Planter:
+            case FurnitureKind::PLANTER:
                 addBox(out, frame, Vec3d(0.0, 0.45, 0.0), Vec3d(0.6, 0.45, 0.3));
                 break;
-            case FurnitureKind::Stall:
+            case FurnitureKind::STALL:
                 addBox(out, frame, Vec3d(0.0, 0.45, 0.0), Vec3d(1.2, 0.45, 0.45));
                 break;
-            case FurnitureKind::Fountain:
+            case FurnitureKind::FOUNTAIN:
             {
                 StaticHull basin{
                     .origin = frame.base, .orientation = frame.orientation, .points = {}};

@@ -29,7 +29,7 @@ TEST(Scenario, RoundTripsThroughToml)
     original.habitat.lengthM                        = 20000.0;
     original.habitat.stripPairs                     = 4;
     original.habitat.surfaceGravityG                = 0.8;
-    original.habitat.sunwardEndcap                  = makeEndcap(EndcapShape::Flat);
+    original.habitat.sunwardEndcap                  = makeEndcap(EndcapShape::FLAT);
     original.habitat.antisunwardEndcap.rampSlopeDeg = 20.0;
     original.habitat.mirrors.openingAngleDeg        = 33.3;
     original.habitat.atmosphere.surfacePressurePa   = 50662.5;
@@ -37,7 +37,7 @@ TEST(Scenario, RoundTripsThroughToml)
     original.habitat.settlements = {.townsPerValley = 2, .townRadiusM = 180.5, .farmsPerValley = 9};
     original.start               = {.valley = 2, .zM = -123.25, .headingDeg = 45.0};
     original.habitat.partner.separationM = 90000.0;
-    original.sky.location                = astro::Location::SunMarsL4;
+    original.sky.location                = astro::Location::SUN_MARS_L4;
     original.sky.start                   = astro::parseIsoTime("2061-07-28T18:45:30Z").value();
     original.sky.utcOffsetHours          = -5.5;
     original.day.enabled                 = false;
@@ -61,8 +61,8 @@ TEST(Scenario, RoundTripsThroughToml)
     EXPECT_EQ(copy.habitat.radiusM, 1234.5);
     EXPECT_EQ(copy.habitat.stripPairs, 4);
     EXPECT_EQ(copy.habitat.surfaceGravityG, 0.8);
-    EXPECT_EQ(copy.habitat.sunwardEndcap.shape, EndcapShape::Flat);
-    EXPECT_EQ(copy.habitat.antisunwardEndcap.shape, EndcapShape::ConicalRamp);
+    EXPECT_EQ(copy.habitat.sunwardEndcap.shape, EndcapShape::FLAT);
+    EXPECT_EQ(copy.habitat.antisunwardEndcap.shape, EndcapShape::CONICAL_RAMP);
     EXPECT_EQ(copy.habitat.antisunwardEndcap.rampSlopeDeg, 20.0);
     EXPECT_EQ(copy.habitat.mirrors.openingAngleDeg, 33.3);
     EXPECT_DOUBLE_EQ(copy.habitat.atmosphere.surfacePressurePa, 50662.5);
@@ -74,7 +74,7 @@ TEST(Scenario, RoundTripsThroughToml)
     EXPECT_EQ(copy.start.zM, -123.25);
     EXPECT_TRUE(copy.habitat.partner.enabled);
     EXPECT_EQ(copy.habitat.partner.separationM, 90000.0);
-    EXPECT_EQ(copy.sky.location, astro::Location::SunMarsL4);
+    EXPECT_EQ(copy.sky.location, astro::Location::SUN_MARS_L4);
     EXPECT_EQ(copy.sky.start, original.sky.start);
     EXPECT_EQ(copy.sky.utcOffsetHours, -5.5);
     EXPECT_FALSE(copy.day.enabled);
@@ -98,9 +98,9 @@ TEST(Scenario, PresetsLoad)
     ASSERT_TRUE(island.has_value()) << island.error().describe();
     EXPECT_EQ(island->title, "Island Three");
     EXPECT_EQ(island->habitat.radiusM, 4000.0);
-    EXPECT_EQ(island->habitat.antisunwardEndcap.shape, EndcapShape::ConicalRamp);
+    EXPECT_EQ(island->habitat.antisunwardEndcap.shape, EndcapShape::CONICAL_RAMP);
 
-    EXPECT_EQ(island->sky.location, astro::Location::EarthMoonL5);
+    EXPECT_EQ(island->sky.location, astro::Location::EARTH_MOON_L5);
     EXPECT_TRUE(island->habitat.partner.enabled);
     EXPECT_TRUE(island->day.enabled);
 

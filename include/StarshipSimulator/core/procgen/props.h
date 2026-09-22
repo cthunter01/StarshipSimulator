@@ -16,12 +16,12 @@ namespace StarshipSimulator
 
 enum class PropKind : std::uint8_t
 {
-    Ball,
-    Crate,
-    Barrel,
-    HayBale,
-    Chair,
-    Table,
+    BALL,
+    CRATE,
+    BARREL,
+    HAY_BALE,
+    CHAIR,
+    TABLE,
 };
 inline constexpr std::size_t kPropKindCount = 6;
 
@@ -32,11 +32,11 @@ struct PropPart
 {
     enum class Shape : std::uint8_t
     {
-        Box,       // halfExtents
-        Sphere,    // halfExtents.x: radius
-        Cylinder,  // along y; halfExtents.x: radius, halfExtents.y: half height
+        BOX,       // halfExtents
+        SPHERE,    // halfExtents.x: radius
+        CYLINDER,  // along y; halfExtents.x: radius, halfExtents.y: half height
     };
-    Shape shape = Shape::Box;
+    Shape shape = Shape::BOX;
     Vec3f centre{0.0F};
     Vec3f halfExtents{0.5F};
 };
@@ -69,7 +69,7 @@ inline constexpr std::uint32_t kTableTop = 5;
 /// A prop where the world begins: standing on the ground somewhere.
 struct PropPlacement
 {
-    PropKind kind = PropKind::Crate;
+    PropKind kind = PropKind::CRATE;
     Vec3d    position{0.0};                    // habitat frame: the prop's origin
     Quatd    orientation{1.0, 0.0, 0.0, 0.0};  // its axes in the habitat frame
     float    tint = 0.0F;                      // 0..1: picks a colour variant

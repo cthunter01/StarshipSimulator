@@ -138,9 +138,9 @@ TEST(Ephemeris, PlanetsMatchHorizonsWithinAnArcminute)
     for (std::size_t i = 0; i < kDates.size(); ++i)
     {
         const SimTime time = atJulianDate(kDates.at(i));
-        expectClose(heliocentricPosition(Body::Mars, time), kMars.at(i), kDates.at(i));
-        expectClose(heliocentricPosition(Body::Jupiter, time), kJupiter.at(i), kDates.at(i));
-        expectClose(heliocentricPosition(Body::Earth, time), kEarth.at(i), kDates.at(i));
+        expectClose(heliocentricPosition(Body::MARS, time), kMars.at(i), kDates.at(i));
+        expectClose(heliocentricPosition(Body::JUPITER, time), kJupiter.at(i), kDates.at(i));
+        expectClose(heliocentricPosition(Body::EARTH, time), kEarth.at(i), kDates.at(i));
     }
 }
 
@@ -150,7 +150,7 @@ TEST(Ephemeris, MoonMatchesHorizonsWithinAnArcminute)
     {
         const SimTime time = atJulianDate(kDates.at(i));
         const Vec3d   moon =
-            heliocentricPosition(Body::Moon, time) - heliocentricPosition(Body::Earth, time);
+            heliocentricPosition(Body::MOON, time) - heliocentricPosition(Body::EARTH, time);
         expectClose(moon, kMoonGeocentric.at(i), kDates.at(i));
     }
 }
@@ -160,10 +160,10 @@ TEST(Ephemeris, MoonMatchesHorizonsWithinAnArcminute)
 TEST(Ephemeris, EarthMoonL5TrailsTheMoonBySixtyDegrees)
 {
     const SimTime time  = parseIsoTime("2045-06-21T09:00:00Z").value();
-    const Vec3d   earth = heliocentricPosition(Body::Earth, time);
-    const Vec3d   moon  = heliocentricPosition(Body::Moon, time) - earth;
-    const Vec3d   l5    = locationPosition(Location::EarthMoonL5, time) - earth;
-    const Vec3d   l4    = locationPosition(Location::EarthMoonL4, time) - earth;
+    const Vec3d   earth = heliocentricPosition(Body::EARTH, time);
+    const Vec3d   moon  = heliocentricPosition(Body::MOON, time) - earth;
+    const Vec3d   l5    = locationPosition(Location::EARTH_MOON_L5, time) - earth;
+    const Vec3d   l4    = locationPosition(Location::EARTH_MOON_L4, time) - earth;
 
     EXPECT_NEAR(radiansToDegrees(angleBetween(moon, l5)), 60.0, 0.5);
     EXPECT_NEAR(radiansToDegrees(angleBetween(moon, l4)), 60.0, 0.5);
@@ -171,8 +171,8 @@ TEST(Ephemeris, EarthMoonL5TrailsTheMoonBySixtyDegrees)
     EXPECT_NEAR(glm::length(l5 - moon) / glm::length(moon), 1.0, 0.01);
 
     // Trailing: the Moon's orbital motion carries it away from L5 and toward L4.
-    const Vec3d later       = heliocentricPosition(Body::Moon, time.plusSeconds(3600.0)) -
-                              heliocentricPosition(Body::Earth, time.plusSeconds(3600.0));
+    const Vec3d later       = heliocentricPosition(Body::MOON, time.plusSeconds(3600.0)) -
+                              heliocentricPosition(Body::EARTH, time.plusSeconds(3600.0));
     const Vec3d orbitNormal = glm::cross(moon, later - moon);
     EXPECT_GT(glm::dot(glm::cross(l5, moon), orbitNormal), 0.0);
     EXPECT_LT(glm::dot(glm::cross(l4, moon), orbitNormal), 0.0);
@@ -181,7 +181,7 @@ TEST(Ephemeris, EarthMoonL5TrailsTheMoonBySixtyDegrees)
 TEST(Ephemeris, SkyFromL5ShowsEarthAboutTwoDegreesAcross)
 {
     const SkyState sky =
-        computeSky(Location::EarthMoonL5, parseIsoTime("2045-06-21T09:00:00Z").value());
+        computeSky(Location::EARTH_MOON_L5, parseIsoTime("2045-06-21T09:00:00Z").value());
     EXPECT_NEAR(sky.sunDistanceAu, 1.0, 0.03);
     EXPECT_NEAR(glm::length(sky.sunDirection), 1.0, 1e-12);
     bool sawEarth = false;
@@ -189,13 +189,13 @@ TEST(Ephemeris, SkyFromL5ShowsEarthAboutTwoDegreesAcross)
     for (const VisibleBody& body : sky.bodies)
     {
         EXPECT_NEAR(glm::length(body.direction), 1.0, 1e-12);
-        if (body.body == Body::Earth)
+        if (body.body == Body::EARTH)
         {
             sawEarth = true;
             EXPECT_NEAR(radiansToDegrees(2.0 * body.angularRadius), 1.9, 0.12);
             EXPECT_NEAR(body.distanceKm, 384400.0, 30000.0);
         }
-        if (body.body == Body::Moon)
+        if (body.body == Body::MOON)
         {
             sawMoon = true;
             EXPECT_NEAR(radiansToDegrees(2.0 * body.angularRadius), 0.52, 0.05);
@@ -217,7 +217,7 @@ TEST(Ephemeris, LocationKeysRoundTrip)
 TEST(Ephemeris, BodyOrientationPutsNorthOnZ)
 {
     const SimTime         time        = parseIsoTime("2045-06-21T09:00:00Z").value();
-    const BodyOrientation orientation = bodyOrientation(Body::Earth, time);
+    const BodyOrientation orientation = bodyOrientation(Body::EARTH, time);
     const Vec3d           north       = orientation.bodyFromEqj * orientation.north;
     EXPECT_NEAR(north.z, 1.0, 1e-9);
     // Earth's pole is within a degree of the celestial pole (precession since J2000 is small).

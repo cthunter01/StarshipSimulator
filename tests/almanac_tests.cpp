@@ -111,7 +111,7 @@ TEST(Almanac, QuotesTheHabitatItIsGiven)
     // A habitat whose rim moves fast enough to need materials we do not have says so instead.
     AlmanacState wild                 = islandState();
     wild.metrics                      = islandState().metrics;
-    wild.metrics.material             = MaterialClass::FutureMaterials;
+    wild.metrics.material             = MaterialClass::FUTURE_MATERIALS;
     wild.metrics.hoopSpecificStrength = 9.8e6;  // a ring the size of a continent
     std::string impossible;
     for (const AlmanacPage& page : almanacPages(wild))

@@ -155,12 +155,12 @@ TEST(SpirvReflect, FragmentShaderWithTextureAndUniformBlockFollowsSdlLayout)
     addVariable(b, 22, kUboStruct, kUniform, "params", 3, 0);
 
     const gpu::ShaderReflection reflection = reflect(b);
-    EXPECT_EQ(reflection.stage, gpu::ShaderStage::Fragment);
+    EXPECT_EQ(reflection.stage, gpu::ShaderStage::FRAGMENT);
     EXPECT_EQ(reflection.entryPoint, "main");
     ASSERT_EQ(reflection.resources.size(), 3U);
     EXPECT_EQ(reflection.resources[0].name, "albedo");
-    EXPECT_EQ(reflection.resources[0].kind, gpu::ResourceKind::SampledTexture);
-    EXPECT_EQ(reflection.resources[2].kind, gpu::ResourceKind::UniformBuffer);
+    EXPECT_EQ(reflection.resources[0].kind, gpu::ResourceKind::SAMPLED_TEXTURE);
+    EXPECT_EQ(reflection.resources[2].kind, gpu::ResourceKind::UNIFORM_BUFFER);
 
     const gpu::ResourceCounts counts = reflection.counts();
     EXPECT_EQ(counts.samplers, 2U);
@@ -206,7 +206,7 @@ TEST(SpirvReflect, ComputeShaderLayoutAndWorkgroupSize)
     addVariable(b, 22, kUboStruct, kUniform, "params", 2, 0);
 
     const gpu::ShaderReflection reflection = reflect(b);
-    EXPECT_EQ(reflection.stage, gpu::ShaderStage::Compute);
+    EXPECT_EQ(reflection.stage, gpu::ShaderStage::COMPUTE);
     EXPECT_EQ(reflection.localSize[0], 8U);
     EXPECT_EQ(reflection.localSize[1], 8U);
     EXPECT_EQ(reflection.localSize[2], 1U);
@@ -292,7 +292,7 @@ TEST(SpirvReflect, TonemapShaderHasTwoTexturesAndOneUniformBlock)
                                        std::as_bytes(std::span(contents)).end());
     const auto reflection = gpu::reflectSpirv(gpu::spirvWordsFromBytes(bytes).value());
     ASSERT_TRUE(reflection.has_value());
-    EXPECT_EQ(reflection->stage, gpu::ShaderStage::Fragment);
+    EXPECT_EQ(reflection->stage, gpu::ShaderStage::FRAGMENT);
     EXPECT_EQ(reflection->counts().samplers, 2U);  // the scene and the colour grade
     EXPECT_EQ(reflection->counts().uniformBuffers, 1U);
 }

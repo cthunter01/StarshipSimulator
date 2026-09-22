@@ -225,12 +225,12 @@ JPH::RefConst<JPH::Shape> createPart(const PropPart& part)
     const Vec3f half = part.halfExtents;
     switch (part.shape)
     {
-        case PropPart::Shape::Sphere:
+        case PropPart::Shape::SPHERE:
             return createShape(JPH::SphereShapeSettings(half.x));
-        case PropPart::Shape::Cylinder:
+        case PropPart::Shape::CYLINDER:
             return createShape(
                 JPH::CylinderShapeSettings(half.y, half.x, convexRadius(std::min(half.x, half.y))));
-        case PropPart::Shape::Box:
+        case PropPart::Shape::BOX:
             break;
     }
     return createShape(
@@ -514,7 +514,7 @@ JPH::BodyID buildTreeTile(JPH::BodyInterface& bodies, const TreeLayer& layer, co
         const double        height  = static_cast<double>(tree.packed & 0xFFFU) * 0.1;
         const auto          species = static_cast<TreeSpecies>((tree.packed >> 20U) & 0xFU);
         const double        width  = 0.85 + (0.3 * static_cast<double>(tree.packed >> 24U) / 255.0);
-        const double        base   = species == TreeSpecies::Broadleaf ? 0.035 : 0.03;
+        const double        base   = species == TreeSpecies::BROADLEAF ? 0.035 : 0.03;
         const auto          radius = static_cast<float>(std::max(0.1, 0.8 * base * width * height));
         const auto          half   = static_cast<float>(0.25 * height);
         const Vec3d         up     = HabitatGeometry::localUp(tile.origin + Vec3d(tree.position));
@@ -598,10 +598,10 @@ public:
         }
         // Walking presses on the ground (a step's worth of falling), which is what keeps the
         // character in contact with it.
-        const Vec3d press = mode == MoveMode::Walk ? up * (-gravity * dt) : Vec3d(0.0);
+        const Vec3d press = mode == MoveMode::WALK ? up * (-gravity * dt) : Vec3d(0.0);
         // Standing on something that is moving (a tram, a lift) carries you along with it.
         const Vec3d carried =
-            mode == MoveMode::Walk &&
+            mode == MoveMode::WALK &&
                     body_->GetGroundState() == JPH::CharacterBase::EGroundState::OnGround
                 ? fromJoltF(body_->GetGroundVelocity())
                 : Vec3d(0.0);
@@ -612,7 +612,7 @@ public:
         const auto             obj  = system_->GetDefaultLayerFilter(layers::kMoving);
         const JPH::BodyFilter  bodies;
         const JPH::ShapeFilter shapes;
-        if (mode == MoveMode::Walk)
+        if (mode == MoveMode::WALK)
         {
             JPH::CharacterVirtual::ExtendedUpdateSettings walk;
             walk.mStickToFloorStepDown = joltUp * static_cast<float>(-stepDown_);
@@ -629,7 +629,7 @@ public:
         moved.feet      = fromJolt(body_->GetPosition());
         moved.velocity  = fromJoltF(body_->GetLinearVelocity());
         moved.supported = body_->GetGroundState() == JPH::CharacterBase::EGroundState::OnGround;
-        if (mode == MoveMode::Walk)
+        if (mode == MoveMode::WALK)
         {
             moved.velocity -= press + carried;  // what you are doing, not what is carrying you
         }

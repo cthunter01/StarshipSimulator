@@ -22,14 +22,14 @@ inline constexpr std::uint32_t kMetal  = 3;  // hubs and bare structure
 
 enum class ChunkKind : std::uint8_t
 {
-    Terrain,  // opaque ground
-    Glass,    // window strips, drawn transparent after everything else
+    TERRAIN,  // opaque ground
+    GLASS,    // window strips, drawn transparent after everything else
 };
 
 /// A piece of the habitat surface. Vertices are float and relative to a double-precision origin.
 struct MeshChunk
 {
-    ChunkKind kind = ChunkKind::Terrain;
+    ChunkKind kind = ChunkKind::TERRAIN;
     Vec3d     origin{0.0};
     CpuMesh   mesh;
     Vec3f     boundsMin{0.0F};  // local, relative to origin

@@ -29,8 +29,8 @@ const HabitatGeometry& playground()
         OneillCylinderSpec spec;
         spec.radiusM           = 250.0;
         spec.lengthM           = 800.0;
-        spec.sunwardEndcap     = makeEndcap(EndcapShape::Flat);
-        spec.antisunwardEndcap = makeEndcap(EndcapShape::Flat);
+        spec.sunwardEndcap     = makeEndcap(EndcapShape::FLAT);
+        spec.antisunwardEndcap = makeEndcap(EndcapShape::FLAT);
         return spec;
     }()};
     return kGeometry;

@@ -36,7 +36,7 @@ Flight launch(double radius, double speed, double climbDeg)
     const Vec3d            up = HabitatGeometry::localUp(at);
 
     Flight flight;
-    flight.player.setLocomotion(Locomotion::Wings);
+    flight.player.setLocomotion(Locomotion::WINGS);
     flight.player.teleport(at);
     flight.look = LookRig(up, Vec3d(0.0, 0.0, 1.0));
     flight.look.setAngles(0.0, degreesToRadians(climbDeg));

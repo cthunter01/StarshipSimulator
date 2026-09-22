@@ -306,7 +306,7 @@ TEST(PlayerController, FlyingStaysAboveGroundAndInside)
 {
     const HabitatGeometry geometry(flatSpec());
     PlayerController      player;
-    player.setLocomotion(Locomotion::Fly);
+    player.setLocomotion(Locomotion::FLY);
     player.placeOnGround(geometry, 0.0, kPi);
     LookRig look = valleyLook();
     look.setAngles(0.0, degreesToRadians(-80.0));  // dive into the ground

@@ -35,11 +35,11 @@ SDL_GPUShaderStage toSdlStage(gpu::ShaderStage stage, const std::string& name)
 {
     switch (stage)
     {
-        case gpu::ShaderStage::Vertex:
+        case gpu::ShaderStage::VERTEX:
             return SDL_GPU_SHADERSTAGE_VERTEX;
-        case gpu::ShaderStage::Fragment:
+        case gpu::ShaderStage::FRAGMENT:
             return SDL_GPU_SHADERSTAGE_FRAGMENT;
-        case gpu::ShaderStage::Compute:
+        case gpu::ShaderStage::COMPUTE:
             break;
     }
     throw std::runtime_error(

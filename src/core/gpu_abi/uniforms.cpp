@@ -38,13 +38,13 @@ double planetColorKelvin(astro::Body body)
 {
     switch (body)
     {
-        case astro::Body::Mars:
+        case astro::Body::MARS:
             return 3300.0;  // ochre
-        case astro::Body::Jupiter:
-        case astro::Body::Saturn:
+        case astro::Body::JUPITER:
+        case astro::Body::SATURN:
             return 5000.0;  // cream
-        case astro::Body::Uranus:
-        case astro::Body::Neptune:
+        case astro::Body::URANUS:
+        case astro::Body::NEPTUNE:
             return 9000.0;  // blue-green
         default:
             return 5800.0;
@@ -192,7 +192,7 @@ ShadowUniforms makeShadowUniforms(const Vec3d& cameraPosition, const Vec3d& towa
 BodyUniforms makeBodyUniforms(const astro::VisibleBody& body, const Mat3d& habitatFromInertial,
                               const LightingSettings& lighting)
 {
-    const bool   earth = body.body == astro::Body::Earth;
+    const bool   earth = body.body == astro::Body::EARTH;
     BodyUniforms uniforms;
     uniforms.direction =
         Vec4f(Vec4d(glm::normalize(habitatFromInertial * body.direction), body.angularRadius));
@@ -212,7 +212,7 @@ PlanetUniforms makePlanetUniforms(const astro::SkyState& sky)
     std::size_t    count = 0;
     for (const astro::VisibleBody& body : sky.bodies)
     {
-        if (body.body == astro::Body::Earth || body.body == astro::Body::Moon ||
+        if (body.body == astro::Body::EARTH || body.body == astro::Body::MOON ||
             count >= kMaxPlanets)
         {
             continue;

@@ -133,7 +133,7 @@ TEST(Soundscape, AFootstepIsShortAndSharp)
 {
     Soundscape steps(kRate, 9);
     steps.setMix(SoundMix{});
-    steps.play(Sound::Footstep);
+    steps.play(Sound::FOOTSTEP);
     const std::vector<float> samples = listen(steps, 0.3);
     const std::vector<float> knock(samples.begin(), samples.begin() + 4800);  // the first 50 ms
     const std::vector<float> after(samples.begin() + 19200, samples.end());   // after 200 ms

@@ -224,7 +224,7 @@ std::unique_ptr<Renderer::Passes> Renderer::createPasses() const
                 PipelineDescription description;
                 description.vertexShader   = vertex.get();
                 description.fragmentShader = fragment.get();
-                description.blend          = BlendMode::Lighten;
+                description.blend          = BlendMode::LIGHTEN;
                 description.colorFormat    = formats.color;
                 return createPipeline(device, description, "long exposure");
             }(),
@@ -403,7 +403,7 @@ void Renderer::drawScene(SDL_GPUCommandBuffer* commands, const SceneView& view, 
     passes_->planets.draw(commands, pass, frame, view.sky, view.planets);
     for (const BodyDraw& body : view.bodies)
     {
-        const bool earth = body.textures == BodyTextures::Earth;
+        const bool earth = body.textures == BodyTextures::EARTH;
         passes_->bodies.draw(commands, pass, frame, body.uniforms,
                              earth ? skyTextures_.earthDay() : skyTextures_.moon(),
                              earth ? skyTextures_.earthNight() : skyTextures_.black(),

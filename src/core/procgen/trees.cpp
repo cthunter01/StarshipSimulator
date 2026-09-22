@@ -204,7 +204,7 @@ struct PlantedTile
 /// tall trees there grow.
 struct Growth
 {
-    TreeSpecies species = TreeSpecies::Broadleaf;
+    TreeSpecies species = TreeSpecies::BROADLEAF;
     Vec3d       position{0.0};
 };
 
@@ -226,18 +226,18 @@ std::optional<Growth> growthAt(const HabitatGeometry& geometry, const TerrainGri
     double      chance   = glm::smoothstep(0.2, 0.75, cover.x);
     const bool  conifers = floor ? stands.sample(Vec3d(column / 180.0, row / 180.0, 0.5)) > 0.35
                                  : pick < 0.75 * chance;  // mostly pines up the mountains
-    TreeSpecies species  = conifers ? TreeSpecies::Conifer : TreeSpecies::Broadleaf;
+    TreeSpecies species  = conifers ? TreeSpecies::CONIFER : TreeSpecies::BROADLEAF;
     if (floor && cover.y > 0.6)
     {
         const double shore = geometry.landscape().shoreDistance(z, theta, 60.0);
         if (shore > 6.0 && shore < 22.0)
         {
             chance  = 0.35;
-            species = TreeSpecies::Poplar;
+            species = TreeSpecies::POPLAR;
         }
     }
     chance = std::max(chance, floor ? kSolitaryChance : 0.0);
-    if (pick >= chance || geometry.regionAt(z, theta).kind == RegionKind::Window)
+    if (pick >= chance || geometry.regionAt(z, theta).kind == RegionKind::WINDOW)
     {
         return std::nullopt;
     }
@@ -352,7 +352,7 @@ CpuMesh makeTreeMesh(TreeSpecies species, bool detailed)
     const SimplexNoise noise(hashSeed(1977, static_cast<std::uint64_t>(species)));
     switch (species)
     {
-        case TreeSpecies::Broadleaf:
+        case TreeSpecies::BROADLEAF:
             addTrunk(mesh, 0.035, 0.02, 0.0, 0.5, detailed ? 6 : 3);
             if (detailed)
             {
@@ -370,7 +370,7 @@ CpuMesh makeTreeMesh(TreeSpecies species, bool detailed)
                 addBlob(mesh, Vec3d(0.0, 0.62, 0.0), Vec3d(0.36, 0.3, 0.36), 0, noise, 0.0);
             }
             break;
-        case TreeSpecies::Conifer:
+        case TreeSpecies::CONIFER:
             addTrunk(mesh, 0.03, 0.01, 0.0, 0.3, detailed ? 6 : 3);
             if (detailed)
             {
@@ -385,7 +385,7 @@ CpuMesh makeTreeMesh(TreeSpecies species, bool detailed)
                 addCone(mesh, 0.24, 0.14, 1.0, 6);
             }
             break;
-        case TreeSpecies::Poplar:
+        case TreeSpecies::POPLAR:
             addTrunk(mesh, 0.03, 0.015, 0.0, 0.35, detailed ? 6 : 3);
             addBlob(mesh, Vec3d(0.0, 0.58, 0.0), Vec3d(0.12, 0.42, 0.12), detailed ? 1 : 0, noise,
                     detailed ? 0.1 : 0.0);

@@ -32,10 +32,10 @@ inline constexpr std::uint32_t kFoliage   = 10;
 /// Wall styles (how the shader draws the facade), bits 16-17 of Vertex::material.
 enum class FacadeStyle : std::uint8_t
 {
-    House = 0,  // 3 m storeys, shuttered windows
-    Tower = 1,  // belfry openings at the top
-    Barn  = 2,  // planks and a big door
-    Hall  = 3,  // tall storeys and tall windows
+    HOUSE = 0,  // 3 m storeys, shuttered windows
+    TOWER = 1,  // belfry openings at the top
+    BARN  = 2,  // planks and a big door
+    HALL  = 3,  // tall storeys and tall windows
 };
 
 /// What the building shader needs to draw a surface, packed into Vertex::material:
@@ -48,7 +48,7 @@ struct Facade
     std::uint32_t windows = 0;
     bool          door    = false;
     bool          shop    = false;
-    FacadeStyle   style   = FacadeStyle::House;
+    FacadeStyle   style   = FacadeStyle::HOUSE;
     std::uint32_t shutter = 0;
     std::uint32_t seed    = 0;
 };

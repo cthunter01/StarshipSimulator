@@ -41,7 +41,7 @@ struct Band
 Band endBand(const EndcapSpec& endcap, double radius, double z, double facing)
 {
     Band band;
-    if (endcap.shape == EndcapShape::Hemisphere)
+    if (endcap.shape == EndcapShape::HEMISPHERE)
     {
         for (int i = 0; i <= kDomeRings; ++i)
         {

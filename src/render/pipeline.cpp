@@ -35,15 +35,15 @@ SDL_GPUColorTargetBlendState blendState(BlendMode mode)
     };
     switch (mode)
     {
-        case BlendMode::Opaque:
+        case BlendMode::OPAQUE:
             return {};
-        case BlendMode::Additive:
+        case BlendMode::ADDITIVE:
             return make(SDL_GPU_BLENDFACTOR_ONE, SDL_GPU_BLENDFACTOR_ONE);
-        case BlendMode::Multiply:
+        case BlendMode::MULTIPLY:
             return make(SDL_GPU_BLENDFACTOR_ZERO, SDL_GPU_BLENDFACTOR_SRC_COLOR);
-        case BlendMode::Alpha:
+        case BlendMode::ALPHA:
             return make(SDL_GPU_BLENDFACTOR_ONE, SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA);
-        case BlendMode::Lighten:
+        case BlendMode::LIGHTEN:
         {
             SDL_GPUColorTargetBlendState state =
                 make(SDL_GPU_BLENDFACTOR_ONE, SDL_GPU_BLENDFACTOR_ONE);
@@ -59,19 +59,19 @@ SDL_GPUDepthStencilState depthState(DepthMode mode)
 {
     switch (mode)
     {
-        case DepthMode::None:
+        case DepthMode::NONE:
             return {};
-        case DepthMode::TestWrite:
+        case DepthMode::TEST_WRITE:
             return {.compare_op         = SDL_GPU_COMPAREOP_GREATER,
                     .enable_depth_test  = true,
                     .enable_depth_write = true};
-        case DepthMode::TestOnly:
+        case DepthMode::TEST_ONLY:
             return {.compare_op = SDL_GPU_COMPAREOP_GREATER, .enable_depth_test = true};
-        case DepthMode::AlwaysWrite:
+        case DepthMode::ALWAYS_WRITE:
             return {.compare_op         = SDL_GPU_COMPAREOP_ALWAYS,
                     .enable_depth_test  = true,
                     .enable_depth_write = true};
-        case DepthMode::ShadowWrite:
+        case DepthMode::SHADOW_WRITE:
             return {.compare_op         = SDL_GPU_COMPAREOP_LESS,
                     .enable_depth_test  = true,
                     .enable_depth_write = true};

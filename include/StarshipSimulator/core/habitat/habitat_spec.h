@@ -11,14 +11,14 @@ namespace StarshipSimulator
 
 enum class EndcapShape : std::uint8_t
 {
-    Flat,         // a flat end wall (vertical under spin gravity)
-    Hemisphere,   // a dome beyond the end of the cylinder: a bowl that curves up overhead
-    ConicalRamp,  // mountains built inside the end: walkable slopes up toward the axis
+    FLAT,          // a flat end wall (vertical under spin gravity)
+    HEMISPHERE,    // a dome beyond the end of the cylinder: a bowl that curves up overhead
+    CONICAL_RAMP,  // mountains built inside the end: walkable slopes up toward the axis
 };
 
 struct EndcapSpec
 {
-    EndcapShape shape                 = EndcapShape::Flat;
+    EndcapShape shape                 = EndcapShape::FLAT;
     double      rampSlopeDeg          = 25.0;  // conical ramp: slope of the lower part
     double      rampTopRadiusFraction = 0.5;   // radius (fraction of R) where the lower part ends
     double      upperSlopeDeg         = 35.0;  // slope from there up to the hub
@@ -84,8 +84,8 @@ struct OneillCylinderSpec
     double         surfaceGravityG   = 1.0;  // spin gravity on the floor, in standard g
     int            stripPairs        = 3;    // land + window pairs around the circumference
     double         windowFraction    = 0.5;  // share of the circumference that is window
-    EndcapSpec     sunwardEndcap     = makeEndcap(EndcapShape::Hemisphere);
-    EndcapSpec     antisunwardEndcap = makeEndcap(EndcapShape::ConicalRamp);
+    EndcapSpec     sunwardEndcap     = makeEndcap(EndcapShape::HEMISPHERE);
+    EndcapSpec     antisunwardEndcap = makeEndcap(EndcapShape::CONICAL_RAMP);
     MirrorSpec     mirrors;
     PartnerSpec    partner;
     AtmosphereSpec atmosphere;

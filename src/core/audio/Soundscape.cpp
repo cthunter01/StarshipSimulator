@@ -63,29 +63,29 @@ void Soundscape::play(Sound sound, double level)
     shot.level = std::clamp(level, 0.0, 1.0);
     switch (sound)
     {
-        case Sound::Footstep:
+        case Sound::FOOTSTEP:
             shot.length    = 0.07;
             shot.toneHz    = 85.0 + (20.0 * noise_.next());
             shot.noisiness = 0.8;
             shot.level *= 0.6;
             break;
-        case Sound::Run:
+        case Sound::RUN:
             shot.length    = 0.09;
             shot.toneHz    = 75.0 + (15.0 * noise_.next());
             shot.noisiness = 0.9;
             break;
-        case Sound::Splash:
+        case Sound::SPLASH:
             shot.length    = 0.45;
             shot.toneHz    = 0.0;
             shot.noisiness = 1.0;
             break;
-        case Sound::Throw:
+        case Sound::THROW:
             shot.length    = 0.18;
             shot.toneHz    = 0.0;
             shot.noisiness = 1.0;
             shot.level *= 0.35;
             break;
-        case Sound::Thud:
+        case Sound::THUD:
             shot.length    = 0.12;
             shot.toneHz    = 60.0;
             shot.noisiness = 0.4;

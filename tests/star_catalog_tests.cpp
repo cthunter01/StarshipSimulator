@@ -177,17 +177,17 @@ TEST(SkyObjects, PhasesFromGeometry)
 TEST(SkyObjects, IdentifiesEarthPlanetsAndStars)
 {
     const SkyState sky =
-        computeSky(Location::EarthMoonL5, parseIsoTime("2045-06-15T09:00:00Z").value());
+        computeSky(Location::EARTH_MOON_L5, parseIsoTime("2045-06-15T09:00:00Z").value());
     const auto catalog = parseHygCatalog(kHygSample, 7.0).value();
     for (const VisibleBody& body : sky.bodies)
     {
-        if (body.body == Body::Earth || body.body == Body::Jupiter)
+        if (body.body == Body::EARTH || body.body == Body::JUPITER)
         {
             const auto found = identifyInSky(body.direction, sky, &catalog);
             EXPECT_TRUE(found.has_value());
             EXPECT_EQ(found.value_or(Identified{}).name, bodyName(body.body));
         }
-        if (body.body == Body::Earth)
+        if (body.body == Body::EARTH)
         {
             EXPECT_NE(describeBody(body).find("km away"), std::string::npos);
         }

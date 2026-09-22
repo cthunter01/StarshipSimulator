@@ -24,16 +24,16 @@ namespace
 
 enum class JobKind : std::uint8_t
 {
-    Terrain,
-    Glass,
-    Disk,
+    TERRAIN,
+    GLASS,
+    DISK,
 };
 
 /// One chunk to build. Terrain: vertex rows [row0, row1] x segments [seg0, seg1).
 /// Glass: z in [z0, z1] x segments. Disk: a flat disk at z0 with radius z1 facing +-Z.
 struct Job
 {
-    JobKind       kind     = JobKind::Terrain;
+    JobKind       kind     = JobKind::TERRAIN;
     std::uint32_t material = material::kValley;
     std::size_t   row0     = 0;
     std::size_t   row1     = 0;
@@ -48,7 +48,7 @@ Job terrainJob(std::uint32_t materialId, std::size_t row0, std::size_t row1, std
                std::size_t seg1)
 {
     Job job;
-    job.kind     = JobKind::Terrain;
+    job.kind     = JobKind::TERRAIN;
     job.material = materialId;
     job.row0     = row0;
     job.row1     = row1;
@@ -60,7 +60,7 @@ Job terrainJob(std::uint32_t materialId, std::size_t row0, std::size_t row1, std
 Job glassJob(std::size_t seg0, std::size_t seg1, double z0, double z1)
 {
     Job job;
-    job.kind     = JobKind::Glass;
+    job.kind     = JobKind::GLASS;
     job.material = material::kGlass;
     job.seg0     = seg0;
     job.seg1     = seg1;
@@ -72,7 +72,7 @@ Job glassJob(std::size_t seg0, std::size_t seg1, double z0, double z1)
 Job diskJob(std::uint32_t materialId, double z, double radius, double facing)
 {
     Job job;
-    job.kind     = JobKind::Disk;
+    job.kind     = JobKind::DISK;
     job.material = materialId;
     job.z0       = z;
     job.z1       = radius;
@@ -206,7 +206,7 @@ MeshChunk buildTerrainChunk(const Grid& grid, const Job& job)
     }
 
     MeshChunk chunk;
-    chunk.kind                 = ChunkKind::Terrain;
+    chunk.kind                 = ChunkKind::TERRAIN;
     const std::size_t midRow   = (job.row0 + job.row1) / 2;
     const double      midTheta = grid.angle(static_cast<std::ptrdiff_t>((job.seg0 + job.seg1) / 2));
     const Vec2d       midZr    = geometry.profile().pointAt(grid.rows[midRow]);
@@ -250,7 +250,7 @@ MeshChunk buildGlassChunk(const Grid& grid, const Job& job, double cellSize)
         std::max<std::size_t>(1, static_cast<std::size_t>(std::ceil((job.z1 - job.z0) / cellSize)));
 
     MeshChunk chunk;
-    chunk.kind            = ChunkKind::Glass;
+    chunk.kind            = ChunkKind::GLASS;
     const double midTheta = grid.angle(static_cast<std::ptrdiff_t>((job.seg0 + job.seg1) / 2));
     chunk.origin          = (radial(midTheta) * radius) + Vec3d(0.0, 0.0, 0.5 * (job.z0 + job.z1));
     chunk.mesh.vertices.reserve((steps + 1) * columns);
@@ -282,7 +282,7 @@ MeshChunk buildDiskChunk(const Grid& grid, const Job& job, double cellSize)
         std::max<std::size_t>(1, static_cast<std::size_t>(std::ceil(radius / cellSize)));
 
     MeshChunk chunk;
-    chunk.kind   = ChunkKind::Terrain;
+    chunk.kind   = ChunkKind::TERRAIN;
     chunk.origin = Vec3d(0.0, 0.0, job.z0);
     chunk.mesh.vertices.reserve((rings + 1) * columns);
     for (std::size_t i = 0; i <= rings; ++i)
@@ -327,11 +327,11 @@ void addEndDisks(const HabitatGeometry& geometry, std::vector<Job>& jobs)
     const OneillCylinderSpec& spec    = geometry.spec();
     const MeridianProfile&    profile = geometry.profile();
     const auto                add     = [&](const EndcapSpec& endcap, double z, double facing) {
-        if (endcap.shape == EndcapShape::ConicalRamp)
+        if (endcap.shape == EndcapShape::CONICAL_RAMP)
         {
             jobs.push_back(diskJob(material::kMetal, z, endcap.hubRadiusM, facing));
         }
-        else if (endcap.shape == EndcapShape::Flat)
+        else if (endcap.shape == EndcapShape::FLAT)
         {
             jobs.push_back(diskJob(material::kEndcap, z, spec.radiusM, facing));
         }
@@ -465,13 +465,13 @@ HabitatMeshes buildHabitatMeshes(const HabitatGeometry& geometry, const MeshingS
             const Job& job = jobs[i];
             switch (job.kind)
             {
-                case JobKind::Terrain:
+                case JobKind::TERRAIN:
                     chunks[i] = buildTerrainChunk(grid, job);
                     break;
-                case JobKind::Glass:
+                case JobKind::GLASS:
                     chunks[i] = buildGlassChunk(grid, job, settings.glassCellSizeM);
                     break;
-                case JobKind::Disk:
+                case JobKind::DISK:
                     chunks[i] = buildDiskChunk(grid, job, settings.cellSizeM);
                     break;
             }

@@ -105,7 +105,7 @@ std::expected<void, std::string> applySkyOption(AppOptions& options, std::string
     }
     else if (name == "--look-at")
     {
-        if (value.empty() || astro::bodyFromName(value) == astro::Body::Sun)
+        if (value.empty() || astro::bodyFromName(value) == astro::Body::SUN)
         {
             return std::unexpected(std::format(
                 "--look-at expects a planet, the Moon, a star or 'partner', got '{}' (the Sun "

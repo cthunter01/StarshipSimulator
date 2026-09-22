@@ -30,11 +30,11 @@ struct SoundMix
 /// A short sound, started by something happening.
 enum class Sound : std::uint8_t
 {
-    Footstep,  // walking
-    Run,       // running: heavier
-    Splash,
-    Throw,
-    Thud,
+    FOOTSTEP,  // walking
+    RUN,       // running: heavier
+    SPLASH,
+    THROW,
+    THUD,
 };
 
 /// The soundscape. Renders interleaved stereo frames at a fixed sample rate; every sound is made

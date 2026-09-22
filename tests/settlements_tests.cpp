@@ -90,17 +90,17 @@ TEST(Settlements, EveryValleyHasTownsAndFarms)
     for (int valley = 0; valley < islandThree().stripCount(); ++valley)
     {
         const auto towns = std::ranges::count_if(s.places, [&](const Settlement& p) {
-            return p.valley == valley && p.kind == SettlementKind::Town;
+            return p.valley == valley && p.kind == SettlementKind::TOWN;
         });
         const auto farms = std::ranges::count_if(s.places, [&](const Settlement& p) {
-            return p.valley == valley && p.kind == SettlementKind::Farm;
+            return p.valley == valley && p.kind == SettlementKind::FARM;
         });
         EXPECT_GE(towns, 3) << "valley " << valley;
         EXPECT_GE(farms, 8) << "valley " << valley;
     }
     for (const Settlement& place : s.places)
     {
-        if (place.kind == SettlementKind::Town)
+        if (place.kind == SettlementKind::TOWN)
         {
             EXPECT_GE(place.buildingCount, 40U) << place.name;
             EXPECT_FALSE(place.name.empty());
@@ -139,7 +139,7 @@ TEST(Settlements, BuildingsStandOnDryValleyFloor)
             const double theta = place.plane.theta(corner.x);
             EXPECT_GT(geometry.landscape().shoreDistance(z, theta), 4.0);
             const Region region = geometry.regionAt(z, theta);
-            EXPECT_EQ(region.kind, RegionKind::Land);
+            EXPECT_EQ(region.kind, RegionKind::LAND);
             EXPECT_EQ(region.index, place.valley);
             // The walls reach below the ground everywhere under them.
             EXPECT_LT(b.floorHeight - b.foundation, planned().grid.groundHeight(z, theta) - 0.5);
@@ -163,7 +163,7 @@ TEST(Settlements, BuildingsDoNotOverlapOrStandInTheStreet)
             if (b.settlement == a.settlement && glm::distance(a.centre, b.centre) < 60.0)
             {
                 // Towers stand against their hall; row houses share walls.
-                const bool attached = a.use == BuildingUse::Tower || b.use == BuildingUse::Tower;
+                const bool attached = a.use == BuildingUse::TOWER || b.use == BuildingUse::TOWER;
                 EXPECT_FALSE(overlap(a, b, attached ? 1.0 : 0.05))
                     << place.name << ": buildings " << i << " and " << j;
             }
@@ -187,7 +187,7 @@ TEST(Settlements, GroundMapsPaveTheStreets)
     const Settlements& s = planned().settlements;
     for (const Settlement& town : s.places)
     {
-        if (town.kind != SettlementKind::Town)
+        if (town.kind != SettlementKind::TOWN)
         {
             continue;
         }
@@ -200,7 +200,7 @@ TEST(Settlements, GroundMapsPaveTheStreets)
         }
         // Lamps light the ground at night.
         const auto lamp = std::ranges::find_if(s.furniture, [&](const Furniture& f) {
-            return f.kind == FurnitureKind::Lamp && &s.places[f.settlement] == &town;
+            return f.kind == FurnitureKind::LAMP && &s.places[f.settlement] == &town;
         });
         ASSERT_NE(lamp, s.furniture.end());
         EXPECT_GT(town.ground.sample(lamp->position).w, 0.5);
@@ -216,7 +216,7 @@ TEST(Settlements, WildTreesKeepOutOfTownsAndFarmyards)
     {
         EXPECT_TRUE(s.keepsTreesOff(place.plane.z0, place.plane.theta0)) << place.name;
         // A kilometre away along the valley is open country (or another settlement's edge).
-        const Vec2d away(0.0, place.kind == SettlementKind::Town ? 1500.0 : 300.0);
+        const Vec2d away(0.0, place.kind == SettlementKind::TOWN ? 1500.0 : 300.0);
         if (s.townAt(place.plane.z(away.y), place.plane.theta(away.x)) == nullptr)
         {
             EXPECT_FALSE(s.keepsTreesOff(place.plane.z(away.y), place.plane.theta(away.x)))
@@ -255,7 +255,7 @@ TEST(Settlements, StampingClearsTheCanopyAndMarksTowns)
         const auto  row    = static_cast<std::size_t>(std::lround(cell.y));
         EXPECT_EQ(grid.cover[((row * grid.coverColumns) + column) * 4], 0) << place.name;
         EXPECT_EQ(grid.cover[(((row * grid.coverColumns) + column) * 4) + 2],
-                  place.kind == SettlementKind::Town ? 255 : 0)
+                  place.kind == SettlementKind::TOWN ? 255 : 0)
             << place.name;
     }
 }

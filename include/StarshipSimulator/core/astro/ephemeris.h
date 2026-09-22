@@ -19,16 +19,16 @@ inline constexpr double kKmPerAu = 149597870.7;
 
 enum class Body : std::uint8_t
 {
-    Sun,
-    Mercury,
-    Venus,
-    Earth,
-    Moon,
-    Mars,
-    Jupiter,
-    Saturn,
-    Uranus,
-    Neptune,
+    SUN,
+    MERCURY,
+    VENUS,
+    EARTH,
+    MOON,
+    MARS,
+    JUPITER,
+    SATURN,
+    URANUS,
+    NEPTUNE,
 };
 
 [[nodiscard]] const char*         bodyName(Body body);
@@ -58,12 +58,12 @@ struct BodyOrientation
 
 enum class Location : std::uint8_t
 {
-    EarthMoonL4,  // 60 degrees ahead of the Moon in its orbit, 384,000 km from Earth
-    EarthMoonL5,  // 60 degrees behind the Moon: O'Neill's proposed site
-    SunEarthL4,
-    SunEarthL5,
-    SunMarsL4,
-    SunMarsL5,
+    EARTH_MOON_L4,  // 60 degrees ahead of the Moon in its orbit, 384,000 km from Earth
+    EARTH_MOON_L5,  // 60 degrees behind the Moon: O'Neill's proposed site
+    SUN_EARTH_L4,
+    SUN_EARTH_L5,
+    SUN_MARS_L4,
+    SUN_MARS_L5,
 };
 
 [[nodiscard]] const char*             locationKey(Location location);   // "earth_moon_l5"
@@ -79,7 +79,7 @@ enum class Location : std::uint8_t
 /// A body as seen from the habitat.
 struct VisibleBody
 {
-    Body   body = Body::Earth;
+    Body   body = Body::EARTH;
     Vec3d  direction{0.0, 0.0, 1.0};  // unit, EQJ
     double distanceKm    = 0.0;
     double angularRadius = 0.0;       // radians
@@ -92,7 +92,7 @@ struct VisibleBody
 struct SkyState
 {
     SimTime                  time;
-    Location                 location = Location::EarthMoonL5;
+    Location                 location = Location::EARTH_MOON_L5;
     Vec3d                    positionAu{0.0};
     Vec3d                    sunDirection{0.0, 0.0, 1.0};  // unit, EQJ
     double                   sunDistanceAu = 1.0;

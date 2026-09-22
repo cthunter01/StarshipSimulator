@@ -107,7 +107,7 @@ constexpr int           kDefaultHeight        = 900;
 constexpr std::size_t   kStarCount            = 9000;
 constexpr std::uint64_t kStarSeed             = 20260918;
 constexpr double        kThrowSpeed           = 12.0;  // m/s
-constexpr double        kBallRadius           = 0.12;  // m (PropKind::Ball)
+constexpr double        kBallRadius           = 0.12;  // m (PropKind::BALL)
 constexpr std::size_t   kMaxThrownBalls       = 12;    // older ones vanish
 constexpr double        kKickReach            = 2.5;   // m
 constexpr double        kPathStep             = 0.05;  // s between trajectory dots
@@ -556,7 +556,7 @@ void Application::adoptWorld(GeneratedWorld world, bool placeAtStartPoint)
     {
         placeAtStart();
     }
-    else if (player_.locomotion() == Locomotion::Walk)
+    else if (player_.locomotion() == Locomotion::WALK)
     {
         // The editor can make the habitat shorter than where you were standing.
         const double z = std::clamp(eye.z, geometry_->floorZMin(), geometry_->floorZMax());
@@ -698,7 +698,7 @@ void Application::placeAtStart()
     const HabitatGeometry& geometry = *geometry_;
     const int              strips   = geometry.stripCount();
     const int              valley   = ((scenario_.start.valley % strips) + strips) % strips;
-    player_.setLocomotion(Locomotion::Walk);
+    player_.setLocomotion(Locomotion::WALK);
     player_.placeOnGround(geometry, scenario_.start.zM, geometry.landCenter(valley));
     look_.setFrame(player_.viewUp(), kNorth);
     look_.setAngles(degreesToRadians(scenario_.start.headingDeg), 0.0);
@@ -706,7 +706,7 @@ void Application::placeAtStart()
 
 void Application::walkTo(double z, double theta, double yawDeg, double pitchDeg)
 {
-    player_.setLocomotion(Locomotion::Walk);
+    player_.setLocomotion(Locomotion::WALK);
     player_.placeOnGround(*geometry_, z, theta);
     if (terrain_)
     {
@@ -723,7 +723,7 @@ void Application::walkTo(double z, double theta, double yawDeg, double pitchDeg)
 
 void Application::flyTo(const Vec3d& eye, double yawDeg, double pitchDeg)
 {
-    player_.setLocomotion(Locomotion::Fly);
+    player_.setLocomotion(Locomotion::FLY);
     player_.teleport(eye);
     look_.setFrame(player_.viewUp(), kNorth);
     look_.setAngles(degreesToRadians(yawDeg), degreesToRadians(pitchDeg));
@@ -750,7 +750,7 @@ void Application::applyTransitView(std::string_view name)
 {
     const HabitatGeometry& geometry = *geometry_;
     const bool             endcap   = name != "tram";
-    const auto             wanted   = endcap ? LineKind::Endcap : LineKind::Valley;
+    const auto             wanted   = endcap ? LineKind::ENDCAP : LineKind::VALLEY;
     std::size_t            found    = tramLines_.size();
     for (std::size_t i = 0; i < tramLines_.size(); ++i)
     {
@@ -882,7 +882,7 @@ void Application::applyTownView(std::string_view name)
     std::size_t        town = 0;
     for (std::size_t i = 0; i < plan.places.size(); ++i)
     {
-        if (plan.places[i].kind == SettlementKind::Town && plan.places[i].valley == startValley())
+        if (plan.places[i].kind == SettlementKind::TOWN && plan.places[i].valley == startValley())
         {
             town = i;
             break;
@@ -893,12 +893,12 @@ void Application::applyTownView(std::string_view name)
     Vec2d             hall(0.0, 30.0);
     for (const Furniture& item : plan.furniture)
     {
-        square = item.settlement == town && item.kind == FurnitureKind::Fountain ? item.position
+        square = item.settlement == town && item.kind == FurnitureKind::FOUNTAIN ? item.position
                                                                                  : square;
     }
     for (const Building& b : plan.buildings)
     {
-        hall = b.settlement == town && b.use == BuildingUse::Hall ? b.centre : hall;
+        hall = b.settlement == town && b.use == BuildingUse::HALL ? b.centre : hall;
     }
     const Vec2d away    = glm::normalize(square - hall);
     const auto  yawFrom = [](const Vec2d& from, const Vec2d& to) {
@@ -942,11 +942,11 @@ void Application::applyCameraPose(const CameraPose& pose)
     const double height = geometry_->ground(eye).heightAboveGround - player_.settings.eyeHeight;
     if (height > 0.5)
     {
-        player_.setLocomotion(Locomotion::Fly);
+        player_.setLocomotion(Locomotion::FLY);
     }
     else
     {
-        player_.setLocomotion(Locomotion::Walk);
+        player_.setLocomotion(Locomotion::WALK);
         player_.placeOnGround(*geometry_, pose.z, HabitatGeometry::angleOf(eye));
     }
     look_.setFrame(player_.viewUp(), kNorth);
@@ -1113,7 +1113,7 @@ void Application::updateSound(double realSeconds)
     }
     audio_->setMix(soundMix());
     // Footsteps: one every stride while walking on the ground.
-    if (player_.locomotion() == Locomotion::Walk && player_.grounded())
+    if (player_.locomotion() == Locomotion::WALK && player_.grounded())
     {
         const Vec3d  up       = HabitatGeometry::localUp(player_.eyePosition());
         const Vec3d  velocity = player_.velocity();
@@ -1127,7 +1127,7 @@ void Application::updateSound(double realSeconds)
         else if (stride_ >= (running ? 1.25 : 0.75))
         {
             stride_ = 0.0;
-            audio_->play(running ? audio::Sound::Run : audio::Sound::Footstep,
+            audio_->play(running ? audio::Sound::RUN : audio::Sound::FOOTSTEP,
                          0.7 + (0.3 * weather_.wetness));
         }
     }
@@ -1180,7 +1180,7 @@ void Application::identify()
     {
         const Vec3d point = eye + (forward * *hit);
         const auto  kind  = geometry_->regionAt(point.z, HabitatGeometry::angleOf(point)).kind;
-        if (kind != RegionKind::Window)
+        if (kind != RegionKind::WINDOW)
         {
             identified_.reset();
             status_ = "That is the land across the habitat. Look out through a window.";
@@ -1256,7 +1256,7 @@ void Application::lookOut(Vec3d directionEqj, std::string_view name)
     const double           middle   = 0.5 * (geometry.floorZMin() + geometry.floorZMax());
     const double           z = std::clamp(middle - (reach * d.z), geometry.walkableZMin() + 500.0,
                                           geometry.walkableZMax() - 500.0);
-    player_.setLocomotion(Locomotion::Fly);
+    player_.setLocomotion(Locomotion::FLY);
     player_.teleport(Vec3d(-kOffAxis, 0.0, z));
     look_.setFrame(player_.viewUp(), kNorth);
     const Vec3d  up         = look_.up();
@@ -1339,7 +1339,7 @@ void Application::startTour(std::size_t which)
     hudSettings_.showEditor  = false;
     hudSettings_.showGallery = false;
     hudSettings_.showAlmanac = false;
-    player_.setLocomotion(Locomotion::Fly);
+    player_.setLocomotion(Locomotion::FLY);
     status_ = std::format("Tour: {}", tours_[which].name);
 }
 
@@ -1443,11 +1443,11 @@ SkyModel Application::skyModel() const
     model.sky       = &sky_;
     for (const astro::VisibleBody& body : sky_.bodies)
     {
-        if (body.body == astro::Body::Earth)
+        if (body.body == astro::Body::EARTH)
         {
             model.earth = &body;
         }
-        else if (body.body == astro::Body::Moon)
+        else if (body.body == astro::Body::MOON)
         {
             model.moon = &body;
         }
@@ -1464,7 +1464,7 @@ std::vector<BodyDraw> Application::bodyDraws(const gpu::LightingSettings& lighti
     std::vector<const astro::VisibleBody*> disks;
     for (const astro::VisibleBody& body : sky_.bodies)
     {
-        if (body.body == astro::Body::Earth || body.body == astro::Body::Moon)
+        if (body.body == astro::Body::EARTH || body.body == astro::Body::MOON)
         {
             disks.push_back(&body);
         }
@@ -1479,8 +1479,8 @@ std::vector<BodyDraw> Application::bodyDraws(const gpu::LightingSettings& lighti
     for (const astro::VisibleBody* body : disks)
     {
         BodyDraw draw{.uniforms = gpu::makeBodyUniforms(*body, habitatFromSky_, lighting),
-                      .textures = body->body == astro::Body::Earth ? BodyTextures::Earth
-                                                                   : BodyTextures::Moon};
+                      .textures = body->body == astro::Body::EARTH ? BodyTextures::EARTH
+                                                                   : BodyTextures::MOON};
         draw.uniforms.sunlight =
             Vec4f(Vec3f(draw.uniforms.sunlight) * compensation, draw.uniforms.sunlight.w);
         draws.push_back(draw);
@@ -1566,13 +1566,13 @@ void Application::applyMoveInput(const InputFrame& input, const HudActions& acti
 {
     if (input.toggleLocomotion || actions.toggleLocomotion)
     {
-        player_.setLocomotion(player_.locomotion() == Locomotion::Walk ? Locomotion::Fly
-                                                                       : Locomotion::Walk);
+        player_.setLocomotion(player_.locomotion() == Locomotion::WALK ? Locomotion::FLY
+                                                                       : Locomotion::WALK);
     }
     if (input.toggleWings || actions.toggleWings)
     {
-        const bool on = player_.locomotion() != Locomotion::Wings;
-        player_.setLocomotion(on ? Locomotion::Wings : Locomotion::Walk);
+        const bool on = player_.locomotion() != Locomotion::WINGS;
+        player_.setLocomotion(on ? Locomotion::WINGS : Locomotion::WALK);
         status_ = on ? "Wings on: run and jump to take off (space flaps). They only carry you "
                        "where the gravity has fallen away, up near the axis"
                      : "Wings off";
@@ -1583,7 +1583,7 @@ void Application::applyMoveInput(const InputFrame& input, const HudActions& acti
         status_ = player_.settings.comfortMode ? "Comfort mode: no Coriolis force on you"
                                                : "Comfort mode off: jumps drift with the spin";
     }
-    if (input.wheel != 0.0 && player_.locomotion() == Locomotion::Fly)
+    if (input.wheel != 0.0 && player_.locomotion() == Locomotion::FLY)
     {
         double& speed = player_.settings.flySpeed;
         speed = std::clamp(speed * std::pow(kWheelStep, input.wheel), kMinFlySpeed, kMaxFlySpeed);
@@ -1619,7 +1619,7 @@ void Application::applyInput(const InputFrame& input, const HudActions& actions)
         hudSettings_.photoMode = !hudSettings_.photoMode;
         if (hudSettings_.photoMode)
         {
-            player_.setLocomotion(Locomotion::Fly);  // stand anywhere, including nowhere
+            player_.setLocomotion(Locomotion::FLY);  // stand anywhere, including nowhere
             status_.clear();
         }
         else
@@ -1769,7 +1769,7 @@ void Application::throwBall()
     // The ball itself: a prop, flying (and bouncing, and rolling) in the physics world.
     const Quatd upright = floorOrientation(start.position);
     thrown_.push_back(
-        physics_->addProp({.kind        = PropKind::Ball,
+        physics_->addProp({.kind        = PropKind::BALL,
                            .position    = start.position - (upright * Vec3d(0.0, kBallRadius, 0.0)),
                            .orientation = upright,
                            .tint        = (static_cast<float>(thrown_.size() % 4) / 4.0F) + 0.1F},
@@ -1781,7 +1781,7 @@ void Application::throwBall()
     }
     if (audio_)
     {
-        audio_->play(audio::Sound::Throw);
+        audio_->play(audio::Sound::THROW);
     }
 }
 
@@ -1818,7 +1818,7 @@ std::string Application::placeName() const
     {
         const Vec2d  at       = place.plane.toPlan(eye.z, theta);
         const double distance = glm::length(at);
-        if (place.kind == SettlementKind::Farm)
+        if (place.kind == SettlementKind::FARM)
         {
             if (distance < 60.0)
             {
@@ -1852,7 +1852,7 @@ std::vector<Marker> Application::markers() const
                           .halfExtents = Vec3f(0.03F),
                           .color       = Vec3f(0.6F),
                           .emission    = Vec3f(0.35F),
-                          .shape       = MarkerShape::Sphere});
+                          .shape       = MarkerShape::SPHERE});
     }
     for (const Vec3d& point : ball_->path)
     {
@@ -1860,7 +1860,7 @@ std::vector<Marker> Application::markers() const
                           .halfExtents = Vec3f(0.035F),
                           .color       = Vec3f(0.2F, 0.5F, 1.0F),
                           .emission    = Vec3f(0.1F, 0.35F, 0.9F),
-                          .shape       = MarkerShape::Sphere});
+                          .shape       = MarkerShape::SPHERE});
     }
     return result;
 }

@@ -43,36 +43,36 @@ MaterialClass materialClassFor(double specificStrength)
     // Rough working specific strengths (J/kg) with a safety margin.
     if (specificStrength < 0.1e6)
     {
-        return MaterialClass::Steel;
+        return MaterialClass::STEEL;
     }
     if (specificStrength < 0.5e6)
     {
-        return MaterialClass::HighStrength;
+        return MaterialClass::HIGH_STRENGTH;
     }
     if (specificStrength < 3.0e6)
     {
-        return MaterialClass::CarbonFibre;
+        return MaterialClass::CARBON_FIBRE;
     }
     if (specificStrength < 40.0e6)
     {
-        return MaterialClass::FutureMaterials;
+        return MaterialClass::FUTURE_MATERIALS;
     }
-    return MaterialClass::BeyondKnown;
+    return MaterialClass::BEYOND_KNOWN;
 }
 
 const char* materialClassName(MaterialClass material)
 {
     switch (material)
     {
-        case MaterialClass::Steel:
+        case MaterialClass::STEEL:
             return "structural steel";
-        case MaterialClass::HighStrength:
+        case MaterialClass::HIGH_STRENGTH:
             return "high-strength steel or titanium";
-        case MaterialClass::CarbonFibre:
+        case MaterialClass::CARBON_FIBRE:
             return "carbon fibre composites";
-        case MaterialClass::FutureMaterials:
+        case MaterialClass::FUTURE_MATERIALS:
             return "carbon nanotube class (future materials)";
-        case MaterialClass::BeyondKnown:
+        case MaterialClass::BEYOND_KNOWN:
             return "beyond any known material";
     }
     return "unknown";
@@ -80,8 +80,8 @@ const char* materialClassName(MaterialClass material)
 
 bool buildableToday(MaterialClass material)
 {
-    return material == MaterialClass::Steel || material == MaterialClass::HighStrength ||
-           material == MaterialClass::CarbonFibre;
+    return material == MaterialClass::STEEL || material == MaterialClass::HIGH_STRENGTH ||
+           material == MaterialClass::CARBON_FIBRE;
 }
 
 HabitatMetrics computeMetrics(const OneillCylinderSpec& spec)

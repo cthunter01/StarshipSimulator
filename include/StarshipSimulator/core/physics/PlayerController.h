@@ -12,9 +12,9 @@ namespace StarshipSimulator
 
 enum class Locomotion : std::uint8_t
 {
-    Walk,   // physical: spin gravity, Coriolis while airborne, ground contact
-    Fly,    // a drone camera for exploring: no gravity, stays above the ground
-    Wings,  // strapped into a pair of wings: real lift and drag, so it only works up near the axis
+    WALK,   // physical: spin gravity, Coriolis while airborne, ground contact
+    FLY,    // a drone camera for exploring: no gravity, stays above the ground
+    WINGS,  // strapped into a pair of wings: real lift and drag, so it only works up near the axis
 };
 
 /// What the player is asking for this step, independent of the input device.
@@ -78,7 +78,7 @@ public:
     [[nodiscard]] Locomotion   locomotion() const { return locomotion_; }
     [[nodiscard]] bool         grounded() const { return grounded_; }
     /// How the wings are doing: airspeed, the lift they are making over your weight, and whether
-    /// they have stalled. Only meaningful in Locomotion::Wings.
+    /// they have stalled. Only meaningful in Locomotion::WINGS.
     struct WingState
     {
         double airspeed       = 0.0;  // m/s
@@ -113,7 +113,7 @@ private:
     Vec3d           eye_{-4000.0, 0.0, 0.0};
     Vec3d           velocity_{0.0};
     Vec3d           viewUp_{1.0, 0.0, 0.0};
-    Locomotion      locomotion_ = Locomotion::Walk;
+    Locomotion      locomotion_ = Locomotion::WALK;
     bool            grounded_   = false;
     WingState       wings_;
     CharacterMover* mover_ = nullptr;

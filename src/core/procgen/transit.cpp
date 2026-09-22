@@ -189,7 +189,7 @@ void layTrack(TramLine& line, const HabitatGeometry& geometry, const TerrainGrid
               double to, double railM)
 {
     // A funicular up a rough ramp is happier cutting than a tramway across gentle fields is.
-    const bool                      ramp  = line.kind == LineKind::Endcap;
+    const bool                      ramp  = line.kind == LineKind::ENDCAP;
     const double                    cutM  = ramp ? 14.0 : kMaxCutM;
     const double                    riseM = ramp ? 16.0 : kMaxRiseM;
     const std::vector<GroundSample> ground =
@@ -311,7 +311,7 @@ std::vector<TramLine> planTramLines(const HabitatGeometry& geometry, const Terra
     {
         // The tramway runs the length of the valley floor (the endcaps' ramps are for the lifts).
         TramLine line;
-        line.kind    = LineKind::Valley;
+        line.kind    = LineKind::VALLEY;
         line.valley  = valley;
         line.theta   = lineAngle(geometry, valley);
         line.radiusM = geometry.radius();
@@ -327,7 +327,7 @@ std::vector<TramLine> planTramLines(const HabitatGeometry& geometry, const Terra
     for (int valley = 0; valley < geometry.stripCount(); ++valley)
     {
         TramLine line;
-        line.kind         = LineKind::Endcap;
+        line.kind         = LineKind::ENDCAP;
         line.valley       = valley;
         line.theta        = geometry.landCenter(valley);
         line.radiusM      = geometry.radius();
@@ -348,7 +348,7 @@ void addTramStops(std::vector<TramLine>& lines, const Settlements& settlements)
     for (TramLine& line : lines)
     {
         line.stops.clear();
-        if (line.kind == LineKind::Valley)
+        if (line.kind == LineKind::VALLEY)
         {
             callAtTowns(line, settlements);
         }

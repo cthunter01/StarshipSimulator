@@ -18,8 +18,8 @@ std::array<PropInfo, kPropKindCount> makeInfos()
 {
     std::array<PropInfo, kPropKindCount> infos{};
     // A football: bouncy, rolls a long way, floats high.
-    infos.at(static_cast<std::size_t>(PropKind::Ball)) = {
-        .parts          = {{.shape       = Shape::Sphere,
+    infos.at(static_cast<std::size_t>(PropKind::BALL)) = {
+        .parts          = {{.shape       = Shape::SPHERE,
                             .centre      = Vec3f(0.0F, 0.12F, 0.0F),
                             .halfExtents = Vec3f(0.12F)}},
         .massKg         = 0.43F,
@@ -27,8 +27,8 @@ std::array<PropInfo, kPropKindCount> makeInfos()
         .restitution    = 0.7F,
         .angularDamping = 0.5F,
         .buoyancy       = 3.0F};
-    infos.at(static_cast<std::size_t>(PropKind::Crate)) = {
-        .parts          = {{.shape       = Shape::Box,
+    infos.at(static_cast<std::size_t>(PropKind::CRATE)) = {
+        .parts          = {{.shape       = Shape::BOX,
                             .centre      = Vec3f(0.0F, 0.3F, 0.0F),
                             .halfExtents = Vec3f(0.3F)}},
         .massKg         = 12.0F,
@@ -36,8 +36,8 @@ std::array<PropInfo, kPropKindCount> makeInfos()
         .restitution    = 0.15F,
         .angularDamping = 0.2F,
         .buoyancy       = 1.3F};
-    infos.at(static_cast<std::size_t>(PropKind::Barrel)) = {
-        .parts          = {{.shape       = Shape::Cylinder,
+    infos.at(static_cast<std::size_t>(PropKind::BARREL)) = {
+        .parts          = {{.shape       = Shape::CYLINDER,
                             .centre      = Vec3f(0.0F, 0.45F, 0.0F),
                             .halfExtents = Vec3f(0.3F, 0.45F, 0.3F)}},
         .massKg         = 25.0F,
@@ -46,8 +46,8 @@ std::array<PropInfo, kPropKindCount> makeInfos()
         .angularDamping = 0.3F,
         .buoyancy       = 1.5F};
     // A round bale, standing on its end.
-    infos.at(static_cast<std::size_t>(PropKind::HayBale)) = {
-        .parts          = {{.shape       = Shape::Cylinder,
+    infos.at(static_cast<std::size_t>(PropKind::HAY_BALE)) = {
+        .parts          = {{.shape       = Shape::CYLINDER,
                             .centre      = Vec3f(0.0F, 0.6F, 0.0F),
                             .halfExtents = Vec3f(0.6F, 0.6F, 0.6F)}},
         .massKg         = 200.0F,
@@ -56,11 +56,11 @@ std::array<PropInfo, kPropKindCount> makeInfos()
         .angularDamping = 0.4F,
         .buoyancy       = 1.2F};
     // A cafe chair: seat on legs, and a back.
-    infos.at(static_cast<std::size_t>(PropKind::Chair)) = {
-        .parts          = {{.shape       = Shape::Box,
+    infos.at(static_cast<std::size_t>(PropKind::CHAIR)) = {
+        .parts          = {{.shape       = Shape::BOX,
                             .centre      = Vec3f(0.0F, 0.235F, 0.0F),
                             .halfExtents = Vec3f(0.21F, 0.235F, 0.21F)},
-                           {.shape       = Shape::Box,
+                           {.shape       = Shape::BOX,
                             .centre      = Vec3f(0.0F, 0.66F, -0.195F),
                             .halfExtents = Vec3f(0.21F, 0.19F, 0.02F)}},
         .massKg         = 4.0F,
@@ -69,14 +69,14 @@ std::array<PropInfo, kPropKindCount> makeInfos()
         .angularDamping = 0.2F,
         .buoyancy       = 0.6F};
     // A round cafe table on a pedestal.
-    infos.at(static_cast<std::size_t>(PropKind::Table)) = {
-        .parts          = {{.shape       = Shape::Cylinder,
+    infos.at(static_cast<std::size_t>(PropKind::TABLE)) = {
+        .parts          = {{.shape       = Shape::CYLINDER,
                             .centre      = Vec3f(0.0F, 0.72F, 0.0F),
                             .halfExtents = Vec3f(0.36F, 0.015F, 0.36F)},
-                           {.shape       = Shape::Box,
+                           {.shape       = Shape::BOX,
                             .centre      = Vec3f(0.0F, 0.36F, 0.0F),
                             .halfExtents = Vec3f(0.03F, 0.345F, 0.03F)},
-                           {.shape       = Shape::Cylinder,
+                           {.shape       = Shape::CYLINDER,
                             .centre      = Vec3f(0.0F, 0.015F, 0.0F),
                             .halfExtents = Vec3f(0.22F, 0.015F, 0.22F)}},
         .massKg         = 12.0F,
@@ -98,17 +98,17 @@ const char* propKindName(PropKind kind)
 {
     switch (kind)
     {
-        case PropKind::Ball:
+        case PropKind::BALL:
             return "ball";
-        case PropKind::Crate:
+        case PropKind::CRATE:
             return "crate";
-        case PropKind::Barrel:
+        case PropKind::BARREL:
             return "barrel";
-        case PropKind::HayBale:
+        case PropKind::HAY_BALE:
             return "hay bale";
-        case PropKind::Chair:
+        case PropKind::CHAIR:
             return "chair";
-        case PropKind::Table:
+        case PropKind::TABLE:
             return "table";
     }
     return "prop";
@@ -125,21 +125,21 @@ CpuMesh makePropMesh(PropKind kind)
     CpuMesh mesh;
     switch (kind)
     {
-        case PropKind::Ball:
+        case PropKind::BALL:
             appendMesh(mesh, makeSphere(0.12F, 20, prop_material::kBall), at(0.0, 0.12, 0.0));
             break;
-        case PropKind::Crate:
+        case PropKind::CRATE:
             appendMesh(mesh, makeBox(Vec3f(0.3F), prop_material::kWood), at(0.0, 0.3, 0.0));
             break;
-        case PropKind::Barrel:
+        case PropKind::BARREL:
             appendMesh(mesh, makeCylinder(0.3F, 0.45F, 16, prop_material::kStaves),
                        at(0.0, 0.45, 0.0));
             break;
-        case PropKind::HayBale:
+        case PropKind::HAY_BALE:
             appendMesh(mesh, makeCylinder(0.6F, 0.6F, 20, prop_material::kStraw),
                        at(0.0, 0.6, 0.0));
             break;
-        case PropKind::Chair:
+        case PropKind::CHAIR:
             appendMesh(mesh, makeBox(Vec3f(0.21F, 0.015F, 0.21F), prop_material::kWood),
                        at(0.0, 0.455, 0.0));
             appendMesh(mesh, makeBox(Vec3f(0.21F, 0.14F, 0.012F), prop_material::kWood),
@@ -155,7 +155,7 @@ CpuMesh makePropMesh(PropKind kind)
                            at(x, 0.64, -0.2));
             }
             break;
-        case PropKind::Table:
+        case PropKind::TABLE:
             appendMesh(mesh, makeCylinder(0.36F, 0.015F, 24, prop_material::kTableTop),
                        at(0.0, 0.72, 0.0));
             appendMesh(mesh, makeCylinder(0.03F, 0.345F, 8, prop_material::kMetal),

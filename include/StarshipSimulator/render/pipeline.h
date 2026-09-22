@@ -14,20 +14,20 @@ namespace StarshipSimulator
 
 enum class BlendMode : std::uint8_t
 {
-    Opaque,
-    Additive,  // dst + src
-    Multiply,  // dst * src
-    Alpha,     // premultiplied: src + dst * (1 - src.a)
-    Lighten,   // max(src, dst): what a long exposure does to a moving point of light
+    OPAQUE,
+    ADDITIVE,  // dst + src
+    MULTIPLY,  // dst * src
+    ALPHA,     // premultiplied: src + dst * (1 - src.a)
+    LIGHTEN,   // max(src, dst): what a long exposure does to a moving point of light
 };
 
 enum class DepthMode : std::uint8_t
 {
-    None,       // no depth test or write
-    TestWrite,  // reverse-Z: GREATER passes
-    TestOnly,
-    AlwaysWrite,
-    ShadowWrite,  // shadow maps: ordinary depth, LESS passes
+    NONE,        // no depth test or write
+    TEST_WRITE,  // reverse-Z: GREATER passes
+    TEST_ONLY,
+    ALWAYS_WRITE,
+    SHADOW_WRITE,  // shadow maps: ordinary depth, LESS passes
 };
 
 /// What differs between our graphics pipelines; everything else is shared.
@@ -40,8 +40,8 @@ struct PipelineDescription
     std::span<const SDL_GPUVertexBufferDescription> vertexBuffers;
     std::span<const SDL_GPUVertexAttribute>         vertexAttributes;
     SDL_GPUCullMode                                 cull        = SDL_GPU_CULLMODE_NONE;
-    DepthMode                                       depth       = DepthMode::None;
-    BlendMode                                       blend       = BlendMode::Opaque;
+    DepthMode                                       depth       = DepthMode::NONE;
+    BlendMode                                       blend       = BlendMode::OPAQUE;
     SDL_GPUTextureFormat                            colorFormat = SDL_GPU_TEXTUREFORMAT_INVALID;
     SDL_GPUTextureFormat depthFormat = SDL_GPU_TEXTUREFORMAT_INVALID;  // INVALID: no depth target
     SDL_GPUSampleCount   samples     = SDL_GPU_SAMPLECOUNT_1;

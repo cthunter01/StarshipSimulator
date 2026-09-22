@@ -112,11 +112,11 @@ std::expected<ShaderStage, std::string> stageFromModel(std::uint32_t model)
     switch (model)
     {
         case spv::kExecutionModelVertex:
-            return ShaderStage::Vertex;
+            return ShaderStage::VERTEX;
         case spv::kExecutionModelFragment:
-            return ShaderStage::Fragment;
+            return ShaderStage::FRAGMENT;
         case spv::kExecutionModelGLCompute:
-            return ShaderStage::Compute;
+            return ShaderStage::COMPUTE;
         default:
             return std::unexpected(std::format("unsupported execution model {}", model));
     }
@@ -252,7 +252,7 @@ void classifyType(const IdInfo& type, const IdInfo& variable, std::uint32_t stor
     switch (type.opcode)
     {
         case spv::kOpTypeSampledImage:
-            resource.kind = ResourceKind::SampledTexture;
+            resource.kind = ResourceKind::SAMPLED_TEXTURE;
             return;
         case spv::kOpTypeImage:
         {
@@ -260,7 +260,7 @@ void classifyType(const IdInfo& type, const IdInfo& variable, std::uint32_t stor
             const std::uint32_t sampled = type.operands.size() > 6 ? type.operands[6] : 0;
             if (sampled == spv::kImageStorage)
             {
-                resource.kind     = ResourceKind::StorageTexture;
+                resource.kind     = ResourceKind::STORAGE_TEXTURE;
                 resource.readOnly = variable.nonWritable;
                 return;
             }
@@ -291,13 +291,13 @@ void classifyType(const IdInfo& type, const IdInfo& variable, std::uint32_t stor
     if (storage)
     {
         const std::size_t memberCount = type.operands.size() - 1;  // operands after the result id
-        resource.kind                 = ResourceKind::StorageBuffer;
+        resource.kind                 = ResourceKind::STORAGE_BUFFER;
         resource.readOnly =
             variable.nonWritable || (memberCount > 0 && type.nonWritableMembers >= memberCount);
     }
     else if (storageClass == spv::kStorageClassUniform && type.block)
     {
-        resource.kind = ResourceKind::UniformBuffer;
+        resource.kind = ResourceKind::UNIFORM_BUFFER;
     }
     else
     {
@@ -366,48 +366,48 @@ std::optional<ResourceBinding> classifyVariable(const Module& module, const IdIn
 
 enum class Category : std::uint8_t
 {
-    Sampled,
-    ReadOnlyStorageTexture,
-    ReadOnlyStorageBuffer,
-    ReadWriteStorageTexture,
-    ReadWriteStorageBuffer,
-    Uniform,
+    SAMPLED,
+    READ_ONLY_STORAGE_TEXTURE,
+    READ_ONLY_STORAGE_BUFFER,
+    READ_WRITE_STORAGE_TEXTURE,
+    READ_WRITE_STORAGE_BUFFER,
+    UNIFORM,
 };
 
 Category categoryOf(const ResourceBinding& resource)
 {
     switch (resource.kind)
     {
-        case ResourceKind::SampledTexture:
-            return Category::Sampled;
-        case ResourceKind::StorageTexture:
-            return resource.readOnly ? Category::ReadOnlyStorageTexture
-                                     : Category::ReadWriteStorageTexture;
-        case ResourceKind::StorageBuffer:
-            return resource.readOnly ? Category::ReadOnlyStorageBuffer
-                                     : Category::ReadWriteStorageBuffer;
-        case ResourceKind::UniformBuffer:
-        case ResourceKind::Unsupported:
+        case ResourceKind::SAMPLED_TEXTURE:
+            return Category::SAMPLED;
+        case ResourceKind::STORAGE_TEXTURE:
+            return resource.readOnly ? Category::READ_ONLY_STORAGE_TEXTURE
+                                     : Category::READ_WRITE_STORAGE_TEXTURE;
+        case ResourceKind::STORAGE_BUFFER:
+            return resource.readOnly ? Category::READ_ONLY_STORAGE_BUFFER
+                                     : Category::READ_WRITE_STORAGE_BUFFER;
+        case ResourceKind::UNIFORM_BUFFER:
+        case ResourceKind::UNSUPPORTED:
             break;
     }
-    return Category::Uniform;
+    return Category::UNIFORM;
 }
 
 std::string_view categoryName(Category category)
 {
     switch (category)
     {
-        case Category::Sampled:
+        case Category::SAMPLED:
             return "sampled texture";
-        case Category::ReadOnlyStorageTexture:
+        case Category::READ_ONLY_STORAGE_TEXTURE:
             return "read-only storage texture";
-        case Category::ReadOnlyStorageBuffer:
+        case Category::READ_ONLY_STORAGE_BUFFER:
             return "read-only storage buffer";
-        case Category::ReadWriteStorageTexture:
+        case Category::READ_WRITE_STORAGE_TEXTURE:
             return "read-write storage texture";
-        case Category::ReadWriteStorageBuffer:
+        case Category::READ_WRITE_STORAGE_BUFFER:
             return "read-write storage buffer";
-        case Category::Uniform:
+        case Category::UNIFORM:
             return "uniform buffer";
     }
     return "resource";
@@ -422,21 +422,21 @@ struct Slot
 
 std::optional<Slot> expectedSlot(ShaderStage stage, Category category)
 {
-    const bool          compute     = stage == ShaderStage::Compute;
-    const std::uint32_t resourceSet = stage == ShaderStage::Fragment ? 2 : 0;
+    const bool          compute     = stage == ShaderStage::COMPUTE;
+    const std::uint32_t resourceSet = stage == ShaderStage::FRAGMENT ? 2 : 0;
     switch (category)
     {
-        case Category::Sampled:
+        case Category::SAMPLED:
             return Slot{.set = resourceSet, .rank = 0};
-        case Category::ReadOnlyStorageTexture:
+        case Category::READ_ONLY_STORAGE_TEXTURE:
             return Slot{.set = resourceSet, .rank = 1};
-        case Category::ReadOnlyStorageBuffer:
+        case Category::READ_ONLY_STORAGE_BUFFER:
             return Slot{.set = resourceSet, .rank = 2};
-        case Category::ReadWriteStorageTexture:
+        case Category::READ_WRITE_STORAGE_TEXTURE:
             return compute ? std::optional(Slot{.set = 1, .rank = 0}) : std::nullopt;
-        case Category::ReadWriteStorageBuffer:
+        case Category::READ_WRITE_STORAGE_BUFFER:
             return compute ? std::optional(Slot{.set = 1, .rank = 1}) : std::nullopt;
-        case Category::Uniform:
+        case Category::UNIFORM:
             return Slot{.set = compute ? 2U : resourceSet + 1, .rank = 0};
     }
     return std::nullopt;
@@ -455,7 +455,7 @@ std::vector<Placed> placeResources(const ShaderReflection&   reflection,
     std::vector<Placed> placed;
     for (const ResourceBinding& resource : reflection.resources)
     {
-        if (resource.kind == ResourceKind::Unsupported)
+        if (resource.kind == ResourceKind::UNSUPPORTED)
         {
             problems.push_back(std::format("{}: {}", resource.name, resource.unsupportedReason));
             continue;
@@ -563,21 +563,21 @@ ResourceCounts ShaderReflection::counts() const
     {
         switch (resource.kind)
         {
-            case ResourceKind::SampledTexture:
+            case ResourceKind::SAMPLED_TEXTURE:
                 ++counts.samplers;
                 break;
-            case ResourceKind::StorageTexture:
+            case ResourceKind::STORAGE_TEXTURE:
                 ++(resource.readOnly ? counts.readOnlyStorageTextures
                                      : counts.readWriteStorageTextures);
                 break;
-            case ResourceKind::StorageBuffer:
+            case ResourceKind::STORAGE_BUFFER:
                 ++(resource.readOnly ? counts.readOnlyStorageBuffers
                                      : counts.readWriteStorageBuffers);
                 break;
-            case ResourceKind::UniformBuffer:
+            case ResourceKind::UNIFORM_BUFFER:
                 ++counts.uniformBuffers;
                 break;
-            case ResourceKind::Unsupported:
+            case ResourceKind::UNSUPPORTED:
                 break;
         }
     }

@@ -10,11 +10,11 @@ namespace StarshipSimulator
 /// What it would take to build the hull: the material class able to hold the spinning structure.
 enum class MaterialClass : std::uint8_t
 {
-    Steel,            // ordinary structural steel suffices
-    HighStrength,     // high-strength steel or titanium alloys
-    CarbonFibre,      // carbon fibre / aramid composites (exist today, costly)
-    FutureMaterials,  // carbon nanotube or graphene class (not yet buildable at scale)
-    BeyondKnown,      // stronger than any known material
+    STEEL,             // ordinary structural steel suffices
+    HIGH_STRENGTH,     // high-strength steel or titanium alloys
+    CARBON_FIBRE,      // carbon fibre / aramid composites (exist today, costly)
+    FUTURE_MATERIALS,  // carbon nanotube or graphene class (not yet buildable at scale)
+    BEYOND_KNOWN,      // stronger than any known material
 };
 
 /// Derived numbers for the almanac, the HUD and the editor.
@@ -34,7 +34,7 @@ struct HabitatMetrics
     double volumeM3             = 0.0;  // cylinder section
     double population           = 0.0;
     double hoopSpecificStrength = 0.0;  // J/kg = (m/s)^2 a free-standing hoop needs
-    MaterialClass material      = MaterialClass::Steel;
+    MaterialClass material      = MaterialClass::STEEL;
 };
 
 [[nodiscard]] double spinRate(double radiusM, double gravityG);  // rad/s for this gravity at radius

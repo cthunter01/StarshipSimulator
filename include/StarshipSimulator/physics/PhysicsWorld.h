@@ -26,7 +26,7 @@ namespace StarshipSimulator
 /// A prop as it is now.
 struct PropState
 {
-    PropKind kind = PropKind::Crate;
+    PropKind kind = PropKind::CRATE;
     Vec3d    position{0.0};
     Quatd    orientation{1.0, 0.0, 0.0, 0.0};
     Vec3d    velocity{0.0};

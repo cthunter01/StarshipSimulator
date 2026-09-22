@@ -57,9 +57,9 @@ TEST(Transit, RunsALineDownEveryValleyAndUpEveryEndcap)
     const Network& net = network();
     ASSERT_FALSE(net.lines.empty());
     const auto valleys = std::ranges::count_if(
-        net.lines, [](const TramLine& l) { return l.kind == LineKind::Valley; });
+        net.lines, [](const TramLine& l) { return l.kind == LineKind::VALLEY; });
     const auto endcaps = std::ranges::count_if(
-        net.lines, [](const TramLine& l) { return l.kind == LineKind::Endcap; });
+        net.lines, [](const TramLine& l) { return l.kind == LineKind::ENDCAP; });
     EXPECT_EQ(valleys, net.geometry.stripCount());
     EXPECT_EQ(endcaps, net.geometry.stripCount());
 
@@ -94,7 +94,7 @@ TEST(Transit, TheEndcapLineClimbsFromTheValleyToTheAxis)
 {
     const Network& net   = network();
     const auto     found = std::ranges::find_if(
-        net.lines, [](const TramLine& l) { return l.kind == LineKind::Endcap; });
+        net.lines, [](const TramLine& l) { return l.kind == LineKind::ENDCAP; });
     ASSERT_NE(found, net.lines.end());
     const TramLine* lift = &*found;
     const double    bottom =

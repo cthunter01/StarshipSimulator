@@ -25,25 +25,25 @@ astro_body_t toAstronomy(Body body)
 {
     switch (body)
     {
-        case Body::Sun:
+        case Body::SUN:
             return BODY_SUN;
-        case Body::Mercury:
+        case Body::MERCURY:
             return BODY_MERCURY;
-        case Body::Venus:
+        case Body::VENUS:
             return BODY_VENUS;
-        case Body::Earth:
+        case Body::EARTH:
             return BODY_EARTH;
-        case Body::Moon:
+        case Body::MOON:
             return BODY_MOON;
-        case Body::Mars:
+        case Body::MARS:
             return BODY_MARS;
-        case Body::Jupiter:
+        case Body::JUPITER:
             return BODY_JUPITER;
-        case Body::Saturn:
+        case Body::SATURN:
             return BODY_SATURN;
-        case Body::Uranus:
+        case Body::URANUS:
             return BODY_URANUS;
-        case Body::Neptune:
+        case Body::NEPTUNE:
             return BODY_NEPTUNE;
     }
     return BODY_EARTH;
@@ -72,44 +72,44 @@ LagrangeSystem systemOf(Location location)
 {
     switch (location)
     {
-        case Location::EarthMoonL4:
+        case Location::EARTH_MOON_L4:
             return {.point = 4,
-                    .major = Body::Earth,
-                    .minor = Body::Moon,
+                    .major = Body::EARTH,
+                    .minor = Body::MOON,
                     .key   = "earth_moon_l4",
                     .name  = "Earth-Moon L4"};
-        case Location::EarthMoonL5:
+        case Location::EARTH_MOON_L5:
             return {.point = 5,
-                    .major = Body::Earth,
-                    .minor = Body::Moon,
+                    .major = Body::EARTH,
+                    .minor = Body::MOON,
                     .key   = "earth_moon_l5",
                     .name  = "Earth-Moon L5"};
-        case Location::SunEarthL4:
+        case Location::SUN_EARTH_L4:
             return {.point = 4,
-                    .major = Body::Sun,
-                    .minor = Body::Earth,
+                    .major = Body::SUN,
+                    .minor = Body::EARTH,
                     .key   = "sun_earth_l4",
                     .name  = "Sun-Earth L4"};
-        case Location::SunEarthL5:
+        case Location::SUN_EARTH_L5:
             return {.point = 5,
-                    .major = Body::Sun,
-                    .minor = Body::Earth,
+                    .major = Body::SUN,
+                    .minor = Body::EARTH,
                     .key   = "sun_earth_l5",
                     .name  = "Sun-Earth L5"};
-        case Location::SunMarsL4:
+        case Location::SUN_MARS_L4:
             return {.point = 4,
-                    .major = Body::Sun,
-                    .minor = Body::Mars,
+                    .major = Body::SUN,
+                    .minor = Body::MARS,
                     .key   = "sun_mars_l4",
                     .name  = "Sun-Mars L4"};
-        case Location::SunMarsL5:
+        case Location::SUN_MARS_L5:
             return {.point = 5,
-                    .major = Body::Sun,
-                    .minor = Body::Mars,
+                    .major = Body::SUN,
+                    .minor = Body::MARS,
                     .key   = "sun_mars_l5",
                     .name  = "Sun-Mars L5"};
     }
-    return systemOf(Location::EarthMoonL5);
+    return systemOf(Location::EARTH_MOON_L5);
 }
 
 }  // namespace
@@ -118,25 +118,25 @@ const char* bodyName(Body body)
 {
     switch (body)
     {
-        case Body::Sun:
+        case Body::SUN:
             return "Sun";
-        case Body::Mercury:
+        case Body::MERCURY:
             return "Mercury";
-        case Body::Venus:
+        case Body::VENUS:
             return "Venus";
-        case Body::Earth:
+        case Body::EARTH:
             return "Earth";
-        case Body::Moon:
+        case Body::MOON:
             return "Moon";
-        case Body::Mars:
+        case Body::MARS:
             return "Mars";
-        case Body::Jupiter:
+        case Body::JUPITER:
             return "Jupiter";
-        case Body::Saturn:
+        case Body::SATURN:
             return "Saturn";
-        case Body::Uranus:
+        case Body::URANUS:
             return "Uranus";
-        case Body::Neptune:
+        case Body::NEPTUNE:
             return "Neptune";
     }
     return "?";
@@ -144,9 +144,9 @@ const char* bodyName(Body body)
 
 std::optional<Body> bodyFromName(std::string_view name)
 {
-    constexpr std::array kBodies{Body::Sun,    Body::Mercury, Body::Venus,   Body::Earth,
-                                 Body::Moon,   Body::Mars,    Body::Jupiter, Body::Saturn,
-                                 Body::Uranus, Body::Neptune};
+    constexpr std::array kBodies{Body::SUN,    Body::MERCURY, Body::VENUS,   Body::EARTH,
+                                 Body::MOON,   Body::MARS,    Body::JUPITER, Body::SATURN,
+                                 Body::URANUS, Body::NEPTUNE};
     const auto           lower = [](char c) {
         return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
     };
@@ -165,25 +165,25 @@ double bodyRadiusKm(Body body)
 {
     switch (body)
     {
-        case Body::Sun:
+        case Body::SUN:
             return 695700.0;
-        case Body::Mercury:
+        case Body::MERCURY:
             return 2439.7;
-        case Body::Venus:
+        case Body::VENUS:
             return 6051.8;
-        case Body::Earth:
+        case Body::EARTH:
             return 6371.0;
-        case Body::Moon:
+        case Body::MOON:
             return 1737.4;
-        case Body::Mars:
+        case Body::MARS:
             return 3389.5;
-        case Body::Jupiter:
+        case Body::JUPITER:
             return 69911.0;
-        case Body::Saturn:
+        case Body::SATURN:
             return 58232.0;
-        case Body::Uranus:
+        case Body::URANUS:
             return 25362.0;
-        case Body::Neptune:
+        case Body::NEPTUNE:
             return 24622.0;
     }
     return 1.0;
@@ -192,7 +192,7 @@ double bodyRadiusKm(Body body)
 Vec3d heliocentricPosition(Body body, SimTime time)
 {
     const astro_time_t t = astronomyTime(time);
-    if (body == Body::Moon)
+    if (body == Body::MOON)
     {
         return toVec3(Astronomy_HelioVector(BODY_EARTH, t)) + toVec3(Astronomy_GeoMoon(t));
     }
@@ -201,7 +201,7 @@ Vec3d heliocentricPosition(Body body, SimTime time)
 
 double visualMagnitude(Body body, SimTime time)
 {
-    if (body == Body::Earth)
+    if (body == Body::EARTH)
     {
         return -3.9;  // roughly, from the Moon's distance; Earth is drawn as a disk anyway
     }
@@ -253,8 +253,8 @@ const char* locationName(Location location)
 
 std::vector<Location> allLocations()
 {
-    return {Location::EarthMoonL4, Location::EarthMoonL5, Location::SunEarthL4,
-            Location::SunEarthL5,  Location::SunMarsL4,   Location::SunMarsL5};
+    return {Location::EARTH_MOON_L4, Location::EARTH_MOON_L5, Location::SUN_EARTH_L4,
+            Location::SUN_EARTH_L5,  Location::SUN_MARS_L4,   Location::SUN_MARS_L5};
 }
 
 std::optional<Location> locationFromKey(std::string_view key)
@@ -287,9 +287,9 @@ SkyState computeSky(Location location, SimTime time)
     sky.sunDistanceAu = glm::length(sky.positionAu);
     sky.sunDirection  = -sky.positionAu / sky.sunDistanceAu;
 
-    constexpr std::array kShown{Body::Earth,  Body::Moon,   Body::Mercury,
-                                Body::Venus,  Body::Mars,   Body::Jupiter,
-                                Body::Saturn, Body::Uranus, Body::Neptune};
+    constexpr std::array kShown{Body::EARTH,  Body::MOON,   Body::MERCURY,
+                                Body::VENUS,  Body::MARS,   Body::JUPITER,
+                                Body::SATURN, Body::URANUS, Body::NEPTUNE};
     for (const Body body : kShown)
     {
         const Vec3d  position = heliocentricPosition(body, time);

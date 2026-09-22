@@ -39,7 +39,7 @@ PipelineDescription shadowVariant(PipelineDescription description, SDL_GPUShader
     description.depthFormat       = ShadowMap::kFormat;
     description.samples           = SDL_GPU_SAMPLECOUNT_1;
     description.cull              = SDL_GPU_CULLMODE_NONE;
-    description.depth             = DepthMode::ShadowWrite;
+    description.depth             = DepthMode::SHADOW_WRITE;
     description.depthBiasConstant = 2.0F;
     description.depthBiasSlope    = 2.0F;
     return description;
@@ -80,7 +80,7 @@ BuildingPass::BuildingPass(SDL_GPUDevice* device, const ShaderLibrary& shaders,
     description.fragmentShader      = fragment.get();
     description.meshVertices        = true;
     description.cull                = SDL_GPU_CULLMODE_BACK;
-    description.depth               = DepthMode::TestWrite;
+    description.depth               = DepthMode::TEST_WRITE;
     pipeline_                       = createPipeline(device, description, "building");
     shadow_ =
         createPipeline(device, shadowVariant(description, depthOnly.get()), "building shadow");
@@ -189,7 +189,7 @@ TransitPass::TransitPass(SDL_GPUDevice* device, const ShaderLibrary& shaders,
     description.vertexBuffers                                       = buffers;
     description.vertexAttributes                                    = attributes;
     description.cull                                                = SDL_GPU_CULLMODE_BACK;
-    description.depth                                               = DepthMode::TestWrite;
+    description.depth                                               = DepthMode::TEST_WRITE;
     pipeline_ = createPipeline(device, description, "transit");
     shadow_ = createPipeline(device, shadowVariant(description, depthOnly.get()), "transit shadow");
 }
@@ -308,7 +308,7 @@ PeoplePass::PeoplePass(SDL_GPUDevice* device, const ShaderLibrary& shaders,
     description.vertexBuffers                                       = buffers;
     description.vertexAttributes                                    = attributes;
     description.cull                                                = SDL_GPU_CULLMODE_BACK;
-    description.depth                                               = DepthMode::TestWrite;
+    description.depth                                               = DepthMode::TEST_WRITE;
     pipeline_ = createPipeline(device, description, "person");
     shadow_ = createPipeline(device, shadowVariant(description, depthOnly.get()), "person shadow");
 }
@@ -407,7 +407,7 @@ PropPass::PropPass(SDL_GPUDevice* device, const ShaderLibrary& shaders, const Sc
     description.vertexBuffers                                       = buffers;
     description.vertexAttributes                                    = attributes;
     description.cull                                                = SDL_GPU_CULLMODE_BACK;
-    description.depth                                               = DepthMode::TestWrite;
+    description.depth                                               = DepthMode::TEST_WRITE;
     pipeline_ = createPipeline(device, description, "prop");
     shadow_   = createPipeline(device, shadowVariant(description, depthOnly.get()), "prop shadow");
 }

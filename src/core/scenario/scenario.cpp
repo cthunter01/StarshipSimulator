@@ -162,7 +162,7 @@ public:
         std::string text;
         read(key, text);
         for (const EndcapShape shape :
-             {EndcapShape::Flat, EndcapShape::Hemisphere, EndcapShape::ConicalRamp})
+             {EndcapShape::FLAT, EndcapShape::HEMISPHERE, EndcapShape::CONICAL_RAMP})
         {
             if (text == endcapShapeName(shape))
             {
@@ -478,7 +478,7 @@ void writeEndcap(std::string& out, std::string_view table, const EndcapSpec& end
 {
     out += std::format("\n[habitat.{}]\nshape = {}\n", table,
                        tomlString(endcapShapeName(endcap.shape)));
-    if (endcap.shape == EndcapShape::ConicalRamp)
+    if (endcap.shape == EndcapShape::CONICAL_RAMP)
     {
         out += std::format(
             "ramp_slope_deg = {}\nramp_top_radius_fraction = {}\nupper_slope_deg = {}\n"

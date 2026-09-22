@@ -87,13 +87,13 @@ const char* regionKindName(RegionKind kind)
 {
     switch (kind)
     {
-        case RegionKind::Land:
+        case RegionKind::LAND:
             return "valley";
-        case RegionKind::Window:
+        case RegionKind::WINDOW:
             return "window";
-        case RegionKind::Endcap:
+        case RegionKind::ENDCAP:
             return "endcap";
-        case RegionKind::Outside:
+        case RegionKind::OUTSIDE:
             return "outside";
     }
     return "unknown";
@@ -169,21 +169,21 @@ Region HabitatGeometry::regionAt(double z, double theta) const
 {
     if (z < profile_.zMin() || z > profile_.zMax())
     {
-        return {.kind = RegionKind::Outside, .index = -1};
+        return {.kind = RegionKind::OUTSIDE, .index = -1};
     }
     if (z < floorZMin_ || z > floorZMax_)
     {
-        return {.kind = RegionKind::Endcap, .index = -1};
+        return {.kind = RegionKind::ENDCAP, .index = -1};
     }
     const double strip = stripAngle();
     // Strip index of the nearest window centre.
     const int nearest = static_cast<int>(std::lround(wrapAngle(theta) / strip)) % spec_.stripPairs;
     if (angularDistance(theta, windowCenter(nearest)) <= windowHalfAngle())
     {
-        return {.kind = RegionKind::Window, .index = nearest};
+        return {.kind = RegionKind::WINDOW, .index = nearest};
     }
     const int land = static_cast<int>(std::floor(wrapAngle(theta) / strip)) % spec_.stripPairs;
-    return {.kind = RegionKind::Land, .index = land};
+    return {.kind = RegionKind::LAND, .index = land};
 }
 
 double HabitatGeometry::distanceToWindow(double z, double theta, double radius) const
@@ -242,7 +242,7 @@ double HabitatGeometry::naturalHeight(double z, double theta) const
 double HabitatGeometry::forestDensity(double z, double theta) const
 {
     const std::optional<double> baseRadius = profile_.radiusAt(z);
-    if (!baseRadius || regionAt(z, theta).kind == RegionKind::Window)
+    if (!baseRadius || regionAt(z, theta).kind == RegionKind::WINDOW)
     {
         return 0.0;
     }

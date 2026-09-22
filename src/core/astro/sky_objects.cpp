@@ -95,7 +95,7 @@ const char* phaseName(double illuminatedFraction)
 std::string describeBody(const VisibleBody& body)
 {
     const double lit = illuminatedFraction(body);
-    if (body.body == Body::Earth || body.body == Body::Moon)
+    if (body.body == Body::EARTH || body.body == Body::MOON)
     {
         return std::format("{}: {:.2f} degrees across, {} km away, {:.0f}% lit ({})",
                            bodyName(body.body), radiansToDegrees(2.0 * body.angularRadius),
@@ -113,7 +113,7 @@ std::optional<Identified> identifyInSky(const Vec3d& directionEqj, const SkyStat
     // Earth or the Moon when the crosshair is on (or right next to) the disk.
     for (const VisibleBody& body : sky.bodies)
     {
-        const bool disk = body.body == Body::Earth || body.body == Body::Moon;
+        const bool disk = body.body == Body::EARTH || body.body == Body::MOON;
         if (disk && angleBetween(d, body.direction) < body.angularRadius + degreesToRadians(0.5))
         {
             return Identified{.name      = bodyName(body.body),
@@ -127,7 +127,7 @@ std::optional<Identified> identifyInSky(const Vec3d& directionEqj, const SkyStat
     double                    bestScore = 1.0;  // must be a match
     for (const VisibleBody& body : sky.bodies)
     {
-        if (body.body == Body::Earth || body.body == Body::Moon)
+        if (body.body == Body::EARTH || body.body == Body::MOON)
         {
             continue;
         }

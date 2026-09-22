@@ -10,8 +10,8 @@ namespace StarshipSimulator
 /// How a character move treats the ground.
 enum class MoveMode : std::uint8_t
 {
-    Walk,  // follows the ground down small drops and climbs steps
-    Free,  // a plain sweep: falling, jumping, flying
+    WALK,  // follows the ground down small drops and climbs steps
+    FREE,  // a plain sweep: falling, jumping, flying
 };
 
 /// The outcome of one character move.

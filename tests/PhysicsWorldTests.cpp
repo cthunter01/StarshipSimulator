@@ -35,8 +35,8 @@ std::shared_ptr<const HabitatGeometry> smallHabitat(bool lakes = false)
     spec.radiusM                 = kRadius;
     spec.lengthM                 = 800.0;
     spec.windowFraction          = 0.4;
-    spec.sunwardEndcap           = makeEndcap(EndcapShape::Hemisphere);
-    spec.antisunwardEndcap       = makeEndcap(EndcapShape::Hemisphere);
+    spec.sunwardEndcap           = makeEndcap(EndcapShape::HEMISPHERE);
+    spec.antisunwardEndcap       = makeEndcap(EndcapShape::HEMISPHERE);
     spec.partner.enabled         = false;
     spec.terrain.hillHeightM     = 0.0;
     spec.terrain.mountainHeightM = 0.0;
@@ -75,7 +75,7 @@ PropPlacement ballAt(const Vec3d& centre)
 {
     // The ball's local y along the habitat's up at theta = pi (+x).
     const Quatd upright = floorOrientation(centre);
-    return {.kind        = PropKind::Ball,
+    return {.kind        = PropKind::BALL,
             .position    = centre - (upright * Vec3d(0.0, 0.12, 0.0)),
             .orientation = upright};
 }
@@ -170,7 +170,7 @@ TEST(PhysicsWorld, CharacterStandsOnTheFloorAllAround)
         for (int i = 0; i < 120; ++i)
         {
             moved = world.physics.character().move(moved.feet, Vec3d(0.0), up, 9.8, kStep,
-                                                   MoveMode::Walk);
+                                                   MoveMode::WALK);
         }
         EXPECT_TRUE(moved.supported) << "theta " << theta;
         EXPECT_NEAR(std::hypot(moved.feet.x, moved.feet.y), kRadius, 0.05) << "theta " << theta;
@@ -195,7 +195,7 @@ TEST(PhysicsWorld, WallsStopTheCharacter)
     for (int i = 0; i < 480; ++i)  // 4 s at 2 m/s: 8 m if nothing were in the way
     {
         moved = world.physics.character().move(moved.feet, Vec3d(0.0, 0.0, 2.0), up, 9.8, kStep,
-                                               MoveMode::Walk);
+                                               MoveMode::WALK);
     }
     EXPECT_LT(moved.feet.z, 5.0 - 0.25);
     EXPECT_GT(moved.feet.z, 4.0);
@@ -208,7 +208,7 @@ TEST(PhysicsWorld, TreeTrunksStopTheCharacter)
     auto        trees = std::make_shared<TreeLayer>();
     const Vec3d root  = floorPoint(0.0, 4.0);
     trees->instances.push_back(
-        {.position = Vec3f(0.0F), .packed = packTree(15.0, 0.0, TreeSpecies::Broadleaf, 0.5)});
+        {.position = Vec3f(0.0F), .packed = packTree(15.0, 0.0, TreeSpecies::BROADLEAF, 0.5)});
     TreeTile tile;
     tile.origin    = root;
     tile.boundsMin = Vec3f(-30.0F);
@@ -224,7 +224,7 @@ TEST(PhysicsWorld, TreeTrunksStopTheCharacter)
     for (int i = 0; i < 360; ++i)  // 3 s at 2 m/s
     {
         moved = world.physics.character().move(moved.feet, Vec3d(0.0, 0.0, 2.0), up, 9.8, kStep,
-                                               MoveMode::Walk);
+                                               MoveMode::WALK);
     }
     // Stopped against the trunk (about 0.4 m thick) instead of walking through.
     EXPECT_LT(moved.feet.z, 4.0 - 0.5);
@@ -271,7 +271,7 @@ TEST(PhysicsWorld, PushedCrateSlidesAndSettles)
     TestWorld         world;
     const Vec3d       spot  = floorPoint(0.0);
     const std::size_t crate = world.physics.addProp(
-        {.kind = PropKind::Crate, .position = spot, .orientation = floorOrientation(spot)});
+        {.kind = PropKind::CRATE, .position = spot, .orientation = floorOrientation(spot)});
     EXPECT_FALSE(world.physics.props()[crate].awake);
     world.physics.push(crate, Vec3d(0.0, 0.0, 40.0), spot + Vec3d(0.3, 0.0, 0.0));
     for (int i = 0; i < 600; ++i)
@@ -289,7 +289,7 @@ TEST(PhysicsWorld, RaysHitPropsAndTheGround)
     TestWorld         world;
     const Vec3d       spot  = floorPoint(0.0, 3.0);
     const std::size_t crate = world.physics.addProp(
-        {.kind = PropKind::Crate, .position = spot, .orientation = floorOrientation(spot)});
+        {.kind = PropKind::CRATE, .position = spot, .orientation = floorOrientation(spot)});
     world.physics.step(kStep, floorPoint(1.7));
     const auto hit = world.physics.raycast(floorPoint(0.3), Vec3d(0.0, 0.0, 1.0), 10.0);
     ASSERT_TRUE(hit.has_value());

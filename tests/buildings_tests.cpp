@@ -73,7 +73,7 @@ TEST(Buildings, FacadesPackAndUnpack)
                         .windows = 42,
                         .door    = true,
                         .shop    = false,
-                        .style   = FacadeStyle::Hall,
+                        .style   = FacadeStyle::HALL,
                         .shutter = 3,
                         .seed    = 0x5A5};
     const Facade back = unpackFacade(packFacade(facade));
@@ -82,10 +82,10 @@ TEST(Buildings, FacadesPackAndUnpack)
     EXPECT_EQ(back.windows, 42U);
     EXPECT_TRUE(back.door);
     EXPECT_FALSE(back.shop);
-    EXPECT_EQ(back.style, FacadeStyle::Hall);
+    EXPECT_EQ(back.style, FacadeStyle::HALL);
     EXPECT_EQ(back.shutter, 3U);
     EXPECT_EQ(back.seed, 0x5A5U);
-    EXPECT_DOUBLE_EQ(storeyHeight(FacadeStyle::House), 3.0);
+    EXPECT_DOUBLE_EQ(storeyHeight(FacadeStyle::HOUSE), 3.0);
 }
 
 TEST(Buildings, TheVillageHasBuildingsBridgesAndFurniture)
@@ -95,9 +95,9 @@ TEST(Buildings, TheVillageHasBuildingsBridgesAndFurniture)
     EXPECT_GT(s.buildings.size(), 30U);
     EXPECT_FALSE(s.bridges.empty());
     EXPECT_TRUE(std::ranges::any_of(
-        s.furniture, [](const Furniture& f) { return f.kind == FurnitureKind::Fountain; }));
+        s.furniture, [](const Furniture& f) { return f.kind == FurnitureKind::FOUNTAIN; }));
     EXPECT_TRUE(std::ranges::any_of(s.buildings,
-                                    [](const Building& b) { return b.use == BuildingUse::Tower; }));
+                                    [](const Building& b) { return b.use == BuildingUse::TOWER; }));
 }
 
 TEST(Buildings, MeshesFaceOutAndStayInTheirBounds)
@@ -124,10 +124,10 @@ TEST(Buildings, WallsFaceAwayFromTheirBuilding)
     // (below the ground floor; chimneys start higher) face away from its middle.
     Settlements one;
     Settlement  farm;
-    farm.kind  = SettlementKind::Farm;
+    farm.kind  = SettlementKind::FARM;
     farm.plane = FloorPlane{.z0 = 0.0, .theta0 = kPi, .radius = 4000.0};
     one.places.push_back(farm);
-    one.buildings.push_back({.halfSize = Vec2d(6.0, 4.0), .storeys = 2, .roof = RoofKind::Gable});
+    one.buildings.push_back({.halfSize = Vec2d(6.0, 4.0), .storeys = 2, .roof = RoofKind::GABLE});
     const std::vector<SettlementMesh> meshes = buildSettlementMeshes(one);
     ASSERT_EQ(meshes.size(), 1U);
     const Vec3d base(-4000.0, 0.0, 0.0);
@@ -151,7 +151,7 @@ TEST(Buildings, EveryBuildingHasABodyAndPitchedRoofsAHull)
     const Settlements&    s         = village().settlements;
     const StaticColliders colliders = settlementColliders(s);
     const auto            pitched   = static_cast<std::size_t>(std::ranges::count_if(
-        s.buildings, [](const Building& b) { return b.roof != RoofKind::Flat; }));
+        s.buildings, [](const Building& b) { return b.roof != RoofKind::FLAT; }));
     EXPECT_GE(colliders.boxes.size(), s.buildings.size());
     EXPECT_GE(colliders.hulls.size(), pitched);
     for (const StaticBox& box : colliders.boxes)
@@ -179,7 +179,7 @@ TEST(Buildings, GroundAtlasHoldsEveryTownMap)
     const Settlement* town = nullptr;
     for (const Settlement& place : s.places)
     {
-        if (place.kind == SettlementKind::Town &&
+        if (place.kind == SettlementKind::TOWN &&
             (town == nullptr || place.ground.height > town->ground.height))
         {
             town = &place;

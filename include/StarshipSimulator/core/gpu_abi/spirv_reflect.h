@@ -15,24 +15,24 @@ namespace StarshipSimulator::gpu
 
 enum class ShaderStage : std::uint8_t
 {
-    Vertex,
-    Fragment,
-    Compute,
+    VERTEX,
+    FRAGMENT,
+    COMPUTE,
 };
 
 enum class ResourceKind : std::uint8_t
 {
-    SampledTexture,  // combined image + sampler (sampler2D etc.)
-    StorageTexture,  // image2D etc.
-    StorageBuffer,   // buffer block
-    UniformBuffer,   // uniform block
-    Unsupported,     // separate images or samplers, arrays of resources, push constants
+    SAMPLED_TEXTURE,  // combined image + sampler (sampler2D etc.)
+    STORAGE_TEXTURE,  // image2D etc.
+    STORAGE_BUFFER,   // buffer block
+    UNIFORM_BUFFER,   // uniform block
+    UNSUPPORTED,      // separate images or samplers, arrays of resources, push constants
 };
 
 struct ResourceBinding
 {
     std::string   name;
-    ResourceKind  kind     = ResourceKind::Unsupported;
+    ResourceKind  kind     = ResourceKind::UNSUPPORTED;
     bool          readOnly = true;
     std::uint32_t set      = 0;
     std::uint32_t binding  = 0;
@@ -52,7 +52,7 @@ struct ResourceCounts
 
 struct ShaderReflection
 {
-    ShaderStage                  stage = ShaderStage::Vertex;
+    ShaderStage                  stage = ShaderStage::VERTEX;
     std::string                  entryPoint;
     std::array<std::uint32_t, 3> localSize{1, 1, 1};  // compute workgroup size
     std::vector<ResourceBinding> resources;

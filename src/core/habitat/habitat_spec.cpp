@@ -12,7 +12,7 @@ namespace StarshipSimulator
 
 double endcapDepthInside(const EndcapSpec& endcap, double radiusM)
 {
-    if (endcap.shape != EndcapShape::ConicalRamp)
+    if (endcap.shape != EndcapShape::CONICAL_RAMP)
     {
         return 0.0;
     }
@@ -32,11 +32,11 @@ const char* endcapShapeName(EndcapShape shape)
 {
     switch (shape)
     {
-        case EndcapShape::Flat:
+        case EndcapShape::FLAT:
             return "flat";
-        case EndcapShape::Hemisphere:
+        case EndcapShape::HEMISPHERE:
             return "hemisphere";
-        case EndcapShape::ConicalRamp:
+        case EndcapShape::CONICAL_RAMP:
             return "conical_ramp";
     }
     return "flat";
@@ -48,7 +48,7 @@ namespace
 void validateEndcap(const EndcapSpec& endcap, const char* which, double radiusM,
                     std::vector<std::string>& problems)
 {
-    if (endcap.shape != EndcapShape::ConicalRamp)
+    if (endcap.shape != EndcapShape::CONICAL_RAMP)
     {
         return;
     }

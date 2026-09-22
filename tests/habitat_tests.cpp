@@ -52,14 +52,14 @@ TEST(Metrics, IslandThreeReferenceNumbers)
     EXPECT_NEAR(m.axisTemperatureDropK, 19.5, 0.05);
     EXPECT_NEAR(m.landAreaM2 / 1e6, 402.1, 0.1);
     EXPECT_NEAR(m.hoopSpecificStrength / 1e6, 0.0392, 1e-4);
-    EXPECT_EQ(m.material, MaterialClass::Steel);
+    EXPECT_EQ(m.material, MaterialClass::STEEL);
     EXPECT_NEAR(m.population, 2.01e6, 0.01e6);
 }
 
 TEST(Metrics, BishopRingNeedsFutureMaterials)
 {
     const double v2 = units::kStandardGravity * 1.0e6;  // 1000 km radius at 1 g
-    EXPECT_EQ(materialClassFor(v2), MaterialClass::FutureMaterials);
+    EXPECT_EQ(materialClassFor(v2), MaterialClass::FUTURE_MATERIALS);
     EXPECT_FALSE(buildableToday(materialClassFor(v2)));
 }
 
@@ -128,15 +128,15 @@ TEST(MeridianProfile, ArcLengthRoundTrips)
 TEST(HabitatGeometry, RegionsAlternateAroundTheAxis)
 {
     const HabitatGeometry geometry(OneillCylinderSpec{});
-    EXPECT_EQ(geometry.regionAt(0.0, 0.0).kind, RegionKind::Window);
+    EXPECT_EQ(geometry.regionAt(0.0, 0.0).kind, RegionKind::WINDOW);
     EXPECT_EQ(geometry.regionAt(0.0, 0.0).index, 0);
-    EXPECT_EQ(geometry.regionAt(0.0, kPi).kind, RegionKind::Land);
+    EXPECT_EQ(geometry.regionAt(0.0, kPi).kind, RegionKind::LAND);
     EXPECT_EQ(geometry.regionAt(0.0, kPi).index, 1);
-    EXPECT_EQ(geometry.regionAt(0.0, degreesToRadians(240.0)).kind, RegionKind::Window);
+    EXPECT_EQ(geometry.regionAt(0.0, degreesToRadians(240.0)).kind, RegionKind::WINDOW);
     EXPECT_EQ(geometry.regionAt(0.0, degreesToRadians(240.0)).index, 2);
     EXPECT_EQ(geometry.regionAt(0.0, degreesToRadians(359.0)).index, 0);
-    EXPECT_EQ(geometry.regionAt(-12000.0, 0.0).kind, RegionKind::Endcap);
-    EXPECT_EQ(geometry.regionAt(30000.0, 0.0).kind, RegionKind::Outside);
+    EXPECT_EQ(geometry.regionAt(-12000.0, 0.0).kind, RegionKind::ENDCAP);
+    EXPECT_EQ(geometry.regionAt(30000.0, 0.0).kind, RegionKind::OUTSIDE);
     EXPECT_NEAR(geometry.landCenter(1), kPi, 1e-12);
 }
 
@@ -172,7 +172,7 @@ TEST(HabitatGeometry, GroundUpAndSlope)
     EXPECT_NEAR(floor.heightAboveGround, 1.7, 1e-9);
     expectNear(floor.normal, Vec3d(1.0, 0.0, 0.0), 1e-6);
     EXPECT_NEAR(floor.slopeRadians, 0.0, 1e-6);
-    EXPECT_EQ(floor.region.kind, RegionKind::Land);
+    EXPECT_EQ(floor.region.kind, RegionKind::LAND);
 
     const double       rampZ = geometry.floorZMin() - 1000.0;
     const GroundSample ramp  = geometry.ground(Vec3d(0.0, -3000.0, rampZ));

@@ -47,7 +47,7 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
   `--fov 2.5` to zoom in. Captures step a fixed 1/60 s per frame and load the sky data synchronously, so they
   are repeatable; keep the window size small (e.g. 960x540), the compositor may resize large windows
 - Photo mode (F2) hides the HUD, frees the camera and offers a long exposure and an enlarged
-  picture. The exposure keeps the brightest each pixel has been (`BlendMode::Lighten` into a
+  picture. The exposure keeps the brightest each pixel has been (`BlendMode::LIGHTEN` into a
   separate target), so the stars draw arcs as the habitat turns while everything still stays sharp;
   an enlarged picture renders the scene at 2-4x and scales it down. The two do not combine: an
   exposure is held at one size, so while one is running the picture comes out at the window's size
@@ -97,7 +97,7 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
   - `assets/`: file reading, gzip/zlib, a minimal OpenEXR reader (NASA's Milky Way map), JPEG/PNG via stb
   - `physics/`: `RotatingFrame` (centrifugal + Coriolis, exact free flight, `stepFreeBody`), `PlayerController`
     (walk/fly/wings logic; collisions through a `CharacterMover`, or the bare analytic terrain without one),
-    `colliders.h` (static boxes and hulls as plain data, `floorOrientation`). `Locomotion::Wings` is a real
+    `colliders.h` (static boxes and hulls as plain data, `floorOrientation`). `Locomotion::WINGS` is a real
     aerofoil in the habitat's air (`airDensityAt` in `habitat/metrics`): it glides at one gravity but only
     climbs on muscle power up near the axis, which is the whole point of the place
   - `procgen/`: deterministic noise, `terrain_grid` (the valley floor and endcaps sampled into a height field
@@ -202,10 +202,11 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
   `src/core/habitat/HabitatGeometry.cpp`, and tests of it alone in `tests/HabitatGeometryTests.cpp`. Headers that
   gather several types or free functions keep a snake_case topic name (`camera.h`, `settlements.h`, the
   `passes/*_passes.h` groups of small pass classes)
-- Names (clang-tidy's `readability-identifier-naming` enforces them): types, enum constants and template
-  parameters `CamelCase`; functions, variables and members `camelBack`, private and protected members with a
-  trailing `_`; constants (`constexpr`, and `static const` including function-local caches) `kCamelCase`;
-  mutable statics `s_name`, mutable globals `g_name`; namespaces `lower_case`, except `StarshipSimulator` itself
+- Names (clang-tidy's `readability-identifier-naming` enforces them): types and template parameters `CamelCase`;
+  enum constants `UPPER_CASE` (`Locomotion::WINGS`); functions, variables and members `camelBack`, private and
+  protected members with a trailing `_`; constants (`constexpr`, and `static const` including function-local
+  caches) `kCamelCase`; mutable statics `s_name`, mutable globals `g_name`; namespaces `lower_case`, except
+  `StarshipSimulator` itself
 - Code lives in `namespace StarshipSimulator`; project includes use quotes: `#include "StarshipSimulator/core/camera.h"`
 - Every new target of ours must call `StarshipSimulator_configure_target(<target>)`; third-party targets must not
 - New source files go into the relevant `CMakeLists.txt`; new tests go into `tests/CMakeLists.txt`; new shaders

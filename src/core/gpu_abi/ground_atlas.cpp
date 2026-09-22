@@ -24,7 +24,7 @@ GroundAtlas packGroundAtlas(const Settlements& settlements)
     std::vector<Slot> slots;
     for (const Settlement& place : settlements.places)
     {
-        if (place.kind == SettlementKind::Town && place.ground.width > 0 && place.ground.height > 0)
+        if (place.kind == SettlementKind::TOWN && place.ground.width > 0 && place.ground.height > 0)
         {
             slots.push_back({.town = &place});
         }

@@ -43,15 +43,15 @@ namespace StarshipSimulator
 
 enum class BodyTextures : std::uint8_t
 {
-    Earth,
-    Moon,
+    EARTH,
+    MOON,
 };
 
 /// Earth or the Moon, and which images to draw it with.
 struct BodyDraw
 {
     gpu::BodyUniforms uniforms;
-    BodyTextures      textures = BodyTextures::Earth;
+    BodyTextures      textures = BodyTextures::EARTH;
 };
 
 /// What to draw this frame.

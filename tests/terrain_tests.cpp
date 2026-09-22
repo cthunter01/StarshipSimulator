@@ -43,7 +43,7 @@ OneillCylinderSpec playgroundSpec()
     spec.terrain.riverWidthM          = 0.0;
     spec.terrain.lakesPerValley       = 1;
     spec.terrain.lakeRadiusM          = 20.0;
-    spec.sunwardEndcap                = makeEndcap(EndcapShape::Hemisphere);
+    spec.sunwardEndcap                = makeEndcap(EndcapShape::HEMISPHERE);
     spec.antisunwardEndcap.hubRadiusM = 10.0;
     return spec;
 }
@@ -77,7 +77,7 @@ TEST(Landscape, RiversRunDownTheMiddleOfEachValley)
             });
             const double aside  = theta + (60.0 / geometry.radius());
             EXPECT_TRUE(inLake || geometry.terrainHeight(z, aside) > kWaterLevelM) << z;
-            EXPECT_EQ(geometry.regionAt(z, theta).kind, RegionKind::Land);
+            EXPECT_EQ(geometry.regionAt(z, theta).kind, RegionKind::LAND);
         }
     }
 }
@@ -117,7 +117,7 @@ TEST(Landscape, WoodsCoverAboutTheRequestedShareOfTheFloor)
     {
         const double z     = random.uniform(geometry.floorZMin(), geometry.floorZMax());
         const double theta = random.uniform(0.0, 2.0 * kPi);
-        if (geometry.regionAt(z, theta).kind != RegionKind::Land)
+        if (geometry.regionAt(z, theta).kind != RegionKind::LAND)
         {
             continue;
         }
@@ -300,7 +300,7 @@ TEST(TerrainLod, MorphBandsGrowWithDistance)
 TEST(Trees, MeshesFaceOutwardAndStandOneUnitTall)
 {
     for (const TreeSpecies species :
-         {TreeSpecies::Broadleaf, TreeSpecies::Conifer, TreeSpecies::Poplar})
+         {TreeSpecies::BROADLEAF, TreeSpecies::CONIFER, TreeSpecies::POPLAR})
     {
         std::size_t triangles = 0;
         for (const bool detailed : {false, true})
@@ -342,9 +342,9 @@ TEST(Trees, MeshesFaceOutwardAndStandOneUnitTall)
 
 TEST(Trees, PackingKeepsHeightAndSpecies)
 {
-    const std::uint32_t packed = packTree(18.3, 0.5, TreeSpecies::Poplar, 1.0);
+    const std::uint32_t packed = packTree(18.3, 0.5, TreeSpecies::POPLAR, 1.0);
     EXPECT_EQ(packed & 0xFFFU, 183U);
-    EXPECT_EQ((packed >> 20U) & 0xFU, static_cast<std::uint32_t>(TreeSpecies::Poplar));
+    EXPECT_EQ((packed >> 20U) & 0xFU, static_cast<std::uint32_t>(TreeSpecies::POPLAR));
     EXPECT_EQ(packed >> 24U, 255U);
 }
 
@@ -369,7 +369,7 @@ TEST(Trees, WoodsRiverbanksAndLoneTrees)
                 const Vec3d         world = tile.origin + Vec3d(tree.position);
                 const double        theta = HabitatGeometry::angleOf(world);
                 // On dry land, never on the window glass, inside the tile's bounds.
-                EXPECT_NE(geometry.regionAt(world.z, theta).kind, RegionKind::Window);
+                EXPECT_NE(geometry.regionAt(world.z, theta).kind, RegionKind::WINDOW);
                 EXPECT_LT(geometry.waterDepth(world.z, theta), 0.3);
                 EXPECT_TRUE(glm::all(glm::greaterThanEqual(tree.position, tile.boundsMin)));
                 EXPECT_TRUE(glm::all(glm::lessThanEqual(tree.position, tile.boundsMax)));
