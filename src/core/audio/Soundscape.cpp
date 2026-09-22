@@ -53,7 +53,7 @@ void Soundscape::setMix(const SoundMix& mix)
 
 void Soundscape::play(Sound sound, double level)
 {
-    auto* const free =
+    const auto free =
         std::ranges::find_if(oneshots_, [](const Oneshot& o) { return o.remaining <= 0.0; });
     if (free == oneshots_.end())
     {
@@ -102,7 +102,7 @@ double Soundscape::coefficient(double cutoffHz) const
 
 void Soundscape::startCall(bool cricket)
 {
-    auto* const free =
+    const auto free =
         std::ranges::find_if(chirps_, [](const Chirp& c) { return c.remaining <= 0.0; });
     if (free == chirps_.end())
     {

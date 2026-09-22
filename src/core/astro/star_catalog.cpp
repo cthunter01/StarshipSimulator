@@ -127,9 +127,9 @@ constexpr std::array<Constellation, 88> kConstellations{{
 
 const Constellation* findConstellation(std::string_view abbreviation)
 {
-    const auto* found =
+    const auto found =
         std::ranges::find(kConstellations, abbreviation, &Constellation::abbreviation);
-    return found == kConstellations.end() ? nullptr : found;
+    return found == kConstellations.end() ? nullptr : &*found;
 }
 
 struct GreekLetter
@@ -159,7 +159,7 @@ std::string bayerLetter(std::string_view code)
     const std::size_t dash   = code.find('-');
     const auto        letter = code.substr(0, dash);
     const auto  index = dash == std::string_view::npos ? std::string_view{} : code.substr(dash + 1);
-    const auto* greek = std::ranges::find(kGreek, letter, &GreekLetter::code);
+    const auto  greek = std::ranges::find(kGreek, letter, &GreekLetter::code);
     std::string name(greek == kGreek.end() ? letter : greek->name);
     name.append(index);
     return name;

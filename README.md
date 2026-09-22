@@ -61,7 +61,7 @@ air, clouds, the length of the year, where in the solar system it flies and when
 derived number updating as you drag and every problem spelled out before you can build it. The gallery lists
 the habitats that came with the program and the ones you have saved, each a small TOML file; a determinism test
 pins a whole generated world to a hash, so the file you send someone builds the same world on their machine,
-under either compiler. Next up, M8: more revolved worlds.
+whether that runs Linux, macOS or Windows. Next up, M8: more revolved worlds.
 
 ## Requirements
 - To run it: a GPU with a Vulkan driver, on Linux or Windows. On macOS it builds and passes its tests, but it
@@ -71,20 +71,20 @@ under either compiler. Next up, M8: more revolved worlds.
   - Linux: GCC 14+ or Clang 18+
   - macOS: Xcode 16.3+ or its Command Line Tools (Apple Clang 17+)
   - Windows: Visual Studio 2022 17.7+ (MSVC) with the "Desktop development with C++" workload
-- glslc (from shaderc, or on Windows the Vulkan SDK), and SDL 3.4, GLM 1.0 and toml++ 3.4, which are downloaded
-  and built when they are not installed
+- glslc (from shaderc, or on Windows the Vulkan SDK), and SDL 3.4 and GLM 1.0, which are downloaded and built
+  when they are not installed
 
 On Arch Linux:
 ```sh
-sudo pacman -S --needed cmake ninja clang sdl3 glm shaderc tomlplusplus
+sudo pacman -S --needed cmake ninja clang sdl3 glm shaderc
 # optional: Vulkan validation layers (Debug builds), ccache, RenderDoc
 sudo pacman -S --needed vulkan-validation-layers ccache renderdoc
 ```
-On macOS: `brew install cmake ninja shaderc sdl3 glm tomlplusplus`. On Windows: Visual Studio 2022 (it brings
+On macOS: `brew install cmake ninja shaderc sdl3 glm`. On Windows: Visual Studio 2022 (it brings
 CMake and Ninja) and the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) for glslc.
-Dear ImGui and Jolt Physics (v5.6.0, built in double precision) are downloaded at configure time; GoogleTest,
-SDL3, GLM and toml++ are used from the system when installed, otherwise downloaded too. The first configure also downloads the sky data (about 52 MB: star catalog,
-Milky Way, Earth and Moon maps) into `build/_downloads/sky`; turn that off with
+Dear ImGui, Jolt Physics (v5.6.0, built in double precision) and toml++ (header-only) are downloaded at configure
+time; GoogleTest, SDL3 and GLM are used from the system when installed, otherwise downloaded too. The first
+configure also downloads the sky data (about 52 MB: star catalog, Milky Way, Earth and Moon maps) into `build/_downloads/sky`; turn that off with
 `-DSTARSHIPSIMULATOR_DOWNLOAD_SKY_DATA=OFF` (the app then shows placeholder stars). See `data/CREDITS.md`.
 
 ## Build and run

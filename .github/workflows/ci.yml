@@ -19,9 +19,8 @@ jobs:
         preset: [ci-gcc, ci-clang, asan, tidy]
     steps:
       - name: Install toolchain and libraries
-        # sdl3: window/input/GPU API, glm: math, shaderc: glslc (GLSL -> SPIR-V at build time),
-        # tomlplusplus: scenario files.
-        run: pacman -Syu --noconfirm --needed cmake ninja clang git sdl3 glm shaderc tomlplusplus
+        # sdl3: window/input/GPU API, glm: math, shaderc: glslc (GLSL -> SPIR-V at build time).
+        run: pacman -Syu --noconfirm --needed cmake ninja clang git sdl3 glm shaderc
       - uses: actions/checkout@v7
       - name: Configure, build and test
         run: cmake --workflow --preset ${{ matrix.preset }}
@@ -38,9 +37,9 @@ jobs:
         preset: [ci-clang]
     steps:
       - name: Install Ninja and libraries
-        # shaderc: glslc. SDL3, GLM and toml++ are used from Homebrew when its versions are new enough,
+        # shaderc: glslc. SDL3 and GLM are used from Homebrew when its versions are new enough,
         # otherwise built from source (cmake/Dependencies.cmake).
-        run: brew install ninja shaderc sdl3 glm tomlplusplus
+        run: brew install ninja shaderc sdl3 glm
       - uses: actions/checkout@v7
       - name: Configure, build and test
         run: cmake --workflow --preset ${{ matrix.preset }}

@@ -32,3 +32,6 @@ StarshipSimulator_configure_target(StarshipSimulator_render)
 target_compile_options(StarshipSimulator_render PRIVATE
     $<$<CXX_COMPILER_ID:GNU>:-Wno-missing-field-initializers>
     $<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wno-missing-designated-field-initializers>)
+# Structs holding the 16-byte-aligned uniform blocks (gpu_abi/uniforms.h) are padded to match, which
+# is the point; MSVC warns about the padding (C4324) wherever the renderer's headers are included.
+target_compile_options(StarshipSimulator_render PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/wd4324>)

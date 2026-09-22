@@ -154,7 +154,7 @@ void BodyPass::draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
         {.texture = nightMap, .sampler = sampler},
     }};
     SDL_BindGPUGraphicsPipeline(pass, pipeline_.get());
-    SDL_BindGPUFragmentSamplers(pass, 0, bindings.data(), bindings.size());
+    SDL_BindGPUFragmentSamplers(pass, 0, bindings.data(), static_cast<Uint32>(bindings.size()));
     SDL_PushGPUVertexUniformData(commands, 0, &frame, sizeof(frame));
     SDL_PushGPUVertexUniformData(commands, 1, &body, sizeof(body));
     SDL_PushGPUFragmentUniformData(commands, 0, &frame, sizeof(frame));

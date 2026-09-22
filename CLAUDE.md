@@ -192,7 +192,8 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
 - `tests/`: GoogleTest files, all in `StarshipSimulator_tests` (a class's tests: `MyClassTests.cpp`, e.g.
   `SimClockTests.cpp`; other tests: `*_tests.cpp`)
 - `cmake/ProjectOptions.cmake`: `StarshipSimulator_configure_target()` (warnings, sanitizers, coverage, tidy)
-- `cmake/Dependencies.cmake`: third-party libraries via FetchContent (installed packages win)
+- `cmake/Dependencies.cmake`: third-party libraries via FetchContent (installed packages win, except toml++: always
+  header-only from source, as a packaged shared library's exceptions are not caught across it on macOS)
 
 ## Conventions
 - Headers are `.h` (never `.hpp`) and use `#pragma once`

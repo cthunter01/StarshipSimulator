@@ -140,3 +140,7 @@ CheckOptions:
   misc-include-cleaner.IgnoreHeaders: 'glm/.*;SDL3/.*;toml\+\+/.*;Jolt/.*'
   # GoogleTest assertions are macros full of branches; count only the code we wrote.
   readability-function-cognitive-complexity.IgnoreMacros: true
+  # Container iterators are plain pointers in libstdc++ and libc++ but classes in MSVC's library, so
+  # an `auto*` iterator does not compile there: don't look through aliases such as
+  # std::array<T, N>::iterator to ask for one.
+  readability-qualified-auto.IgnoreAliasing: false

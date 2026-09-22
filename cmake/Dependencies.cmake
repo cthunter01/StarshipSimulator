@@ -28,14 +28,15 @@ FetchContent_Declare(glm
     FIND_PACKAGE_ARGS CONFIG)
 FetchContent_MakeAvailable(glm)
 
-# toml++: reads habitat scenario files (Arch: pacman -S tomlplusplus). Used only inside core.
+# toml++: reads habitat scenario files. Used only inside core. Always the header-only form, from
+# source: an installed package may be a compiled shared library instead (Homebrew's is), and on
+# macOS a toml::parse_error thrown inside that library is not caught by our code.
 FetchContent_Declare(tomlplusplus
     GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
     GIT_TAG        v3.4.0
     GIT_SHALLOW    TRUE
     SYSTEM
-    EXCLUDE_FROM_ALL
-    FIND_PACKAGE_ARGS CONFIG)
+    EXCLUDE_FROM_ALL)
 FetchContent_MakeAvailable(tomlplusplus)
 
 # Dear ImGui: debug HUD and editor panels. It has no CMake build, so the repository is only downloaded

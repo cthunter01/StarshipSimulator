@@ -179,13 +179,17 @@ TEST(HullMesh, ClosedOutwardFacingShellWithWindowStrips)
         const Vertex& a = hull.vertices[hull.indices[i]];
         const Vertex& b = hull.vertices[hull.indices[i + 1]];
         const Vertex& c = hull.vertices[hull.indices[i + 2]];
-        const Vec3f   n = glm::cross(b.position - a.position, c.position - a.position);
-        if (glm::length(n) < 1e-3F)
+        // In double: at a dome's pole two corners sit 1e-14 m apart, so in float both edges round
+        // to the same vector, and where the compiler fuses the cross product's multiply-adds
+        // (arm64) the result is rounding noise big enough to pass for a real face.
+        const Vec3d pa(a.position);
+        const Vec3d n = glm::cross(Vec3d(b.position) - pa, Vec3d(c.position) - pa);
+        if (glm::length(n) < 1e-3)
         {
             continue;  // degenerate at the axis
         }
         // Counter-clockwise seen from outside: the face normal agrees with the vertex normal.
-        EXPECT_GT(glm::dot(n, a.normal), 0.0F);
+        EXPECT_GT(glm::dot(n, Vec3d(a.normal)), 0.0);
         // Every vertex lies on the hull: radius R on the wall, inside the dome elsewhere.
         const float r = std::hypot(a.position.x, a.position.y);
         EXPECT_LE(r, static_cast<float>(geometry.radius()) + 0.01F);
