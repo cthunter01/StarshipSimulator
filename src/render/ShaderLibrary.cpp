@@ -9,6 +9,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_filesystem.h>
@@ -16,6 +17,7 @@
 #include <SDL3/SDL_iostream.h>
 #include <SDL3/SDL_stdinc.h>
 
+#include "StarshipSimulator/core/gpu_abi/metal_shader.h"
 #include "StarshipSimulator/core/gpu_abi/spirv_reflect.h"
 #include "StarshipSimulator/core/utf8_path.h"
 #include "StarshipSimulator/render/GpuHandle.h"
@@ -46,10 +48,26 @@ SDL_GPUShaderStage toSdlStage(gpu::ShaderStage stage, const std::string& name)
         std::format("{}: compute shaders are loaded as compute pipelines, not shaders", name));
 }
 
+/// The shader format to hand SDL_GPU: SPIR-V where the device takes it (Vulkan), otherwise Metal
+/// Shading Language (Metal), translated from the SPIR-V.
+SDL_GPUShaderFormat shaderFormatFor(SDL_GPUDevice* device)
+{
+    const SDL_GPUShaderFormat formats = SDL_GetGPUShaderFormats(device);
+    if ((formats & SDL_GPU_SHADERFORMAT_SPIRV) != 0)
+    {
+        return SDL_GPU_SHADERFORMAT_SPIRV;
+    }
+    if ((formats & SDL_GPU_SHADERFORMAT_MSL) != 0)
+    {
+        return SDL_GPU_SHADERFORMAT_MSL;
+    }
+    throw std::runtime_error("The GPU device takes neither SPIR-V nor Metal shaders");
+}
+
 }  // namespace
 
 ShaderLibrary::ShaderLibrary(SDL_GPUDevice* device, std::filesystem::path directory)
-  : device_(device), directory_(std::move(directory))
+  : device_(device), directory_(std::move(directory)), format_(shaderFormatFor(device))
 {
 }
 
@@ -87,12 +105,28 @@ GpuShader ShaderLibrary::load(std::string_view name) const
         throw std::runtime_error(message);
     }
 
+    // On Metal the SPIR-V is only the source of the MSL that SDL_GPU compiles.
+    std::span<const Uint8> code(static_cast<const Uint8*>(data.get()), size);
+    std::string            entryPoint = reflection->entryPoint;
+    std::vector<Uint8>     msl;
+    if (format_ == SDL_GPU_SHADERFORMAT_MSL)
+    {
+        const auto metal = gpu::translateToMetal(*words, *reflection);
+        if (!metal)
+        {
+            throw std::runtime_error(std::format("{}: {}", pathText, metal.error()));
+        }
+        msl.assign(metal->source.begin(), metal->source.end());
+        code       = msl;
+        entryPoint = metal->entryPoint;
+    }
+
     const gpu::ResourceCounts     counts = reflection->counts();
     const SDL_GPUShaderCreateInfo info{
-        .code_size            = size,
-        .code                 = static_cast<const Uint8*>(data.get()),
-        .entrypoint           = reflection->entryPoint.c_str(),
-        .format               = SDL_GPU_SHADERFORMAT_SPIRV,
+        .code_size            = code.size(),
+        .code                 = code.data(),
+        .entrypoint           = entryPoint.c_str(),
+        .format               = format_,
         .stage                = toSdlStage(reflection->stage, pathText),
         .num_samplers         = counts.samplers,
         .num_storage_textures = counts.readOnlyStorageTextures,

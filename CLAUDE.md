@@ -1,9 +1,9 @@
 # StarshipSimulator
 
 A walk-around simulator for space habitats (O'Neill cylinders, Bishop rings, starships) under an accurate sky.
-C++23, CMake presets + Ninja, GoogleTest, SDL3 + SDL_GPU (Vulkan), Dear ImGui, Jolt Physics. Cross-platform:
-Linux (GCC, Clang), macOS (Apple Clang) and Windows (MSVC). The app runs wherever SDL_GPU has Vulkan (Linux,
-Windows); on macOS it builds and passes its tests, but SDL_GPU there needs Metal shaders, which are not built yet.
+C++23, CMake presets + Ninja, GoogleTest, SDL3 + SDL_GPU (Vulkan, Metal), Dear ImGui, Jolt Physics.
+Cross-platform: Linux (GCC, Clang), macOS (Apple Clang) and Windows (MSVC). The app runs on Vulkan (Linux,
+Windows) and Metal (macOS), where each SPIR-V shader is translated to MSL as it loads.
 Roadmap and design decisions: `~/.claude/plans/i-want-to-create-compressed-wreath.md` (M0 foundation → M10).
 
 ## Commands
@@ -25,7 +25,9 @@ Other presets: `clang-release`, `gcc-debug`, `gcc-release`, `tsan`, `coverage`, 
 Each builds into `build/<preset>/`; never edit anything under `build/`. A preset is only available on the
 platforms it supports (`gcc-*`: Linux; `clang-*`: Linux and macOS; `msvc-*`: Windows); `cmake --list-presets`
 shows this machine's. CI (`.github/workflows/ci.yml`) runs `ci-gcc`, `ci-clang`, `asan` and `tidy` on Linux,
-`ci-clang` on macOS and `ci-msvc` on Windows, and checks formatting.
+`ci-clang` on macOS and `ci-msvc` on Windows, and checks formatting. The macOS runners have a Metal GPU, so that
+job also runs the app: it renders the town and valley views with Metal's API validation on (any misuse fails the
+job) and keeps the pictures with the run.
 
 ## Checking visuals yourself
 The app can render and save a screenshot without interaction, then exit:
@@ -34,7 +36,9 @@ Views: valley, river, lake, town, street, rooftops, tram, lift, hub, lookup, win
 axis, overview (or `--camera x,y,z,yaw,pitch` in the
 habitat frame; `--scenario data/presets/coriolis_playground.toml` for the small habitat). Write captures to the
 scratchpad and inspect them with the Read tool before reporting visual work as done. The window opens briefly
-on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
+on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs. There is no Mac here: to see what Metal
+draws, push and fetch the pictures of the macOS CI job, `gh run download <run id> -n metal-pictures`
+(`gh run list` gives the id)
 - The panels: `--panel editor|gallery|almanac` opens one at startup (repeatable), which is the only way
   to get them into a capture; `--capture-ui` then includes them. `--tour 1|2|3` (or part of a tour's
   name) sets off on a guided tour, and captures step 1/60 s per frame, so `--capture-frames 1800`
@@ -130,7 +134,8 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
     `validateScenario` returns every problem with a whole scenario as a sentence (the editor lists them
     all while you drag sliders; `parseScenario` reports the first); `describeHabitat` sums one up in a
     line for the gallery;
-    `gpu_abi/`: uniform structs, SPIR-V reflection, `color_grade` (the grading LUT),
+    `gpu_abi/`: uniform structs, SPIR-V reflection, `metal_shader` (SPIR-V to MSL for SDL_GPU on Metal, by
+    SPIRV-Cross, with the resources renumbered to SDL's Metal layout), `color_grade` (the grading LUT),
     `ground_atlas` (the towns' ground maps packed for the landscape shader); plus camera, frustum, sim
     clock, app options, `parse_number` (`parseInt`/`parseDouble`: whole-text, locale-free; Apple's libc++ has
     no floating-point `std::from_chars`, so it falls back to `strtod` there) and `utf8_path` (see Conventions)
@@ -193,7 +198,8 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
   `SimClockTests.cpp`; other tests: `*_tests.cpp`)
 - `cmake/ProjectOptions.cmake`: `StarshipSimulator_configure_target()` (warnings, sanitizers, coverage, tidy)
 - `cmake/Dependencies.cmake`: third-party libraries via FetchContent (installed packages win, except toml++: always
-  header-only from source, as a packaged shared library's exceptions are not caught across it on macOS)
+  header-only from source, as a packaged shared library's exceptions are not caught across it on macOS; and
+  SPIRV-Cross, pinned so every platform translates shaders the same way)
 
 ## Conventions
 - Headers are `.h` (never `.hpp`) and use `#pragma once`
@@ -250,7 +256,13 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
 - SDL_GPU create-info structs use designated initializers naming only the fields that matter (the render target
   disables the missing-field warning for this)
 
-## SDL_GPU shader rules (Vulkan / SPIR-V)
+## SDL_GPU shader rules (Vulkan / SPIR-V, and Metal)
+Shaders are written and compiled once, as GLSL for Vulkan. On Metal (macOS) `ShaderLibrary` translates each
+SPIR-V shader to MSL as it loads (`gpu::translateToMetal`): SPIRV-Cross writes MSL 2.1 whose resources are
+renumbered the way SDL_GPU binds them on Metal ([[texture]] sampled then storage textures, [[sampler]] one per
+sampled texture, [[buffer]] uniform then storage buffers; vertex buffers are [[stage_in]], from [[buffer(14)]]),
+and the entry point becomes `main0`. `metal_shader_tests` translates every built shader. SDL compiles MSL with
+Metal's default options, which include fast math. There are no compute shaders yet; translating them is refused.
 Resource bindings must use SDL_GPU's descriptor sets; within a set, bindings count up from 0 in this order:
 
 | Stage    | Textures and storage                                                    | Uniform buffers |

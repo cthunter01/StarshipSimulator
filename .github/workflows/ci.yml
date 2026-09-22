@@ -1,7 +1,7 @@
 # Builds and tests the CI presets on Linux, macOS and Windows, and checks formatting.
 # Linux runs in an Arch Linux container so CI has the same current GCC/Clang as the dev machine.
-# The app is built everywhere but never run (no GPU); the unit tests need only the core and physics
-# libraries, and the sky data is not downloaded (CI is set).
+# The unit tests need only the core and physics libraries, and the sky data is not downloaded (CI is
+# set). The app is built everywhere, but only the macOS runners have a GPU to run it on (Metal).
 name: CI
 
 on:
@@ -43,6 +43,24 @@ jobs:
       - uses: actions/checkout@v7
       - name: Configure, build and test
         run: cmake --workflow --preset ${{ matrix.preset }}
+      # The runners have a Metal GPU, so the app itself runs here: two pictures with Metal's API
+      # validation on, which fails the job on any misuse. They are kept with the run to look at.
+      - name: Render with Metal
+        shell: bash
+        env:
+          MTL_DEBUG_LAYER: "1"
+        run: |
+          app=build/${{ matrix.preset }}/bin/StarshipSimulator
+          $app --size 960x540 --view town --capture metal-town.png --capture-ui 2>&1 | tee metal-town.log
+          $app --size 960x540 --view valley --capture metal-valley.png 2>&1 | tee metal-valley.log
+          test -s metal-town.png && test -s metal-valley.png
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: metal-pictures
+          path: |
+            metal-*.png
+            metal-*.log
 
   # MSVC from the runner's Visual Studio; msvc-dev-cmd sets up the Developer PowerShell environment.
   # SDL3, GLM, toml++ and GoogleTest are built from source; glslc comes with the Vulkan SDK.

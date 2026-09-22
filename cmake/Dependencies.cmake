@@ -39,6 +39,27 @@ FetchContent_Declare(tomlplusplus
     EXCLUDE_FROM_ALL)
 FetchContent_MakeAvailable(tomlplusplus)
 
+# SPIRV-Cross: turns our SPIR-V shaders into Metal Shading Language when SDL_GPU runs on Metal
+# (macOS). Only its C++ core, GLSL and MSL parts are built, as static libraries; always from source,
+# so every platform translates with the same version (the unit tests check the translation on all
+# of them).
+set(SPIRV_CROSS_CLI OFF CACHE BOOL "" FORCE)
+set(SPIRV_CROSS_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+set(SPIRV_CROSS_ENABLE_HLSL OFF CACHE BOOL "" FORCE)
+set(SPIRV_CROSS_ENABLE_CPP OFF CACHE BOOL "" FORCE)
+set(SPIRV_CROSS_ENABLE_REFLECT OFF CACHE BOOL "" FORCE)
+set(SPIRV_CROSS_ENABLE_C_API OFF CACHE BOOL "" FORCE)
+set(SPIRV_CROSS_ENABLE_UTIL OFF CACHE BOOL "" FORCE)
+set(SPIRV_CROSS_SHARED OFF CACHE BOOL "" FORCE)
+set(SPIRV_CROSS_SKIP_INSTALL ON CACHE BOOL "" FORCE)
+FetchContent_Declare(SPIRV-Cross
+    GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Cross.git
+    GIT_TAG        vulkan-sdk-1.4.357.0
+    GIT_SHALLOW    TRUE
+    SYSTEM
+    EXCLUDE_FROM_ALL)
+FetchContent_MakeAvailable(SPIRV-Cross)
+
 # Dear ImGui: debug HUD and editor panels. It has no CMake build, so the repository is only downloaded
 # and StarshipSimulator_imgui is built from its sources, with the SDL3 platform and SDL_GPU renderer backends.
 FetchContent_Declare(imgui

@@ -12,6 +12,7 @@ add_executable(StarshipSimulator_tests
     habitat_mesher_tests.cpp
     habitat_tests.cpp
     mesh_tests.cpp
+    metal_shader_tests.cpp
     parse_number_tests.cpp
     people_tests.cpp
     physics_tests.cpp

@@ -17,6 +17,7 @@ add_library(StarshipSimulator_core STATIC
     utf8_path.cpp
     gpu_abi/color_grade.cpp
     gpu_abi/ground_atlas.cpp
+    gpu_abi/metal_shader.cpp
     gpu_abi/spirv_reflect.cpp
     gpu_abi/uniforms.cpp
     habitat/day_schedule.cpp
@@ -50,7 +51,7 @@ add_library(StarshipSimulator::core ALIAS StarshipSimulator_core)
 target_include_directories(StarshipSimulator_core PUBLIC ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(StarshipSimulator_core
     PUBLIC glm::glm-header-only
-    PRIVATE tomlplusplus::tomlplusplus StarshipSimulator_astronomy StarshipSimulator_stb)
+    PRIVATE tomlplusplus::tomlplusplus spirv-cross-msl StarshipSimulator_astronomy StarshipSimulator_stb)
 # Every includer must agree on GLM's configuration:
 #   XYZW_ONLY: plain x/y/z/w members instead of unions (keeps clang-tidy's union checks quiet)
 #   EXPLICIT_CTOR: double -> float vector conversions must be spelled out (no silent precision loss)

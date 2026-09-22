@@ -18,7 +18,7 @@ struct GpuDeviceOptions
 /// What the driver reports about the GPU in use, for the HUD and logs.
 struct GpuInfo
 {
-    std::string backend;     // "vulkan"
+    std::string backend;     // "vulkan" or "metal"
     std::string deviceName;  // e.g. "NVIDIA RTX A1000 Laptop GPU"
     std::string driverName;
     std::string driverVersion;
@@ -28,7 +28,7 @@ struct GpuInfo
     bool        debug = false;
 };
 
-/// The SDL_GPU device (Vulkan, SPIR-V shaders, discrete GPU preferred) bound to one window.
+/// The SDL_GPU device (Vulkan, or Metal on macOS; discrete GPU preferred) bound to one window.
 class GpuDevice
 {
 public:

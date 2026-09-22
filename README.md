@@ -64,8 +64,8 @@ pins a whole generated world to a hash, so the file you send someone builds the 
 whether that runs Linux, macOS or Windows. Next up, M8: more revolved worlds.
 
 ## Requirements
-- To run it: a GPU with a Vulkan driver, on Linux or Windows. On macOS it builds and passes its tests, but it
-  does not run yet: SDL_GPU draws with Metal there, and the Metal versions of the shaders are still to come
+- To run it: a GPU with Vulkan (Linux, Windows) or Metal (macOS, where the shaders are translated from SPIR-V
+  to Metal Shading Language as they load)
 - CMake 3.28+ and Ninja
 - A C++23 compiler:
   - Linux: GCC 14+ or Clang 18+

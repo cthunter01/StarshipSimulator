@@ -6,7 +6,6 @@
 
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_gpu.h>
-#include <SDL3/SDL_platform.h>
 #include <SDL3/SDL_properties.h>
 #include <SDL3/SDL_video.h>
 
@@ -76,10 +75,14 @@ void GpuDevice::DeviceDeleter::operator()(SDL_GPUDevice* device) const noexcept
 GpuDevice::GpuDevice(SDL_Window* window, const GpuDeviceOptions& options) : window_(window)
 {
     {
+        // The shaders are SPIR-V, which Vulkan takes as it is; Metal (macOS) gets them translated
+        // to MSL (ShaderLibrary). SDL picks the backend: Vulkan on Linux and Windows, Metal on
+        // macOS.
         const Properties properties;
         SDL_SetBooleanProperty(properties.id(), SDL_PROP_GPU_DEVICE_CREATE_SHADERS_SPIRV_BOOLEAN,
                                true);
-        SDL_SetStringProperty(properties.id(), SDL_PROP_GPU_DEVICE_CREATE_NAME_STRING, "vulkan");
+        SDL_SetBooleanProperty(properties.id(), SDL_PROP_GPU_DEVICE_CREATE_SHADERS_MSL_BOOLEAN,
+                               true);
         SDL_SetBooleanProperty(properties.id(), SDL_PROP_GPU_DEVICE_CREATE_PREFERLOWPOWER_BOOLEAN,
                                false);  // prefer the discrete GPU
         SDL_SetBooleanProperty(properties.id(), SDL_PROP_GPU_DEVICE_CREATE_DEBUGMODE_BOOLEAN,
@@ -89,13 +92,7 @@ GpuDevice::GpuDevice(SDL_Window* window, const GpuDeviceOptions& options) : wind
     }
     if (!device_)
     {
-        // macOS has no Vulkan driver: SDL_GPU runs on Metal there, and that needs Metal shaders,
-        // which are not built yet (the SPIR-V ones are Vulkan's).
-        const bool mac = std::string_view(SDL_GetPlatform()) == "macOS";
-        throw std::runtime_error(
-            sdlError(mac ? "Could not create a Vulkan GPU device. On macOS StarshipSimulator "
-                           "needs Metal shaders, which it does not have yet"
-                         : "Could not create a Vulkan GPU device"));
+        throw std::runtime_error(sdlError("Could not create a GPU device (Vulkan or Metal)"));
     }
     if (!SDL_ClaimWindowForGPUDevice(device_.get(), window_))
     {
@@ -137,7 +134,8 @@ GpuDevice::GpuDevice(SDL_Window* window, const GpuDeviceOptions& options) : wind
     log::info("GPU: {} ({}, driver {} {}), present mode {}, swapchain {}{}", info_.deviceName,
               info_.backend, info_.driverName, info_.driverVersion, info_.presentMode,
               info_.swapchainFormat, info_.debug ? ", debug mode" : "");
-    if (info_.deviceName.contains("Intel") || info_.deviceName.contains("llvmpipe"))
+    if (info_.backend == "vulkan" &&
+        (info_.deviceName.contains("Intel") || info_.deviceName.contains("llvmpipe")))
     {
         log::warn(
             "Running on '{}', not a discrete GPU. To force NVIDIA: "
