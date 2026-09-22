@@ -9,15 +9,15 @@
 #include "StarshipSimulator/core/astro/ephemeris.h"
 #include "StarshipSimulator/core/astro/star_catalog.h"
 #include "StarshipSimulator/core/camera.h"
-#include "StarshipSimulator/core/habitat/habitat_geometry.h"
+#include "StarshipSimulator/core/habitat/HabitatGeometry.h"
+#include "StarshipSimulator/core/habitat/Landscape.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
-#include "StarshipSimulator/core/habitat/landscape.h"
 #include "StarshipSimulator/core/habitat/mirror_optics.h"
 #include "StarshipSimulator/core/habitat/weather.h"
 #include "StarshipSimulator/core/math.h"
+#include "StarshipSimulator/core/procgen/TerrainLod.h"
 #include "StarshipSimulator/core/procgen/star_field.h"
 #include "StarshipSimulator/core/procgen/terrain_grid.h"
-#include "StarshipSimulator/core/procgen/terrain_lod.h"
 #include "StarshipSimulator/core/units.h"
 
 namespace StarshipSimulator::gpu

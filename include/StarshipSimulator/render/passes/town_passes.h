@@ -4,15 +4,15 @@
 
 #include "StarshipSimulator/core/gpu_abi/uniforms.h"
 #include "StarshipSimulator/core/math.h"
-#include "StarshipSimulator/render/gpu_handles.h"
-#include "StarshipSimulator/render/gpu_landscape.h"
-#include "StarshipSimulator/render/gpu_people.h"
-#include "StarshipSimulator/render/gpu_props.h"
-#include "StarshipSimulator/render/gpu_settlements.h"
-#include "StarshipSimulator/render/gpu_transit.h"
+#include "StarshipSimulator/render/GpuHandle.h"
+#include "StarshipSimulator/render/GpuLandscape.h"
+#include "StarshipSimulator/render/GpuPeople.h"
+#include "StarshipSimulator/render/GpuProps.h"
+#include "StarshipSimulator/render/GpuSettlements.h"
+#include "StarshipSimulator/render/GpuTransit.h"
+#include "StarshipSimulator/render/RenderTargets.h"
+#include "StarshipSimulator/render/ShaderLibrary.h"
 #include "StarshipSimulator/render/passes/habitat_passes.h"
-#include "StarshipSimulator/render/render_targets.h"
-#include "StarshipSimulator/render/shader_library.h"
 
 // The towns: their buildings, bridges and street furniture, and the props lying about.
 namespace StarshipSimulator

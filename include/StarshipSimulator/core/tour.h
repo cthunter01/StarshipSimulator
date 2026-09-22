@@ -6,7 +6,7 @@
 #include <string_view>
 #include <vector>
 
-#include "StarshipSimulator/core/habitat/habitat_geometry.h"
+#include "StarshipSimulator/core/habitat/HabitatGeometry.h"
 #include "StarshipSimulator/core/math.h"
 
 // Guided tours: a camera flown along a set path with something to read at each stop. The point is

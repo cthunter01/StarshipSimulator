@@ -27,7 +27,7 @@ layout(set = 2, binding = 4) uniform sampler2D cloudMap;
 
 layout(location = 0) out vec4 outColor;
 
-// Must match StarshipSimulator::transitMaterial.
+// Must match StarshipSimulator::transit_material.
 const uint BALLAST = 0u, RAIL = 1u, PIER = 2u, PLATFORM = 3u;
 const uint BODY = 4u, GLASS = 5u, ROOF = 6u, SKIRT = 7u, DECK = 8u;
 

@@ -14,7 +14,7 @@ namespace StarshipSimulator
 {
 
 /// Vertex materials of settlement meshes: the low 4 bits of Vertex::material.
-namespace buildingMaterial
+namespace building_material
 {
 inline constexpr std::uint32_t kWall = 0;  // plaster; windows, doors and shutters in the shader
 inline constexpr std::uint32_t kRoofTiles = 1;
@@ -27,7 +27,7 @@ inline constexpr std::uint32_t kAwning    = 7;
 inline constexpr std::uint32_t kWater     = 8;
 inline constexpr std::uint32_t kSoffit    = 9;  // under the eaves
 inline constexpr std::uint32_t kFoliage   = 10;
-}  // namespace buildingMaterial
+}  // namespace building_material
 
 /// Wall styles (how the shader draws the facade), bits 16-17 of Vertex::material.
 enum class FacadeStyle : std::uint8_t
@@ -43,7 +43,7 @@ enum class FacadeStyle : std::uint8_t
 /// 18-20 shutter colour (0: none), 21-31 a per-wall random seed.
 struct Facade
 {
-    std::uint32_t surface = buildingMaterial::kWall;
+    std::uint32_t surface = building_material::kWall;
     std::uint32_t colour  = 0;
     std::uint32_t windows = 0;
     bool          door    = false;

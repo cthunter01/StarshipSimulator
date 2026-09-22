@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "StarshipSimulator/core/math.h"
+#include "StarshipSimulator/core/utf8_path.h"
 
 namespace StarshipSimulator::assets
 {
@@ -271,7 +272,7 @@ std::expected<std::vector<std::byte>, std::string> readFile(const std::filesyste
     std::ifstream file(path, std::ios::binary);
     if (!file)
     {
-        return std::unexpected(std::format("cannot open {}", path.string()));
+        return std::unexpected(std::format("cannot open {}", utf8String(path)));
     }
     const std::vector<char> chars((std::istreambuf_iterator<char>(file)),
                                   std::istreambuf_iterator<char>());

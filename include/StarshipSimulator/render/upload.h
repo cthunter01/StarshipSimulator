@@ -8,7 +8,7 @@
 #include <SDL3/SDL_gpu.h>
 
 #include "StarshipSimulator/core/procgen/mesh.h"
-#include "StarshipSimulator/render/gpu_handles.h"
+#include "StarshipSimulator/render/GpuHandle.h"
 
 namespace StarshipSimulator
 {

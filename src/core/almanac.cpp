@@ -8,12 +8,12 @@
 
 #include "StarshipSimulator/core/astro/ephemeris.h"
 #include "StarshipSimulator/core/astro/sky_objects.h"
+#include "StarshipSimulator/core/habitat/HabitatGeometry.h"
 #include "StarshipSimulator/core/habitat/day_schedule.h"
-#include "StarshipSimulator/core/habitat/habitat_geometry.h"
 #include "StarshipSimulator/core/habitat/metrics.h"
 #include "StarshipSimulator/core/habitat/mirror_optics.h"
 #include "StarshipSimulator/core/math.h"
-#include "StarshipSimulator/core/physics/rotating_frame.h"
+#include "StarshipSimulator/core/physics/RotatingFrame.h"
 #include "StarshipSimulator/core/units.h"
 
 namespace StarshipSimulator

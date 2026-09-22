@@ -8,11 +8,11 @@
 #include <utility>
 #include <vector>
 
+#include "StarshipSimulator/core/SplitMix64.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/procgen/mesh.h"
 #include "StarshipSimulator/core/procgen/settlements.h"
 #include "StarshipSimulator/core/procgen/terrain_grid.h"
-#include "StarshipSimulator/core/rng.h"
 
 namespace StarshipSimulator
 {
@@ -189,7 +189,7 @@ std::vector<Person> peopleNear(const Settlements& settlements, const TerrainGrid
 
 CpuMesh buildPersonMesh()
 {
-    using namespace personPart;  // NOLINT(google-build-using-namespace): the part names, just here
+    using namespace person_part;  // NOLINT(google-build-using-namespace): the part names, just here
     CpuMesh    person;
     const auto put = [&person](const CpuMesh& part, const Vec3d& at, const Vec3d& scale) {
         appendMesh(person, part, glm::translate(Mat4d(1.0), at) * glm::scale(Mat4d(1.0), scale));

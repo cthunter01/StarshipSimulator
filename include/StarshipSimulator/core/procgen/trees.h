@@ -6,7 +6,7 @@
 #include <functional>
 #include <vector>
 
-#include "StarshipSimulator/core/habitat/habitat_geometry.h"
+#include "StarshipSimulator/core/habitat/HabitatGeometry.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/procgen/mesh.h"
 #include "StarshipSimulator/core/procgen/terrain_grid.h"
@@ -25,11 +25,11 @@ enum class TreeSpecies : std::uint8_t
 inline constexpr std::size_t kTreeSpeciesCount = 3;
 
 /// Vertex materials of tree meshes (Vertex::material).
-namespace treeMaterial
+namespace tree_material
 {
 inline constexpr std::uint32_t kBark   = 0;
 inline constexpr std::uint32_t kLeaves = 1;
-}  // namespace treeMaterial
+}  // namespace tree_material
 
 /// A tree mesh one unit tall, trunk base at the origin, growing along +Y.
 [[nodiscard]] CpuMesh makeTreeMesh(TreeSpecies species, bool detailed);

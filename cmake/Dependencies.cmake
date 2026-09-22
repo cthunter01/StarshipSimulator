@@ -78,6 +78,7 @@ set(JPH_USE_DX12 OFF)                        # its GPU compute backends: not use
 set(JPH_USE_VK OFF)
 set(JPH_USE_MTL OFF)
 set(JPH_USE_CPU_COMPUTE OFF)
+set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF)     # MSVC: the same (DLL) C runtime as everything else
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(USE_ASSERTS ON)
 endif()
@@ -90,10 +91,13 @@ FetchContent_Declare(JoltPhysics
     EXCLUDE_FROM_ALL)
 FetchContent_MakeAvailable(JoltPhysics)
 # Unoptimized, Jolt is too slow for the character and terrain tiles even in Debug builds.
+# (cl takes -O2 as well; the top-level CMakeLists.txt drops MSVC's /RTC1, which forbids it.)
 target_compile_options(Jolt PRIVATE $<$<CONFIG:Debug>:-O2>)
 
 if(STARSHIPSIMULATOR_BUILD_TESTS)
     set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+    # MSVC: link the same (DLL) C runtime as our targets instead of GoogleTest's static default.
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
     FetchContent_Declare(googletest
         GIT_REPOSITORY https://github.com/google/googletest.git
         GIT_TAG        v1.18.0

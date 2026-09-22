@@ -6,7 +6,7 @@
 #include <optional>
 #include <vector>
 
-#include "StarshipSimulator/core/habitat/habitat_geometry.h"
+#include "StarshipSimulator/core/habitat/HabitatGeometry.h"
 #include "StarshipSimulator/core/math.h"
 
 namespace StarshipSimulator

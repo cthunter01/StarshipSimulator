@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-#include "StarshipSimulator/core/habitat/habitat_geometry.h"
+#include "StarshipSimulator/core/habitat/HabitatGeometry.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/procgen/mesh.h"
 #include "StarshipSimulator/core/procgen/settlements.h"
@@ -119,7 +119,7 @@ inline constexpr double kTramBodyWidthM  = 2.5;
 [[nodiscard]] CpuMesh buildTramMesh();
 
 /// Vertex materials of the transit meshes.
-namespace transitMaterial
+namespace transit_material
 {
 inline constexpr std::uint32_t kBallast  = 0;
 inline constexpr std::uint32_t kRail     = 1;
@@ -130,6 +130,6 @@ inline constexpr std::uint32_t kGlass    = 5;  // its windows
 inline constexpr std::uint32_t kRoof     = 6;
 inline constexpr std::uint32_t kSkirt    = 7;  // its dark underframe and doors
 inline constexpr std::uint32_t kDeck     = 8;  // the girder deck of a trestle or a viaduct
-}  // namespace transitMaterial
+}  // namespace transit_material
 
 }  // namespace StarshipSimulator

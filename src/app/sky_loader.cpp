@@ -13,7 +13,8 @@
 
 #include "StarshipSimulator/core/assets/assets.h"
 #include "StarshipSimulator/core/astro/star_catalog.h"
-#include "StarshipSimulator/render/renderer.h"
+#include "StarshipSimulator/core/utf8_path.h"
+#include "StarshipSimulator/render/Renderer.h"
 
 namespace StarshipSimulator
 {
@@ -44,7 +45,7 @@ void keep(std::expected<T, std::string> loaded, std::optional<T>& into,
     }
     else
     {
-        problems.push_back(std::format("{}: {}", path.filename().string(), loaded.error()));
+        problems.push_back(std::format("{}: {}", utf8String(path.filename()), loaded.error()));
     }
 }
 
@@ -59,7 +60,7 @@ std::filesystem::path findSkyDataDirectory(const std::filesystem::path& dataDire
         return installed;
     }
 #ifdef STARSHIPSIMULATOR_SKY_DATA_DIR
-    return STARSHIPSIMULATOR_SKY_DATA_DIR;
+    return pathFromUtf8(STARSHIPSIMULATOR_SKY_DATA_DIR);
 #else
     return installed;
 #endif

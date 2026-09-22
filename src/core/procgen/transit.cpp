@@ -10,8 +10,8 @@
 #include <utility>
 #include <vector>
 
-#include "StarshipSimulator/core/habitat/habitat_geometry.h"
-#include "StarshipSimulator/core/habitat/landscape.h"
+#include "StarshipSimulator/core/habitat/HabitatGeometry.h"
+#include "StarshipSimulator/core/habitat/Landscape.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/procgen/mesh.h"
 #include "StarshipSimulator/core/procgen/settlements.h"
@@ -217,11 +217,11 @@ void layTrack(TramLine& line, const HabitatGeometry& geometry, const TerrainGrid
         const double r    = base - rail;
         const Vec3d  at(r * std::cos(line.theta), r * std::sin(line.theta), z);
         const double above = formation[i] - ground[i].ground;
-        const bool   last_ = i + 1 == ground.size();
+        const bool   atEnd = i + 1 == ground.size();
         if (!line.track.empty())
         {
             const double reach = glm::distance(at, last);
-            if (reach < kStepM && !last_)
+            if (reach < kStepM && !atEnd)
             {
                 continue;  // still inside this stretch of track
             }
@@ -603,12 +603,12 @@ void addTrackSegment(CpuMesh& mesh, const Vec3d& origin, const TrackPoint& a, co
     // rails stand on it (everything is measured from the rail head).
     const Vec3d bed = down * (kRailM + (0.5 * kBedM));
     addBeam(mesh, origin, a.position + bed, b.position + bed, side, over, kBallastM, kBedM,
-            a.carried ? transitMaterial::kDeck : transitMaterial::kBallast);
+            a.carried ? transit_material::kDeck : transit_material::kBallast);
     for (const double rail : {-0.5 * kGaugeM, 0.5 * kGaugeM})
     {
         const Vec3d offset = (side * rail) + (down * (0.5 * kRailM));
         addBeam(mesh, origin, a.position + offset, b.position + offset, side, over, 0.038, kRailM,
-                transitMaterial::kRail);
+                transit_material::kRail);
     }
     if (!bent)
     {
@@ -620,7 +620,7 @@ void addTrackSegment(CpuMesh& mesh, const Vec3d& origin, const TrackPoint& a, co
     const Vec3d  head = a.position + (down * (kRailM + kBedM));
     const Vec3d  cap  = head + (down * 0.45);
     addBeam(mesh, origin, cap - (side * kBallastM), cap + (side * kBallastM), ahead, down, 0.36,
-            0.7, transitMaterial::kPier);
+            0.7, transit_material::kPier);
     std::array<Vec3d, 2> feet{};
     for (int leg = 0; leg < 2; ++leg)
     {
@@ -630,14 +630,14 @@ void addTrackSegment(CpuMesh& mesh, const Vec3d& origin, const TrackPoint& a, co
             top + (down * drop) + (side * (lean * 0.32 * drop));
         addBeam(mesh, origin, top, feet.at(static_cast<std::size_t>(leg)), ahead,
                 glm::normalize(feet.at(static_cast<std::size_t>(leg)) - top), 0.30, 0.60,
-                transitMaterial::kPier);
+                transit_material::kPier);
     }
     if (drop > 4.0)
     {
         // Braced across, half way down, so it does not look like a pair of stilts.
         const Vec3d left  = glm::mix(cap - (side * (kBallastM - 0.5)), feet[0], 0.55);
         const Vec3d right = glm::mix(cap + (side * (kBallastM - 0.5)), feet[1], 0.55);
-        addBeam(mesh, origin, left, right, ahead, down, 0.22, 0.34, transitMaterial::kPier);
+        addBeam(mesh, origin, left, right, ahead, down, 0.22, 0.34, transit_material::kPier);
     }
 }
 
@@ -676,7 +676,7 @@ TrackChunk platformAt(const TramLine& line, const TramStop& stop)
     stand.origin = here.position + (side * (kBallastM + 1.4));
     addBeam(stand.mesh, stand.origin, stand.origin - (along * (0.5 * kPlatformM)),
             stand.origin + (along * (0.5 * kPlatformM)), side, over, 1.4, 0.5,
-            transitMaterial::kPlatform);
+            transit_material::kPlatform);
     stand.radius = kPlatformM;
     return stand;
 }
@@ -715,7 +715,7 @@ std::vector<TrackChunk> buildTrackMeshes(const std::vector<TramLine>& lines)
 
 CpuMesh buildTramMesh()
 {
-    using namespace transitMaterial;  // NOLINT(google-build-using-namespace): the names, just here
+    using namespace transit_material;  // NOLINT(google-build-using-namespace): the names, just here
     CpuMesh    tram;
     const auto put = [&tram](const CpuMesh& part, const Vec3d& at, const Vec3d& half) {
         appendMesh(tram, part, glm::translate(Mat4d(1.0), at) * glm::scale(Mat4d(1.0), half));

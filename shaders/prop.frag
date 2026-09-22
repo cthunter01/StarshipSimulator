@@ -27,7 +27,7 @@ layout(set = 2, binding = 4) uniform sampler2D cloudMap;
 
 layout(location = 0) out vec4 outColor;
 
-// Must match StarshipSimulator::propMaterial.
+// Must match StarshipSimulator::prop_material.
 const uint WOOD = 0u, STAVES = 1u, METAL = 2u, BALL = 3u, STRAW = 4u, TABLE_TOP = 5u;
 
 const vec3 BALLS[4] = vec3[](vec3(0.55, 0.06, 0.04), vec3(0.06, 0.12, 0.45), vec3(0.60, 0.45, 0.04),

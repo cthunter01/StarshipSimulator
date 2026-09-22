@@ -1,9 +1,10 @@
-# GLSL shaders are compiled to SPIR-V at build time with glslc (Arch: pacman -S shaderc).
+# GLSL shaders are compiled to SPIR-V at build time with glslc (Arch: pacman -S shaderc; macOS:
+# brew install shaderc; Windows: the Vulkan SDK, which sets VULKAN_SDK).
 # SDL_GPU creates a Vulkan 1.0 instance, so shaders target Vulkan 1.0 / SPIR-V 1.0.
 # -fpreserve-bindings: the optimizer must not drop unused uniform blocks, because SDL_GPU needs each
 # stage's bindings to be contiguous (a missing block 0 would shift the others).
 
-find_program(STARSHIPSIMULATOR_GLSLC glslc REQUIRED)
+find_program(STARSHIPSIMULATOR_GLSLC glslc HINTS "$ENV{VULKAN_SDK}/bin" "$ENV{VULKAN_SDK}/Bin" REQUIRED)
 
 # StarshipSimulator_add_shaders(<target> OUTPUT_DIR <dir> [INCLUDE_DIRS <dirs...>] SOURCES <files...>)
 # Adds a custom target <target> (part of 'all') that compiles each source (stage from its extension:

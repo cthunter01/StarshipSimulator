@@ -2,17 +2,16 @@
 
 #include <astronomy.h>
 
-#include <charconv>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <expected>
 #include <format>
-#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <system_error>
+
+#include "StarshipSimulator/core/parse_number.h"
 
 namespace StarshipSimulator::astro
 {
@@ -24,19 +23,6 @@ constexpr std::int64_t kMicrosecondsPerDay = 86'400'000'000;
 constexpr std::int64_t kSecondsPerHalfDay  = 43'200;  // J2000 is at noon
 // 2000-01-01; J2000 itself is at 12:00 UT that day.
 constexpr std::chrono::sys_days kJ2000Date{std::chrono::year{2000} / std::chrono::January / 1};
-
-std::optional<int> parseInt(std::string_view text)
-{
-    int               value = 0;
-    const char* const first = std::to_address(text.begin());
-    const char* const last  = std::to_address(text.end());
-    const auto [end, error] = std::from_chars(first, last, value);
-    if (error != std::errc{} || end != last || text.empty())
-    {
-        return std::nullopt;
-    }
-    return value;
-}
 
 }  // namespace
 

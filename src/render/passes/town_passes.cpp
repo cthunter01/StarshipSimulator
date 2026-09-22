@@ -7,21 +7,21 @@
 #include <SDL3/SDL_gpu.h>
 #include <SDL3/SDL_stdinc.h>
 
-#include "StarshipSimulator/core/frustum.h"
+#include "StarshipSimulator/core/Frustum.h"
 #include "StarshipSimulator/core/gpu_abi/uniforms.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/procgen/mesh.h"
-#include "StarshipSimulator/render/gpu_handles.h"
-#include "StarshipSimulator/render/gpu_landscape.h"
-#include "StarshipSimulator/render/gpu_people.h"
-#include "StarshipSimulator/render/gpu_props.h"
-#include "StarshipSimulator/render/gpu_settlements.h"
-#include "StarshipSimulator/render/gpu_transit.h"
+#include "StarshipSimulator/render/GpuHandle.h"
+#include "StarshipSimulator/render/GpuLandscape.h"
+#include "StarshipSimulator/render/GpuPeople.h"
+#include "StarshipSimulator/render/GpuProps.h"
+#include "StarshipSimulator/render/GpuSettlements.h"
+#include "StarshipSimulator/render/GpuTransit.h"
+#include "StarshipSimulator/render/RenderTargets.h"
+#include "StarshipSimulator/render/ShaderLibrary.h"
+#include "StarshipSimulator/render/ShadowMap.h"
 #include "StarshipSimulator/render/passes/habitat_passes.h"
 #include "StarshipSimulator/render/pipeline.h"
-#include "StarshipSimulator/render/render_targets.h"
-#include "StarshipSimulator/render/shader_library.h"
-#include "StarshipSimulator/render/shadow_map.h"
 
 namespace StarshipSimulator
 {

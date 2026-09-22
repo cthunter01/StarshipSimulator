@@ -4,11 +4,11 @@
 #include <cmath>
 #include <cstdint>
 
+#include "StarshipSimulator/core/SplitMix64.h"
 #include "StarshipSimulator/core/astro/astro_time.h"
 #include "StarshipSimulator/core/habitat/day_schedule.h"
 #include "StarshipSimulator/core/math.h"
-#include "StarshipSimulator/core/procgen/noise.h"
-#include "StarshipSimulator/core/rng.h"
+#include "StarshipSimulator/core/procgen/SimplexNoise.h"
 
 namespace StarshipSimulator
 {

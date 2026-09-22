@@ -13,13 +13,13 @@
 #include <utility>
 #include <vector>
 
-#include "StarshipSimulator/core/habitat/habitat_geometry.h"
-#include "StarshipSimulator/core/habitat/landscape.h"
+#include "StarshipSimulator/core/SplitMix64.h"
+#include "StarshipSimulator/core/habitat/HabitatGeometry.h"
+#include "StarshipSimulator/core/habitat/Landscape.h"
 #include "StarshipSimulator/core/math.h"
+#include "StarshipSimulator/core/procgen/SimplexNoise.h"
 #include "StarshipSimulator/core/procgen/mesh.h"
-#include "StarshipSimulator/core/procgen/noise.h"
 #include "StarshipSimulator/core/procgen/terrain_grid.h"
-#include "StarshipSimulator/core/rng.h"
 
 namespace StarshipSimulator
 {
@@ -51,8 +51,8 @@ void addTrunk(CpuMesh& mesh, double r0, double r1, double y0, double y1, int sid
     {
         const double a = 2.0 * kPi * i / sides;
         const Vec3d  outward(std::cos(a), 0.0, std::sin(a));
-        addVertex(mesh, Vec3d(r0 * outward.x, y0, r0 * outward.z), outward, treeMaterial::kBark);
-        addVertex(mesh, Vec3d(r1 * outward.x, y1, r1 * outward.z), outward, treeMaterial::kBark);
+        addVertex(mesh, Vec3d(r0 * outward.x, y0, r0 * outward.z), outward, tree_material::kBark);
+        addVertex(mesh, Vec3d(r1 * outward.x, y1, r1 * outward.z), outward, tree_material::kBark);
     }
     for (std::uint32_t i = 0; i < count; ++i)
     {
@@ -79,10 +79,10 @@ void addCone(CpuMesh& mesh, double radius, double y0, double y1, int sides)
         const double a0 = 2.0 * kPi * i / sides;
         const double a1 = 2.0 * kPi * (i + 1) / sides;
         addVertex(mesh, Vec3d(radius * std::cos(a0), y0, radius * std::sin(a0)),
-                  Vec3d(std::cos(a0), slope, std::sin(a0)), treeMaterial::kLeaves);
-        addVertex(mesh, Vec3d(0.0, y1, 0.0), outward, treeMaterial::kLeaves);
+                  Vec3d(std::cos(a0), slope, std::sin(a0)), tree_material::kLeaves);
+        addVertex(mesh, Vec3d(0.0, y1, 0.0), outward, tree_material::kLeaves);
         addVertex(mesh, Vec3d(radius * std::cos(a1), y0, radius * std::sin(a1)),
-                  Vec3d(std::cos(a1), slope, std::sin(a1)), treeMaterial::kLeaves);
+                  Vec3d(std::cos(a1), slope, std::sin(a1)), tree_material::kLeaves);
     }
     for (std::uint32_t i = 0; i < count; ++i)
     {
@@ -94,12 +94,12 @@ void addCone(CpuMesh& mesh, double radius, double y0, double y1, int sides)
     }
     // The underside, facing down (its own vertices: the rim's normals point out and up).
     const auto centre = static_cast<std::uint32_t>(mesh.vertices.size());
-    addVertex(mesh, Vec3d(0.0, y0, 0.0), Vec3d(0.0, -1.0, 0.0), treeMaterial::kLeaves);
+    addVertex(mesh, Vec3d(0.0, y0, 0.0), Vec3d(0.0, -1.0, 0.0), tree_material::kLeaves);
     for (int i = 0; i < sides; ++i)
     {
         const double a = 2.0 * kPi * i / sides;
         addVertex(mesh, Vec3d(radius * std::cos(a), y0, radius * std::sin(a)),
-                  Vec3d(0.0, -1.0, 0.0), treeMaterial::kLeaves);
+                  Vec3d(0.0, -1.0, 0.0), tree_material::kLeaves);
     }
     for (std::uint32_t i = 0; i < count; ++i)
     {
@@ -161,7 +161,7 @@ void addBlob(CpuMesh& mesh, const Vec3d& centre, const Vec3d& radii, int levels,
         const double wobble = 1.0 + (lumpiness * noise.sample((direction * 1.7) + centre * 3.0));
         const Vec3d  p      = centre + (direction * radii * wobble);
         // Soft foliage shading: normals of the smooth ellipsoid, not of the lumps.
-        addVertex(mesh, p, direction / radii, treeMaterial::kLeaves);
+        addVertex(mesh, p, direction / radii, tree_material::kLeaves);
     }
     for (const auto& [a, b, c] : faces)
     {

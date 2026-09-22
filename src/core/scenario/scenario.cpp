@@ -25,6 +25,7 @@
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
 #include "StarshipSimulator/core/habitat/metrics.h"
 #include "StarshipSimulator/core/habitat/weather.h"
+#include "StarshipSimulator/core/utf8_path.h"
 
 namespace StarshipSimulator
 {
@@ -655,7 +656,7 @@ std::expected<Scenario, ScenarioError> loadScenario(const std::filesystem::path&
     if (!file)
     {
         return std::unexpected(
-            ScenarioError{.message = std::format("cannot open {}", path.string()), .line = 0});
+            ScenarioError{.message = std::format("cannot open {}", utf8String(path)), .line = 0});
     }
     const std::string text((std::istreambuf_iterator<char>(file)),
                            std::istreambuf_iterator<char>());
@@ -663,7 +664,7 @@ std::expected<Scenario, ScenarioError> loadScenario(const std::filesystem::path&
     if (!scenario)
     {
         scenario.error().message =
-            std::format("{}: {}", path.filename().string(), scenario.error().message);
+            std::format("{}: {}", utf8String(path.filename()), scenario.error().message);
     }
     return scenario;
 }
@@ -679,12 +680,12 @@ std::expected<void, std::string> saveScenario(const Scenario&              scena
     std::ofstream file(path, std::ios::binary | std::ios::trunc);
     if (!file)
     {
-        return std::unexpected(std::format("cannot write {}", path.string()));
+        return std::unexpected(std::format("cannot write {}", utf8String(path)));
     }
     file << serializeScenario(scenario);
     if (!file)
     {
-        return std::unexpected(std::format("failed writing {}", path.string()));
+        return std::unexpected(std::format("failed writing {}", utf8String(path)));
     }
     return {};
 }

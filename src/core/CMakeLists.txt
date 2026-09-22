@@ -4,43 +4,45 @@ add_library(StarshipSimulator_core STATIC
     almanac.cpp
     app_options.cpp
     assets/assets.cpp
-    audio/soundscape.cpp
+    audio/Soundscape.cpp
     astro/astro_time.cpp
     astro/ephemeris.cpp
     astro/sky_objects.cpp
     astro/star_catalog.cpp
     camera.cpp
-    frustum.cpp
-    sim_clock.cpp
+    Frustum.cpp
+    parse_number.cpp
+    SimClock.cpp
     tour.cpp
+    utf8_path.cpp
     gpu_abi/color_grade.cpp
     gpu_abi/ground_atlas.cpp
     gpu_abi/spirv_reflect.cpp
     gpu_abi/uniforms.cpp
     habitat/day_schedule.cpp
-    habitat/habitat_geometry.cpp
+    habitat/HabitatGeometry.cpp
     habitat/habitat_spec.cpp
-    habitat/landscape.cpp
-    habitat/meridian_profile.cpp
+    habitat/Landscape.cpp
+    habitat/MeridianProfile.cpp
     habitat/metrics.cpp
     habitat/mirror_optics.cpp
     habitat/weather.cpp
     physics/colliders.cpp
-    physics/player_controller.cpp
-    physics/rotating_frame.cpp
+    physics/PlayerController.cpp
+    physics/RotatingFrame.cpp
     procgen/birds.cpp
     procgen/buildings.cpp
     procgen/clouds.cpp
     procgen/habitat_mesher.cpp
     procgen/hull_mesh.cpp
     procgen/mesh.cpp
-    procgen/noise.cpp
+    procgen/SimplexNoise.cpp
     procgen/people.cpp
     procgen/props.cpp
     procgen/settlements.cpp
     procgen/star_field.cpp
     procgen/terrain_grid.cpp
-    procgen/terrain_lod.cpp
+    procgen/TerrainLod.cpp
     procgen/transit.cpp
     procgen/trees.cpp
     scenario/scenario.cpp)
@@ -55,16 +57,17 @@ target_link_libraries(StarshipSimulator_core
 #   DEPTH_ZERO_TO_ONE: clip-space depth is 0..1, as in Vulkan/SDL_GPU
 target_compile_definitions(StarshipSimulator_core PUBLIC
     GLM_FORCE_XYZW_ONLY GLM_FORCE_EXPLICIT_CTOR GLM_FORCE_DEPTH_ZERO_TO_ONE)
-# Deterministic floating point: no fused multiply-add contraction, so GCC and Clang builds generate
-# identical worlds from the same seed.
-target_compile_options(StarshipSimulator_core PRIVATE -ffp-contract=off)
+# Deterministic floating point: no fused multiply-add contraction, so every compiler generates
+# identical worlds from the same seed. MSVC does not contract under its default /fp:precise.
+target_compile_options(StarshipSimulator_core PRIVATE $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-ffp-contract=off>)
 StarshipSimulator_configure_target(StarshipSimulator_core)
 # Terrain generation evaluates noise tens of millions of times: optimize those files even in Debug
-# builds, or the app would take half a minute to start.
+# builds, or the app would take half a minute to start. (cl takes -O2 too, once /RTC1 is gone: see
+# the top-level CMakeLists.txt.)
 set_source_files_properties(
-    habitat/habitat_geometry.cpp habitat/landscape.cpp habitat/meridian_profile.cpp
-    procgen/birds.cpp procgen/clouds.cpp procgen/noise.cpp procgen/people.cpp procgen/settlements.cpp procgen/terrain_grid.cpp
-    procgen/terrain_lod.cpp
+    habitat/HabitatGeometry.cpp habitat/Landscape.cpp habitat/MeridianProfile.cpp
+    procgen/birds.cpp procgen/clouds.cpp procgen/SimplexNoise.cpp procgen/people.cpp procgen/settlements.cpp procgen/terrain_grid.cpp
+    procgen/TerrainLod.cpp
     procgen/transit.cpp
     procgen/trees.cpp
     PROPERTIES COMPILE_OPTIONS "$<$<CONFIG:Debug>:-O2>")

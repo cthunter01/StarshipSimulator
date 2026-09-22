@@ -5,18 +5,18 @@
 
 #include <SDL3/SDL_gpu.h>
 
-#include "StarshipSimulator/core/frustum.h"
+#include "StarshipSimulator/core/Frustum.h"
 #include "StarshipSimulator/core/gpu_abi/uniforms.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/procgen/star_field.h"
-#include "StarshipSimulator/render/gpu_birds.h"
-#include "StarshipSimulator/render/gpu_handles.h"
-#include "StarshipSimulator/render/gpu_landscape.h"
-#include "StarshipSimulator/render/gpu_settlements.h"
-#include "StarshipSimulator/render/gpu_trees.h"
-#include "StarshipSimulator/render/gpu_world.h"
-#include "StarshipSimulator/render/render_targets.h"
-#include "StarshipSimulator/render/shader_library.h"
+#include "StarshipSimulator/render/GpuBirds.h"
+#include "StarshipSimulator/render/GpuHandle.h"
+#include "StarshipSimulator/render/GpuLandscape.h"
+#include "StarshipSimulator/render/GpuSettlements.h"
+#include "StarshipSimulator/render/GpuTrees.h"
+#include "StarshipSimulator/render/GpuWorld.h"
+#include "StarshipSimulator/render/RenderTargets.h"
+#include "StarshipSimulator/render/ShaderLibrary.h"
 
 // The passes that draw a habitat, in drawing order: stars, terrain, mirrors, then the window glass.
 namespace StarshipSimulator

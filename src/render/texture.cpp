@@ -13,7 +13,7 @@
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_gpu.h>
 
-#include "StarshipSimulator/render/gpu_handles.h"
+#include "StarshipSimulator/render/GpuHandle.h"
 
 namespace StarshipSimulator
 {

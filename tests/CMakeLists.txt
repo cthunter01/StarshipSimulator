@@ -1,36 +1,38 @@
 # Unit tests link the core and physics libraries, so they run anywhere (no window or GPU needed).
 add_executable(StarshipSimulator_tests
-    almanac_test.cpp
-    app_options_test.cpp
-    assets_test.cpp
-    astro_test.cpp
-    birds_test.cpp
-    buildings_test.cpp
-    camera_test.cpp
-    clouds_test.cpp
-    determinism_test.cpp
-    habitat_mesher_test.cpp
-    habitat_test.cpp
-    mesh_test.cpp
-    people_test.cpp
-    physics_test.cpp
-    physics_world_test.cpp
-    procgen_test.cpp
-    scenario_test.cpp
-    settlements_test.cpp
-    sim_clock_test.cpp
-    soundscape_test.cpp
-    spirv_reflect_test.cpp
-    star_catalog_test.cpp
-    terrain_test.cpp
-    tour_test.cpp
-    transit_test.cpp
-    uniforms_test.cpp
-    weather_test.cpp
-    wings_test.cpp)
+    almanac_tests.cpp
+    app_options_tests.cpp
+    assets_tests.cpp
+    astro_tests.cpp
+    birds_tests.cpp
+    buildings_tests.cpp
+    camera_tests.cpp
+    clouds_tests.cpp
+    determinism_tests.cpp
+    habitat_mesher_tests.cpp
+    habitat_tests.cpp
+    mesh_tests.cpp
+    parse_number_tests.cpp
+    people_tests.cpp
+    physics_tests.cpp
+    PhysicsWorldTests.cpp
+    procgen_tests.cpp
+    scenario_tests.cpp
+    settlements_tests.cpp
+    SimClockTests.cpp
+    SoundscapeTests.cpp
+    spirv_reflect_tests.cpp
+    star_catalog_tests.cpp
+    terrain_tests.cpp
+    tour_tests.cpp
+    transit_tests.cpp
+    uniforms_tests.cpp
+    utf8_path_tests.cpp
+    weather_tests.cpp
+    wings_tests.cpp)
 target_link_libraries(StarshipSimulator_tests
     PRIVATE StarshipSimulator::core StarshipSimulator::physics GTest::gtest_main)
-# spirv_reflect_test checks every compiled shader against SDL_GPU's binding rules.
+# spirv_reflect_tests checks every compiled shader against SDL_GPU's binding rules.
 add_dependencies(StarshipSimulator_tests StarshipSimulator_shaders)
 target_compile_definitions(StarshipSimulator_tests PRIVATE
     STARSHIPSIMULATOR_SHADER_DIR="${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders"

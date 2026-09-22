@@ -1,6 +1,6 @@
 #pragma once
 
-#include "StarshipSimulator/core/habitat/habitat_geometry.h"
+#include "StarshipSimulator/core/habitat/HabitatGeometry.h"
 #include "StarshipSimulator/core/procgen/mesh.h"
 
 namespace StarshipSimulator

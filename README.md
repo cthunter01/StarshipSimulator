@@ -64,10 +64,15 @@ pins a whole generated world to a hash, so the file you send someone builds the 
 under either compiler. Next up, M8: more revolved worlds.
 
 ## Requirements
-- Linux with a Vulkan GPU
+- To run it: a GPU with a Vulkan driver, on Linux or Windows. On macOS it builds and passes its tests, but it
+  does not run yet: SDL_GPU draws with Metal there, and the Metal versions of the shaders are still to come
 - CMake 3.28+ and Ninja
-- GCC 14+ or Clang 18+ (C++23)
-- SDL 3.4, GLM 1.0, toml++ 3.4, glslc (shaderc)
+- A C++23 compiler:
+  - Linux: GCC 14+ or Clang 18+
+  - macOS: Xcode 16.3+ or its Command Line Tools (Apple Clang 17+)
+  - Windows: Visual Studio 2022 17.7+ (MSVC) with the "Desktop development with C++" workload
+- glslc (from shaderc, or on Windows the Vulkan SDK), and SDL 3.4, GLM 1.0 and toml++ 3.4, which are downloaded
+  and built when they are not installed
 
 On Arch Linux:
 ```sh
@@ -75,15 +80,25 @@ sudo pacman -S --needed cmake ninja clang sdl3 glm shaderc tomlplusplus
 # optional: Vulkan validation layers (Debug builds), ccache, RenderDoc
 sudo pacman -S --needed vulkan-validation-layers ccache renderdoc
 ```
+On macOS: `brew install cmake ninja shaderc sdl3 glm tomlplusplus`. On Windows: Visual Studio 2022 (it brings
+CMake and Ninja) and the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) for glslc.
 Dear ImGui and Jolt Physics (v5.6.0, built in double precision) are downloaded at configure time; GoogleTest,
 SDL3, GLM and toml++ are used from the system when installed, otherwise downloaded too. The first configure also downloads the sky data (about 52 MB: star catalog,
 Milky Way, Earth and Moon maps) into `build/_downloads/sky`; turn that off with
 `-DSTARSHIPSIMULATOR_DOWNLOAD_SKY_DATA=OFF` (the app then shows placeholder stars). See `data/CREDITS.md`.
 
 ## Build and run
+Linux and macOS:
 ```sh
 cmake --workflow --preset dev          # configure + build + test, Clang Debug
 ./build/clang-debug/bin/StarshipSimulator
+```
+
+Windows, from a **Developer PowerShell for VS** (Ninja needs MSVC's environment; VS Code's CMake Tools and
+Visual Studio set it up themselves):
+```powershell
+cmake --workflow --preset dev-msvc     # configure + build + test, MSVC Debug
+.\build\msvc-debug\bin\StarshipSimulator.exe
 ```
 
 Controls: click the view to capture the mouse (Esc releases it). WASD to move, Shift to run, Space to jump
@@ -93,8 +108,9 @@ G throws a ball (its path is compared with the
 same throw on a planet), E kicks whatever is in front of you, C toggles comfort mode (no Coriolis force on you), mouse wheel sets fly speed, Tab opens
 the habitat editor, I names the star, planet or moon under the crosshair, B toggles binoculars, P pauses time,
 comma and period slow down and speed up time (up to a day per second), F1 toggles the HUD, F5 reloads shaders,
-F12 saves a screenshot to
-`~/.local/share/StarshipSimulator/screenshots/`. Saved habitats go to `~/.local/share/StarshipSimulator/habitats/`.
+F12 saves a screenshot to `screenshots/` in your data folder, and saved habitats go to `habitats/` there. The data
+folder is `~/.local/share/StarshipSimulator/` on Linux, `~/Library/Application Support/StarshipSimulator/` on macOS
+and `%APPDATA%\StarshipSimulator\` on Windows.
 
 Useful options (`--help` lists all):
 ```sh
@@ -114,17 +130,24 @@ StarshipSimulator --capture shot.png --capture-ui     # render, save a PNG, exit
 StarshipSimulator --no-vsync --benchmark              # frame times over a fixed tour (use a Release build)
 ```
 
-| Preset | What it is |
-| --- | --- |
-| `clang-debug`, `clang-release`, `gcc-debug`, `gcc-release` | Everyday builds |
-| `asan` | Clang Debug with AddressSanitizer + UndefinedBehaviorSanitizer |
-| `tsan` | Clang RelWithDebInfo with ThreadSanitizer |
-| `tidy` | Clang Debug running clang-tidy on every file; findings are errors |
-| `coverage` | `cmake --workflow --preset coverage` writes `build/coverage/coverage/html/index.html` |
-| `ci-gcc`, `ci-clang` | Release builds with warnings as errors, as run in CI |
+| Preset | Platforms | What it is |
+| --- | --- | --- |
+| `clang-debug`, `clang-release` | Linux, macOS | Everyday builds (Apple Clang on macOS) |
+| `gcc-debug`, `gcc-release` | Linux | Everyday builds |
+| `msvc-debug`, `msvc-release` | Windows | Everyday builds |
+| `asan` | Linux, macOS | Clang Debug with AddressSanitizer + UndefinedBehaviorSanitizer |
+| `tsan` | Linux, macOS | Clang RelWithDebInfo with ThreadSanitizer |
+| `tidy` | Linux, macOS | Clang Debug running clang-tidy on every file; findings are errors |
+| `coverage` | Linux, macOS | `cmake --workflow --preset coverage` writes `build/coverage/coverage/html/index.html` |
+| `ci-gcc`, `ci-clang`, `ci-msvc` | as their compiler | Release builds with warnings as errors, as run in CI |
 
-Each workflow preset (`dev`, `ci-gcc`, `ci-clang`, `asan`, `tsan`, `tidy`, `coverage`) configures, builds and
-tests in one command. Separate steps: `cmake --preset <p>`, `cmake --build --preset <p>`, `ctest --preset <p>`.
+A preset exists only on the platforms it supports; `cmake --list-presets` shows the ones for this machine.
+Each workflow preset (`dev`, `dev-msvc`, `ci-gcc`, `ci-clang`, `ci-msvc`, `asan`, `tsan`, `tidy`, `coverage`)
+configures, builds and tests in one command. Separate steps: `cmake --preset <p>`, `cmake --build --preset <p>`,
+`ctest --preset <p>`.
+
+CI (GitHub Actions) builds and tests on all three: Linux (`ci-gcc`, `ci-clang`, `asan`, `tidy`), macOS
+(`ci-clang`) and Windows (`ci-msvc`).
 
 ## Code layout
 - `src/core`: habitat geometry, spin physics, procedural generation, scenario files, astronomy (time, positions,

@@ -1,41 +1,25 @@
 #include "StarshipSimulator/core/app_options.h"
 
-#include <charconv>
 #include <cstddef>
 #include <expected>
-#include <filesystem>
 #include <format>
-#include <memory>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <vector>
 
 #include "StarshipSimulator/core/astro/astro_time.h"
 #include "StarshipSimulator/core/astro/ephemeris.h"
 #include "StarshipSimulator/core/habitat/weather.h"
+#include "StarshipSimulator/core/parse_number.h"
+#include "StarshipSimulator/core/utf8_path.h"
 
 namespace StarshipSimulator
 {
 
 namespace
 {
-
-template <typename T>
-std::optional<T> parseNumber(std::string_view text)
-{
-    const char* const first = std::to_address(text.begin());
-    const char* const last  = std::to_address(text.end());
-    T                 value{};
-    const auto [end, error] = std::from_chars(first, last, value);
-    if (error != std::errc{} || end != last || text.empty())
-    {
-        return std::nullopt;
-    }
-    return value;
-}
 
 std::vector<std::string_view> split(std::string_view text, char separator)
 {
@@ -58,8 +42,8 @@ std::expected<WindowSize, std::string> parseWindowSize(std::string_view text)
     const auto parts = split(text, 'x');
     if (parts.size() == 2)
     {
-        const auto width  = parseNumber<int>(parts[0]);
-        const auto height = parseNumber<int>(parts[1]);
+        const auto width  = parseInt(parts[0]);
+        const auto height = parseInt(parts[1]);
         if (width && height && *width > 0 && *height > 0)
         {
             return WindowSize{.width = *width, .height = *height};
@@ -75,7 +59,7 @@ std::expected<CameraPose, std::string> parseCameraPose(std::string_view text)
     std::vector<double> values;
     for (const std::string_view part : parts)
     {
-        const auto value = parseNumber<double>(part);
+        const auto value = parseDouble(part);
         if (!value)
         {
             break;
@@ -111,7 +95,7 @@ std::expected<void, std::string> applySkyOption(AppOptions& options, std::string
     }
     else if (name == "--time-scale")
     {
-        const auto scale = parseNumber<double>(value);
+        const auto scale = parseDouble(value);
         if (!scale || *scale < 0.0 || *scale > 1.0e7)
         {
             return std::unexpected(
@@ -132,7 +116,7 @@ std::expected<void, std::string> applySkyOption(AppOptions& options, std::string
     }
     else if (name == "--fov")
     {
-        const auto fov = parseNumber<double>(value);
+        const auto fov = parseDouble(value);
         if (!fov || *fov < 1.0 || *fov > 120.0)
         {
             return std::unexpected(std::format(
@@ -162,7 +146,7 @@ std::expected<void, std::string> applyShowOption(AppOptions& options, std::strin
     }
     else if (name == "--capture-frames")
     {
-        const auto frames = parseNumber<int>(value);
+        const auto frames = parseInt(value);
         if (!frames || *frames < 1)
         {
             return std::unexpected(
@@ -196,11 +180,11 @@ std::expected<void, std::string> applyValueOption(AppOptions& options, std::stri
     }
     else if (name == "--capture")
     {
-        options.capturePath = std::filesystem::path(value);
+        options.capturePath = pathFromUtf8(value);
     }
     else if (name == "--scenario")
     {
-        options.scenarioPath = std::filesystem::path(value);
+        options.scenarioPath = pathFromUtf8(value);
     }
     else if (name == "--view")
     {
@@ -208,7 +192,7 @@ std::expected<void, std::string> applyValueOption(AppOptions& options, std::stri
     }
     else if (name == "--mirror")
     {
-        const auto angle = parseNumber<double>(value);
+        const auto angle = parseDouble(value);
         if (!angle || *angle < 0.0 || *angle > 180.0)
         {
             return std::unexpected(

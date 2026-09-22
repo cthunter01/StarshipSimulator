@@ -9,8 +9,12 @@
 #include <string_view>
 #include <vector>
 
+// On Windows this supplies the real entry point, which hands main() its arguments in UTF-8 (the C
+// runtime's own would be in the ANSI code page); on Linux and macOS it changes nothing.
+#include <SDL3/SDL_main.h>
+
+#include "Application.h"
 #include "StarshipSimulator/core/app_options.h"
-#include "application.h"
 
 int main(int argc, char* argv[])
 {

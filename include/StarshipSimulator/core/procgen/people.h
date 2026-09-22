@@ -56,7 +56,7 @@ struct CrowdSettings
 
 /// Vertex materials of the person mesh: each is a part of the body, bent about its own joint by
 /// shaders/person.vert.
-namespace personPart
+namespace person_part
 {
 inline constexpr std::uint32_t kHead   = 0;
 inline constexpr std::uint32_t kHair   = 1;
@@ -67,7 +67,7 @@ inline constexpr std::uint32_t kThighL = 5;
 inline constexpr std::uint32_t kThighR = 6;
 inline constexpr std::uint32_t kShinL  = 7;
 inline constexpr std::uint32_t kShinR  = 8;
-}  // namespace personPart
+}  // namespace person_part
 
 /// Where the joints are in the mesh's own frame (metres, y up), for the shader.
 inline constexpr double kPersonHeightM   = 1.75;  // the mesh is built this tall

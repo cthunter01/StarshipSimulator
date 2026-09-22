@@ -11,10 +11,10 @@
 #include <thread>
 #include <vector>
 
-#include "StarshipSimulator/core/habitat/habitat_geometry.h"
+#include "StarshipSimulator/core/habitat/HabitatGeometry.h"
+#include "StarshipSimulator/core/habitat/Landscape.h"
+#include "StarshipSimulator/core/habitat/MeridianProfile.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
-#include "StarshipSimulator/core/habitat/landscape.h"
-#include "StarshipSimulator/core/habitat/meridian_profile.h"
 #include "StarshipSimulator/core/math.h"
 
 namespace StarshipSimulator

@@ -1,0 +1,32 @@
+#pragma once
+
+#include <SDL3/SDL_gpu.h>
+
+#include "StarshipSimulator/render/GpuHandle.h"
+#include "StarshipSimulator/render/ShaderLibrary.h"
+
+namespace StarshipSimulator
+{
+
+/// Maps the linear HDR scene into a display target (the swapchain or a screenshot texture):
+/// exposure, Khronos PBR Neutral tone mapping, the colour grade, and sRGB encoding for UNORM
+/// targets.
+class TonemapPass
+{
+public:
+    TonemapPass(SDL_GPUDevice* device, const ShaderLibrary& shaders,
+                SDL_GPUTextureFormat targetFormat);
+
+    /// grade: 0 = plain, 1 = the full painterly colour grade.
+    void draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, SDL_GPUTexture* hdrScene,
+              float exposure, float grade) const;
+
+private:
+    GpuGraphicsPipeline pipeline_;
+    GpuSampler          sampler_;
+    GpuTexture          gradeLut_;
+    GpuSampler          lutSampler_;
+    bool                encodeSrgb_ = true;
+};
+
+}  // namespace StarshipSimulator

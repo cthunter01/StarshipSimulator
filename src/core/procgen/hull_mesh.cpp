@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <vector>
 
-#include "StarshipSimulator/core/habitat/habitat_geometry.h"
+#include "StarshipSimulator/core/habitat/HabitatGeometry.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/procgen/habitat_mesher.h"

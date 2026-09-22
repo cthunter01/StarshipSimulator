@@ -1,4 +1,4 @@
-// The parts of a person and what they are doing: must match StarshipSimulator::personPart and
+// The parts of a person and what they are doing: must match StarshipSimulator::person_part and
 // StarshipSimulator::Activity (core/procgen/people.h).
 const uint PART_HEAD = 0u, PART_HAIR = 1u, PART_TORSO = 2u;
 const uint PART_ARM_L = 3u, PART_ARM_R = 4u;

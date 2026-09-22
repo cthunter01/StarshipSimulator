@@ -23,7 +23,7 @@ falls back to placeholder stars and plain-coloured Earth and Moon.
 | Astronomy Engine v2.1.19 by Don Cross: positions of the Sun, Moon and planets, Lagrange points, rotation axes, constellations | https://github.com/cosinekitty/astronomy | MIT |
 | stb_image and stb_image_write by Sean Barrett: JPEG/PNG decoding, zlib inflate | https://github.com/nothings/stb | MIT or public domain |
 
-Positions are checked against JPL Horizons (DE441) in `tests/astro_test.cpp`: within one arcminute for the
+Positions are checked against JPL Horizons (DE441) in `tests/astro_tests.cpp`: within one arcminute for the
 Moon, Mars, Jupiter and Earth from 1900 to 2100.
 
 The physics (collisions, the walking character, loose props) is Jolt Physics v5.6.0 by Jorrit Rouwe,

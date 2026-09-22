@@ -1,8 +1,9 @@
 # StarshipSimulator
 
 A walk-around simulator for space habitats (O'Neill cylinders, Bishop rings, starships) under an accurate sky.
-C++23, CMake presets + Ninja, GoogleTest, SDL3 + SDL_GPU (Vulkan), Dear ImGui, Jolt Physics. Linux, GCC and
-Clang.
+C++23, CMake presets + Ninja, GoogleTest, SDL3 + SDL_GPU (Vulkan), Dear ImGui, Jolt Physics. Cross-platform:
+Linux (GCC, Clang), macOS (Apple Clang) and Windows (MSVC). The app runs wherever SDL_GPU has Vulkan (Linux,
+Windows); on macOS it builds and passes its tests, but SDL_GPU there needs Metal shaders, which are not built yet.
 Roadmap and design decisions: `~/.claude/plans/i-want-to-create-compressed-wreath.md` (M0 foundation → M10).
 
 ## Commands
@@ -14,11 +15,17 @@ Roadmap and design decisions: `~/.claude/plans/i-want-to-create-compressed-wreat
 - Before finishing a change, also run: `cmake --workflow --preset tidy` (clang-tidy, warnings are errors),
   `cmake --workflow --preset asan` (AddressSanitizer + UBSan) and `cmake --workflow --preset ci-gcc`
   (GCC-only warnings such as `-Wuseless-cast`)
+- On Windows the presets are `msvc-debug` (workflow `dev-msvc`), `msvc-release` and `ci-msvc`, and cmake must run
+  in a Developer PowerShell for VS (glslc comes from the Vulkan SDK). `tidy`, `asan`, `tsan` and `coverage` exist
+  on Linux and macOS only
 - Formatting is automatic: a Claude Code hook (`.claude/hooks/format-cpp.sh`) runs clang-format on every C/C++
   file right after you edit it. The pre-commit hook and CI also reject unformatted files
 
 Other presets: `clang-release`, `gcc-debug`, `gcc-release`, `tsan`, `coverage`, `ci-gcc`, `ci-clang`.
-Each builds into `build/<preset>/`; never edit anything under `build/`.
+Each builds into `build/<preset>/`; never edit anything under `build/`. A preset is only available on the
+platforms it supports (`gcc-*`: Linux; `clang-*`: Linux and macOS; `msvc-*`: Windows); `cmake --list-presets`
+shows this machine's. CI (`.github/workflows/ci.yml`) runs `ci-gcc`, `ci-clang`, `asan` and `tidy` on Linux,
+`ci-clang` on macOS and `ci-msvc` on Windows, and checks formatting.
 
 ## Checking visuals yourself
 The app can render and save a screenshot without interaction, then exit:
@@ -67,7 +74,7 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
   physics or render includes**: the `layering` test (`cmake/CheckLayering.cmake`) fails otherwise
   - `habitat/`: `OneillCylinderSpec` (the shareable description), `metrics` (spin, gravity, air, hull strength),
     `MeridianProfile` (the revolved cross-section), `HabitatGeometry` (regions, terrain, ground queries, water,
-    forest density), `landscape` (rivers, lakes, shore shaping, woodland), `mirror_optics` (where the sun
+    forest density), `Landscape` (rivers, lakes, shore shaping, woodland), `mirror_optics` (where the sun
     appears, day/night, which beam lights a point), `day_schedule` (mirror angle by local time),
     `weather` (`ClimateSpec`, `weatherAt`: cloud, rain, wetness, mist, wind and the season as a smooth function
     of time, never simulated or remembered, so two people at the same moment see the same sky; `seasonalDay`
@@ -76,7 +83,7 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
     `tourAt` gives the eye, the angles and the caption at a moment). Stops hold a viewpoint, a
     caption, how long the move to it takes and how long it is held, and may set the mirror angle,
     the weather or the time scale. Every caption and every distance is worked out from the habitat
-    (the tours must also fit a 250 m cylinder, which `tour_test` checks), and
+    (the tours must also fit a 250 m cylinder, which `tour_tests` checks), and
     `place(geometry, z, theta, height)` puts a stop that many metres above the floor -- heights are
     positive, the radius shrinks -- nudging it to the nearest open ground so no trunk stands in
     the frame
@@ -94,7 +101,7 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
     aerofoil in the habitat's air (`airDensityAt` in `habitat/metrics`): it glides at one gravity but only
     climbs on muscle power up near the axis, which is the whole point of the place
   - `procgen/`: deterministic noise, `terrain_grid` (the valley floor and endcaps sampled into a height field
-    and land-cover map, the GPU's source), `terrain_lod` (CDLOD quadtree: patches and morph ranges),
+    and land-cover map, the GPU's source), `TerrainLod` (CDLOD quadtree: patches and morph ranges),
     `trees` (procedural species meshes, planting in tiles), `habitat_mesher` (chunked meshes; the app
     meshes only the glass and end walls, the landscape pass draws the land), `hull_mesh` (the outside, for the
     partner cylinder, and `partnerTransform`), placeholder star field, mesh primitives,
@@ -125,7 +132,8 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
     line for the gallery;
     `gpu_abi/`: uniform structs, SPIR-V reflection, `color_grade` (the grading LUT),
     `ground_atlas` (the towns' ground maps packed for the landscape shader); plus camera, frustum, sim
-    clock, app options
+    clock, app options, `parse_number` (`parseInt`/`parseDouble`: whole-text, locale-free; Apple's libc++ has
+    no floating-point `std::from_chars`, so it falls back to `strtod` there) and `utf8_path` (see Conventions)
 - `physics` (`StarshipSimulator_physics`): `PhysicsWorld`, Jolt Physics v5.6.0 in double precision behind a
   pimpl (Jolt is linked PRIVATE: its target exports `-mavx2` and its config defines). Jolt's gravity is
   zero: the `SpinFrame` step listener gives moving bodies the centrifugal kick and turns their velocity for
@@ -176,22 +184,41 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
   `include/clouds.glsl` the cloud deck (its map, cover, density and the shade it casts) and
   `include/clouds_shell.glsl` the stand-in cylinder's radius (keep `SHELL_SEGMENTS` in step with `CloudPass`);
   `include/landscape.glsl` the height field and terrain shadow march, `include/shadow.glsl` the tree shadow
-  lookup, `include/people.glsl` which part of a body a vertex belongs to (must match `personPart`),
+  lookup, `include/people.glsl` which part of a body a vertex belongs to (must match `person_part`),
   `include/terrain_colors.glsl` the fields, meadows, shore and town colours, `include/lit.glsl` the
   light on buildings and props (hill and shadow-map shadows, lights at night), `include/town_ground.glsl`
   the ground-map lookup (take screen derivatives before calling: it samples in divergent control flow)
 - `data/presets/*.toml`: scenario presets, copied to `build/<preset>/bin/data` at build time
-- `tests/`: GoogleTest files, named `*_test.cpp`, all in `StarshipSimulator_tests`
+- `tests/`: GoogleTest files, all in `StarshipSimulator_tests` (a class's tests: `MyClassTests.cpp`, e.g.
+  `SimClockTests.cpp`; other tests: `*_tests.cpp`)
 - `cmake/ProjectOptions.cmake`: `StarshipSimulator_configure_target()` (warnings, sanitizers, coverage, tidy)
 - `cmake/Dependencies.cmake`: third-party libraries via FetchContent (installed packages win)
 
 ## Conventions
 - Headers are `.h` (never `.hpp`) and use `#pragma once`
+- A header devoted to one class is named exactly after the class, including capitalization, and so is its source:
+  `class HabitatGeometry` lives in `include/StarshipSimulator/core/habitat/HabitatGeometry.h` and
+  `src/core/habitat/HabitatGeometry.cpp`, and tests of it alone in `tests/HabitatGeometryTests.cpp`. Headers that
+  gather several types or free functions keep a snake_case topic name (`camera.h`, `settlements.h`, the
+  `passes/*_passes.h` groups of small pass classes)
+- Names (clang-tidy's `readability-identifier-naming` enforces them): types, enum constants and template
+  parameters `CamelCase`; functions, variables and members `camelBack`, private and protected members with a
+  trailing `_`; constants (`constexpr`, and `static const` including function-local caches) `kCamelCase`;
+  mutable statics `s_name`, mutable globals `g_name`; namespaces `lower_case`, except `StarshipSimulator` itself
 - Code lives in `namespace StarshipSimulator`; project includes use quotes: `#include "StarshipSimulator/core/camera.h"`
 - Every new target of ours must call `StarshipSimulator_configure_target(<target>)`; third-party targets must not
 - New source files go into the relevant `CMakeLists.txt`; new tests go into `tests/CMakeLists.txt`; new shaders
   into `shaders/CMakeLists.txt`
-- Warnings are part of the build: code must compile cleanly with `-Werror` under both GCC and Clang
+- Warnings are part of the build: code must compile cleanly with `-Werror` under GCC and Clang and with `/WX`
+  under MSVC
+- Code must build and pass its tests on Linux, macOS and Windows (CI runs all three). Use the standard library
+  (`<filesystem>`, `<thread>`, `<chrono>`) over POSIX or Win32 APIs; when an OS API is unavoidable, keep it in one
+  source file behind an `#ifdef _WIN32` / `__APPLE__` / `__linux__` split, with a branch for each platform. A
+  runtime check through SDL (`SDL_GetPlatform()`) is fine in code that already uses SDL
+- Text is UTF-8 everywhere: SDL, ImGui, command-line arguments (SDL's main converts them on Windows) and our
+  messages. Convert paths with `pathFromUtf8` / `utf8String` (`core/utf8_path.h`), never
+  `std::filesystem::path(const char*)` or `path::string()`, which use the ANSI code page on Windows. Numbers
+  read from text go through `parseInt` / `parseDouble` (`core/parse_number.h`)
 - Math: use the aliases in `core/math.h` (`Vec3d`, `Mat4f`, ...), never raw `glm::` types. GLM is configured
   with `GLM_FORCE_EXPLICIT_CTOR`, so double → float conversions must be explicit
 - Habitat frame: spin axis +Z, the Sun toward +Z; window i is centred on angle i * 2pi/strips, land strip i halfway
@@ -200,20 +227,24 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
   frame; shaders get only that matrix (never times). Simulated time (`SimTime`) is separate from the spin, which
   always runs in real time
 - Determinism: procedural generation uses our own `SplitMix64`/`SimplexNoise` (never `std::` distributions) and
-  core builds with `-ffp-contract=off`; `buildHabitatMeshes` output must not depend on the thread count.
+  core builds with `-ffp-contract=off` (MSVC does not contract under its default `/fp:precise`);
+  `buildHabitatMeshes` output must not depend on the thread count. Nothing generated may depend on what a
+  standard library leaves to the implementation: the order `std::sort` leaves equal elements in (break ties),
+  `unordered_*` iteration order, `std::hash`, `std::shuffle`.
   **One random draw to a statement**: C++ does not say which argument of a call (or which operand of
   `+`) is worked out first, so `f(rng.uniform(), rng.uniform())` hands the two values over in
   whichever order the compiler chose, and the same habitat file then grows a different town under a
-  different compiler. Put each draw in its own named variable first. `determinism_test` hashes a
-  whole generated world and is checked against both GCC and Clang; when generation changes on
-  purpose, bump `Scenario::kGeneratorVersion` and record the new hash
+  different compiler. Put each draw in its own named variable first. `determinism_tests` hashes a
+  whole generated world against one value for every compiler and standard library CI runs (GCC and
+  Clang with libstdc++, Apple Clang with libc++, MSVC); when generation changes on purpose, bump
+  `Scenario::kGeneratorVersion` and record the new hash
 - Precision: world positions are `double`. The GPU only sees camera-relative `float` data (compute
   `position - camera` in double, then convert). Depth is reverse-Z with an infinite far plane: clear to 0,
   compare `GREATER`
 - Logging: `core/log.h` (`log::info/warn/error`, std::format). No printf-style varargs anywhere: for ImGui text
-  use `ui::text/field/textWrapped(std::format(...))` from `render/imgui_layer.h`, never `ImGui::Text("%...")`
+  use `ui::text/field/textWrapped(std::format(...))` from `render/ImGuiLayer.h`, never `ImGui::Text("%...")`
   (the one exception is Jolt's `Trace` callback, which only logs its format string)
-- `SDL_Event` is a union: read it only inside `SdlInput::handleEvent` (`src/app/sdl_input.cpp`, NOLINT region)
+- `SDL_Event` is a union: read it only inside `SdlInput::handleEvent` (`src/app/SdlInput.cpp`, NOLINT region)
 - SDL_GPU create-info structs use designated initializers naming only the fields that matter (the render target
   disables the missing-field warning for this)
 

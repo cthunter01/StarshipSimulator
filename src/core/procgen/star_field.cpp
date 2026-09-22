@@ -6,8 +6,8 @@
 #include <cstdint>
 #include <vector>
 
+#include "StarshipSimulator/core/SplitMix64.h"
 #include "StarshipSimulator/core/math.h"
-#include "StarshipSimulator/core/rng.h"
 
 namespace StarshipSimulator
 {

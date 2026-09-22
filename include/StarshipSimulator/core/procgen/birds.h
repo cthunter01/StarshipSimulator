@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <vector>
 
-#include "StarshipSimulator/core/habitat/habitat_geometry.h"
+#include "StarshipSimulator/core/habitat/HabitatGeometry.h"
 #include "StarshipSimulator/core/math.h"
 
 // Birds over the valleys. Flocks wheel above fixed places on the floor, so the same habitat at the

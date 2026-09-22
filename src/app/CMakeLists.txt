@@ -1,9 +1,9 @@
 # The StarshipSimulator executable. Shaders are found next to it (bin/shaders).
 add_executable(StarshipSimulator
-    application.cpp
+    Application.cpp
     hud.cpp
     main.cpp
-    sdl_input.cpp
+    SdlInput.cpp
     sky_loader.cpp)
 target_link_libraries(StarshipSimulator
     PRIVATE StarshipSimulator::render StarshipSimulator::physics StarshipSimulator::audio)

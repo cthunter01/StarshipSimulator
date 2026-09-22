@@ -1,27 +1,27 @@
 # The SDL_GPU renderer: device, shaders, render targets, passes and the ImGui layer.
 add_library(StarshipSimulator_render STATIC
-    dynamic_buffer.cpp
-    gpu_birds.cpp
-    gpu_device.cpp
-    gpu_landscape.cpp
-    gpu_people.cpp
-    gpu_props.cpp
-    gpu_settlements.cpp
-    gpu_transit.cpp
-    gpu_trees.cpp
-    gpu_world.cpp
-    imgui_layer.cpp
+    DynamicBuffer.cpp
+    GpuBirds.cpp
+    GpuDevice.cpp
+    GpuLandscape.cpp
+    GpuPeople.cpp
+    GpuProps.cpp
+    GpuSettlements.cpp
+    GpuTransit.cpp
+    GpuTrees.cpp
+    GpuWorld.cpp
+    ImGuiLayer.cpp
     pipeline.cpp
-    render_targets.cpp
-    renderer.cpp
-    shader_library.cpp
-    shadow_map.cpp
+    Renderer.cpp
+    RenderTargets.cpp
+    ShaderLibrary.cpp
+    ShadowMap.cpp
     texture.cpp
     upload.cpp
     passes/habitat_passes.cpp
-    passes/marker_pass.cpp
+    passes/MarkerPass.cpp
     passes/sky_passes.cpp
-    passes/tonemap_pass.cpp
+    passes/TonemapPass.cpp
     passes/town_passes.cpp)
 add_library(StarshipSimulator::render ALIAS StarshipSimulator_render)
 target_link_libraries(StarshipSimulator_render PUBLIC StarshipSimulator::core SDL3::SDL3 StarshipSimulator_imgui)
@@ -31,4 +31,4 @@ StarshipSimulator_configure_target(StarshipSimulator_render)
 # that matter; the rest are zero, which is SDL's documented default.
 target_compile_options(StarshipSimulator_render PRIVATE
     $<$<CXX_COMPILER_ID:GNU>:-Wno-missing-field-initializers>
-    $<$<CXX_COMPILER_ID:Clang>:-Wno-missing-designated-field-initializers>)
+    $<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wno-missing-designated-field-initializers>)

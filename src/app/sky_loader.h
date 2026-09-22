@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "StarshipSimulator/core/astro/star_catalog.h"
-#include "StarshipSimulator/render/renderer.h"
+#include "StarshipSimulator/render/Renderer.h"
 
 namespace StarshipSimulator
 {

@@ -11,11 +11,11 @@
 #include <utility>
 #include <vector>
 
+#include "StarshipSimulator/core/SplitMix64.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/physics/colliders.h"
 #include "StarshipSimulator/core/procgen/mesh.h"
 #include "StarshipSimulator/core/procgen/settlements.h"
-#include "StarshipSimulator/core/rng.h"
 
 namespace StarshipSimulator
 {
@@ -23,17 +23,17 @@ namespace StarshipSimulator
 namespace
 {
 
-using buildingMaterial::kAwning;
-using buildingMaterial::kFlatRoof;
-using buildingMaterial::kFoliage;
-using buildingMaterial::kLampGlass;
-using buildingMaterial::kMetal;
-using buildingMaterial::kRoofTiles;
-using buildingMaterial::kSoffit;
-using buildingMaterial::kStone;
-using buildingMaterial::kWall;
-using buildingMaterial::kWater;
-using buildingMaterial::kWood;
+using building_material::kAwning;
+using building_material::kFlatRoof;
+using building_material::kFoliage;
+using building_material::kLampGlass;
+using building_material::kMetal;
+using building_material::kRoofTiles;
+using building_material::kSoffit;
+using building_material::kStone;
+using building_material::kWall;
+using building_material::kWater;
+using building_material::kWood;
 
 constexpr double kEaveM          = 0.35;  // roofs overhang the walls
 constexpr double kParapetM       = 0.6;   // around flat roofs
@@ -199,18 +199,18 @@ struct RoofShape
 RoofShape roofShape(const Building& b)
 {
     RoofShape    roof;
-    const double H      = b.wallHeight();
-    const double t      = std::tan(degreesToRadians(b.roofPitchDeg));
-    const bool   alongX = b.halfSize.x >= b.halfSize.y;
-    const double L      = std::max(b.halfSize.x, b.halfSize.y);
-    const double S      = std::min(b.halfSize.x, b.halfSize.y);
-    const Vec3d  r      = alongX ? Vec3d(1.0, 0.0, 0.0) : Vec3d(0.0, 0.0, 1.0);
-    const Vec3d  c      = alongX ? Vec3d(0.0, 0.0, 1.0) : Vec3d(1.0, 0.0, 0.0);
-    const auto   at     = [&](double along, double across, double y) {
+    const double wall      = b.wallHeight();
+    const double t         = std::tan(degreesToRadians(b.roofPitchDeg));
+    const bool   alongX    = b.halfSize.x >= b.halfSize.y;
+    const double longHalf  = std::max(b.halfSize.x, b.halfSize.y);
+    const double shortHalf = std::min(b.halfSize.x, b.halfSize.y);
+    const Vec3d  r         = alongX ? Vec3d(1.0, 0.0, 0.0) : Vec3d(0.0, 0.0, 1.0);
+    const Vec3d  c         = alongX ? Vec3d(0.0, 0.0, 1.0) : Vec3d(1.0, 0.0, 0.0);
+    const auto   at        = [&](double along, double across, double y) {
         return (r * along) + (c * across) + Vec3d(0.0, y, 0.0);
     };
-    const double yEave  = H - (kEaveM * t);
-    const double yRidge = H + (S * t);
+    const double yEave  = wall - (kEaveM * t);
+    const double yRidge = wall + (shortHalf * t);
     const auto   add    = [&](std::array<Vec3d, 4> q, bool triangle, const Vec3d& facing,
                               const Vec3d& eave) {
         roof.quads.push_back(q);
@@ -225,29 +225,31 @@ RoofShape roofShape(const Building& b)
 
     if (b.roof == RoofKind::Gable)
     {
-        const double end = L + kEaveM;
+        const double end = longHalf + kEaveM;
         for (const double side : {-1.0, 1.0})
         {
-            add({at(-end, side * (S + kEaveM), yEave), at(end, side * (S + kEaveM), yEave),
-                 at(end, 0.0, yRidge), at(-end, 0.0, yRidge)},
+            add({at(-end, side * (shortHalf + kEaveM), yEave),
+                 at(end, side * (shortHalf + kEaveM), yEave), at(end, 0.0, yRidge),
+                 at(-end, 0.0, yRidge)},
                 false, (c * side) + kUp, r);
-            roof.gables.push_back(
-                {at(side * L, -S, H), at(side * L, S, H), at(side * L, 0.0, yRidge)});
+            roof.gables.push_back({at(side * longHalf, -shortHalf, wall),
+                                   at(side * longHalf, shortHalf, wall),
+                                   at(side * longHalf, 0.0, yRidge)});
             roof.gableFacing.push_back(r * side);
         }
         return roof;
     }
     // Hip roofs, and pyramids when the footprint is square.
-    const double ridge = b.roof == RoofKind::Pyramid ? 0.0 : std::max(L - S, 0.0);
-    const double peak  = b.roof == RoofKind::Pyramid ? H + (S * t) : yRidge;
+    const double ridge = b.roof == RoofKind::Pyramid ? 0.0 : std::max(longHalf - shortHalf, 0.0);
+    const double peak  = b.roof == RoofKind::Pyramid ? wall + (shortHalf * t) : yRidge;
     for (const double side : {-1.0, 1.0})
     {
-        add({at(-(L + kEaveM), side * (S + kEaveM), yEave),
-             at(L + kEaveM, side * (S + kEaveM), yEave), at(ridge, 0.0, peak),
+        add({at(-(longHalf + kEaveM), side * (shortHalf + kEaveM), yEave),
+             at(longHalf + kEaveM, side * (shortHalf + kEaveM), yEave), at(ridge, 0.0, peak),
              at(-ridge, 0.0, peak)},
             ridge <= 0.0, (c * side) + kUp, r);
-        add({at(side * (L + kEaveM), -(S + kEaveM), yEave),
-             at(side * (L + kEaveM), S + kEaveM, yEave), at(side * ridge, 0.0, peak),
+        add({at(side * (longHalf + kEaveM), -(shortHalf + kEaveM), yEave),
+             at(side * (longHalf + kEaveM), shortHalf + kEaveM, yEave), at(side * ridge, 0.0, peak),
              at(side * ridge, 0.0, peak)},
             true, (r * side) + kUp, c);
     }
@@ -316,11 +318,11 @@ void writeWall(MeshWriter& writer, const Vec3d& a, const Vec3d& b, double y0, do
 
 void writeFlatRoof(MeshWriter& writer, const Building& b)
 {
-    const double        H      = b.wallHeight();
+    const double        eaves  = b.wallHeight();
     const double        x      = b.halfSize.x - kParapetInsetM;
     const double        z      = b.halfSize.y - kParapetInsetM;
-    const double        floor  = H + 0.1;
-    const double        top    = H + kParapetM;
+    const double        floor  = eaves + 0.1;
+    const double        top    = eaves + kParapetM;
     const std::uint32_t roof   = packFacade({.surface = kFlatRoof, .colour = b.roofColour});
     const std::uint32_t coping = packFacade({.surface = kStone});
     writer.quad(Vec3d(-x, floor, -z), Vec3d(x, floor, -z), Vec3d(x, floor, z), Vec3d(-x, floor, z),
@@ -400,12 +402,13 @@ void writeBuilding(MeshWriter& writer, const Building& b)
     if (b.use != BuildingUse::Tower && random.uniform() < 0.45)
     {
         // A chimney through the roof.
-        const double t       = std::tan(degreesToRadians(b.roofPitchDeg));
-        const double S       = std::min(hx, hz);
-        const Vec3d  spot    = hx >= hz ? Vec3d(random.uniform(-0.6, 0.6) * (hx - S), 0.0, 0.3 * S)
-                                        : Vec3d(0.3 * S, 0.0, random.uniform(-0.6, 0.6) * (hz - S));
+        const double t         = std::tan(degreesToRadians(b.roofPitchDeg));
+        const double shortHalf = std::min(hx, hz);
+        const Vec3d  spot =
+            hx >= hz ? Vec3d(random.uniform(-0.6, 0.6) * (hx - shortHalf), 0.0, 0.3 * shortHalf)
+                     : Vec3d(0.3 * shortHalf, 0.0, random.uniform(-0.6, 0.6) * (hz - shortHalf));
         const double bottom  = b.wallHeight() - 0.3;
-        const double peak    = b.wallHeight() + (S * t) + 0.6;
+        const double peak    = b.wallHeight() + (shortHalf * t) + 0.6;
         Facade       chimney = plain;
         chimney.windows      = 0;
         writer.box(spot + Vec3d(0.0, 0.5 * (bottom + peak), 0.0),

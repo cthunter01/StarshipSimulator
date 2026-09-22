@@ -54,7 +54,7 @@ struct PropInfo
 [[nodiscard]] const PropInfo& propInfo(PropKind kind);
 
 /// Vertex materials of prop meshes (Vertex::material).
-namespace propMaterial
+namespace prop_material
 {
 inline constexpr std::uint32_t kWood     = 0;  // crate planks
 inline constexpr std::uint32_t kStaves   = 1;  // barrel
@@ -62,7 +62,7 @@ inline constexpr std::uint32_t kMetal    = 2;  // hoops, chair and table frames
 inline constexpr std::uint32_t kBall     = 3;  // coloured panels
 inline constexpr std::uint32_t kStraw    = 4;
 inline constexpr std::uint32_t kTableTop = 5;
-}  // namespace propMaterial
+}  // namespace prop_material
 
 [[nodiscard]] CpuMesh makePropMesh(PropKind kind);
 

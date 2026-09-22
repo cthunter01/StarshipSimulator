@@ -7,11 +7,11 @@
 
 #include "StarshipSimulator/core/astro/ephemeris.h"
 #include "StarshipSimulator/core/camera.h"
-#include "StarshipSimulator/core/habitat/habitat_geometry.h"
+#include "StarshipSimulator/core/habitat/HabitatGeometry.h"
 #include "StarshipSimulator/core/habitat/weather.h"
 #include "StarshipSimulator/core/math.h"
+#include "StarshipSimulator/core/procgen/TerrainLod.h"
 #include "StarshipSimulator/core/procgen/terrain_grid.h"
-#include "StarshipSimulator/core/procgen/terrain_lod.h"
 
 // C++ mirrors of the std140 uniform blocks in shaders/include/*.glsl. Only vec4 and mat4 members
 // (and arrays of them), so C++ and GLSL layouts agree without padding rules. Keep both sides in

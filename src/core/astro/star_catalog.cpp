@@ -2,23 +2,22 @@
 
 #include <algorithm>
 #include <array>
-#include <charconv>
 #include <cmath>
 #include <cstddef>
 #include <expected>
 #include <filesystem>
 #include <format>
-#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <utility>
 #include <vector>
 
 #include "StarshipSimulator/core/assets/assets.h"
 #include "StarshipSimulator/core/math.h"
+#include "StarshipSimulator/core/parse_number.h"
 #include "StarshipSimulator/core/procgen/star_field.h"
+#include "StarshipSimulator/core/utf8_path.h"
 
 namespace StarshipSimulator::astro
 {
@@ -219,20 +218,6 @@ void splitCsv(std::string_view line, std::vector<std::string_view>& fields)
     }
 }
 
-template <typename T>
-std::optional<T> parseNumber(std::string_view text)
-{
-    const char* const first = std::to_address(text.begin());
-    const char* const last  = std::to_address(text.end());
-    T                 value{};
-    const auto [end, error] = std::from_chars(first, last, value);
-    if (text.empty() || error != std::errc{} || end != last)
-    {
-        return std::nullopt;
-    }
-    return value;
-}
-
 // The HYG columns we read, as indices into kColumnNames.
 constexpr std::size_t kId          = 0;
 constexpr std::size_t kHip         = 1;
@@ -257,23 +242,23 @@ std::optional<CatalogStar> readStar(const std::vector<std::string_view>&        
                                     double                                       magnitudeLimit)
 {
     const auto field     = [&](std::size_t column) { return fields[columns.at(column)]; };
-    const auto magnitude = parseNumber<double>(field(kMag));
-    const auto ra        = parseNumber<double>(field(kRa));
-    const auto dec       = parseNumber<double>(field(kDec));
-    const auto distance  = parseNumber<double>(field(kDist));
+    const auto magnitude = parseDouble(field(kMag));
+    const auto ra        = parseDouble(field(kRa));
+    const auto dec       = parseDouble(field(kDec));
+    const auto distance  = parseDouble(field(kDist));
     if (!magnitude || !ra || !dec || *magnitude > magnitudeLimit || (distance && *distance <= 0.0))
     {
         return std::nullopt;  // distance 0 is the Sun
     }
     const double alpha = *ra * (kPi / 12.0);
     const double delta = degreesToRadians(*dec);
-    const int    hip   = parseNumber<int>(field(kHip)).value_or(0);
+    const int    hip   = parseInt(field(kHip)).value_or(0);
 
     CatalogStar star;
     star.direction  = Vec3d(std::cos(delta) * std::cos(alpha), std::cos(delta) * std::sin(alpha),
                             std::sin(delta));
     star.magnitude  = *magnitude;
-    star.colorIndex = parseNumber<double>(field(kCi)).value_or(0.65);
+    star.colorIndex = parseDouble(field(kCi)).value_or(0.65);
     star.distanceParsecs = distance && *distance < kUnknownDistanceParsecs ? *distance : 0.0;
     star.hip             = hip;
     star.properName      = std::string(field(kProper));
@@ -403,7 +388,7 @@ std::expected<StarCatalog, std::string> loadHygCatalog(const std::filesystem::pa
         bytes = assets::gunzip(*bytes);
         if (!bytes)
         {
-            return std::unexpected(std::format("{}: {}", path.string(), bytes.error()));
+            return std::unexpected(std::format("{}: {}", utf8String(path), bytes.error()));
         }
     }
     const std::string_view text(

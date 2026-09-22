@@ -11,8 +11,8 @@
 #include <SDL3/SDL_stdinc.h>
 
 #include "StarshipSimulator/core/procgen/mesh.h"
-#include "StarshipSimulator/render/gpu_handles.h"
-#include "StarshipSimulator/render/render_targets.h"
+#include "StarshipSimulator/render/GpuHandle.h"
+#include "StarshipSimulator/render/RenderTargets.h"
 
 namespace StarshipSimulator
 {

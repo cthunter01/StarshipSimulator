@@ -27,38 +27,38 @@ constexpr std::uint32_t kMagic      = 0x07230203U;
 constexpr std::size_t   kHeaderSize = 5;  // words
 constexpr std::uint32_t kMaxIdBound = 1U << 22U;
 
-constexpr std::uint32_t OpName             = 5;
-constexpr std::uint32_t OpEntryPoint       = 15;
-constexpr std::uint32_t OpExecutionMode    = 16;
-constexpr std::uint32_t OpTypeImage        = 25;
-constexpr std::uint32_t OpTypeSampler      = 26;
-constexpr std::uint32_t OpTypeSampledImage = 27;
-constexpr std::uint32_t OpTypeArray        = 28;
-constexpr std::uint32_t OpTypeRuntimeArray = 29;
-constexpr std::uint32_t OpTypeStruct       = 30;
-constexpr std::uint32_t OpTypePointer      = 32;
-constexpr std::uint32_t OpVariable         = 59;
-constexpr std::uint32_t OpDecorate         = 71;
-constexpr std::uint32_t OpMemberDecorate   = 72;
+constexpr std::uint32_t kOpName             = 5;
+constexpr std::uint32_t kOpEntryPoint       = 15;
+constexpr std::uint32_t kOpExecutionMode    = 16;
+constexpr std::uint32_t kOpTypeImage        = 25;
+constexpr std::uint32_t kOpTypeSampler      = 26;
+constexpr std::uint32_t kOpTypeSampledImage = 27;
+constexpr std::uint32_t kOpTypeArray        = 28;
+constexpr std::uint32_t kOpTypeRuntimeArray = 29;
+constexpr std::uint32_t kOpTypeStruct       = 30;
+constexpr std::uint32_t kOpTypePointer      = 32;
+constexpr std::uint32_t kOpVariable         = 59;
+constexpr std::uint32_t kOpDecorate         = 71;
+constexpr std::uint32_t kOpMemberDecorate   = 72;
 
-constexpr std::uint32_t DecorationBlock         = 2;
-constexpr std::uint32_t DecorationBufferBlock   = 3;
-constexpr std::uint32_t DecorationNonWritable   = 24;
-constexpr std::uint32_t DecorationBinding       = 33;
-constexpr std::uint32_t DecorationDescriptorSet = 34;
+constexpr std::uint32_t kDecorationBlock         = 2;
+constexpr std::uint32_t kDecorationBufferBlock   = 3;
+constexpr std::uint32_t kDecorationNonWritable   = 24;
+constexpr std::uint32_t kDecorationBinding       = 33;
+constexpr std::uint32_t kDecorationDescriptorSet = 34;
 
-constexpr std::uint32_t StorageClassUniformConstant = 0;
-constexpr std::uint32_t StorageClassUniform         = 2;
-constexpr std::uint32_t StorageClassPushConstant    = 9;
-constexpr std::uint32_t StorageClassStorageBuffer   = 12;
+constexpr std::uint32_t kStorageClassUniformConstant = 0;
+constexpr std::uint32_t kStorageClassUniform         = 2;
+constexpr std::uint32_t kStorageClassPushConstant    = 9;
+constexpr std::uint32_t kStorageClassStorageBuffer   = 12;
 
-constexpr std::uint32_t ExecutionModelVertex    = 0;
-constexpr std::uint32_t ExecutionModelFragment  = 4;
-constexpr std::uint32_t ExecutionModelGLCompute = 5;
-constexpr std::uint32_t ExecutionModeLocalSize  = 17;
+constexpr std::uint32_t kExecutionModelVertex    = 0;
+constexpr std::uint32_t kExecutionModelFragment  = 4;
+constexpr std::uint32_t kExecutionModelGLCompute = 5;
+constexpr std::uint32_t kExecutionModeLocalSize  = 17;
 
-constexpr std::uint32_t ImageSampledWithSampler = 1;
-constexpr std::uint32_t ImageStorage            = 2;
+constexpr std::uint32_t kImageSampledWithSampler = 1;
+constexpr std::uint32_t kImageStorage            = 2;
 }  // namespace spv
 
 /// Everything we learn about one SPIR-V id.
@@ -111,11 +111,11 @@ std::expected<ShaderStage, std::string> stageFromModel(std::uint32_t model)
 {
     switch (model)
     {
-        case spv::ExecutionModelVertex:
+        case spv::kExecutionModelVertex:
             return ShaderStage::Vertex;
-        case spv::ExecutionModelFragment:
+        case spv::kExecutionModelFragment:
             return ShaderStage::Fragment;
-        case spv::ExecutionModelGLCompute:
+        case spv::kExecutionModelGLCompute:
             return ShaderStage::Compute;
         default:
             return std::unexpected(std::format("unsupported execution model {}", model));
@@ -127,22 +127,22 @@ void applyDecoration(IdInfo& info, std::uint32_t decoration,
 {
     switch (decoration)
     {
-        case spv::DecorationBlock:
+        case spv::kDecorationBlock:
             info.block = true;
             break;
-        case spv::DecorationBufferBlock:
+        case spv::kDecorationBufferBlock:
             info.bufferBlock = true;
             break;
-        case spv::DecorationNonWritable:
+        case spv::kDecorationNonWritable:
             info.nonWritable = true;
             break;
-        case spv::DecorationBinding:
+        case spv::kDecorationBinding:
             if (!literals.empty())
             {
                 info.binding = literals[0];
             }
             break;
-        case spv::DecorationDescriptorSet:
+        case spv::kDecorationDescriptorSet:
             if (!literals.empty())
             {
                 info.set = literals[0];
@@ -159,7 +159,7 @@ std::expected<void, std::string> readEntryPoint(Module&                        m
     // OpEntryPoint: execution model, function id, name, interface ids...
     if (operands.size() < 3)
     {
-        return std::unexpected("truncated OpEntryPoint");
+        return std::unexpected("truncated kOpEntryPoint");
     }
     auto stage = stageFromModel(operands[0]);
     if (!stage)
@@ -176,14 +176,14 @@ bool isDefinition(std::uint32_t opcode)
 {
     switch (opcode)
     {
-        case spv::OpTypeImage:
-        case spv::OpTypeSampler:
-        case spv::OpTypeSampledImage:
-        case spv::OpTypeArray:
-        case spv::OpTypeRuntimeArray:
-        case spv::OpTypeStruct:
-        case spv::OpTypePointer:
-        case spv::OpVariable:
+        case spv::kOpTypeImage:
+        case spv::kOpTypeSampler:
+        case spv::kOpTypeSampledImage:
+        case spv::kOpTypeArray:
+        case spv::kOpTypeRuntimeArray:
+        case spv::kOpTypeStruct:
+        case spv::kOpTypePointer:
+        case spv::kOpVariable:
             return true;
         default:
             return false;
@@ -196,13 +196,13 @@ std::expected<void, std::string> readInstruction(Module& module, std::uint32_t o
 {
     // The id an instruction is about: operand 1 for variables (after the result type), else operand
     // 0.
-    const std::size_t idIndex = opcode == spv::OpVariable ? 1 : 0;
-    const bool        about   = opcode == spv::OpName || opcode == spv::OpDecorate ||
-                                opcode == spv::OpMemberDecorate || isDefinition(opcode);
+    const std::size_t idIndex = opcode == spv::kOpVariable ? 1 : 0;
+    const bool        about   = opcode == spv::kOpName || opcode == spv::kOpDecorate ||
+                                opcode == spv::kOpMemberDecorate || isDefinition(opcode);
     if (!about)
     {
-        return opcode == spv::OpEntryPoint ? readEntryPoint(module, operands)
-                                           : std::expected<void, std::string>{};
+        return opcode == spv::kOpEntryPoint ? readEntryPoint(module, operands)
+                                            : std::expected<void, std::string>{};
     }
     if (idIndex >= operands.size() || operands[idIndex] >= module.ids.size())
     {
@@ -210,16 +210,16 @@ std::expected<void, std::string> readInstruction(Module& module, std::uint32_t o
     }
     IdInfo& info = module.ids[operands[idIndex]];
 
-    if (opcode == spv::OpName)
+    if (opcode == spv::kOpName)
     {
         info.name = decodeString(operands.subspan(1));
     }
-    else if (opcode == spv::OpDecorate && operands.size() >= 2)
+    else if (opcode == spv::kOpDecorate && operands.size() >= 2)
     {
         applyDecoration(info, operands[1], operands.subspan(2));
     }
-    else if (opcode == spv::OpMemberDecorate && operands.size() >= 3 &&
-             operands[2] == spv::DecorationNonWritable)
+    else if (opcode == spv::kOpMemberDecorate && operands.size() >= 3 &&
+             operands[2] == spv::kDecorationNonWritable)
     {
         ++info.nonWritableMembers;
     }
@@ -227,7 +227,7 @@ std::expected<void, std::string> readInstruction(Module& module, std::uint32_t o
     {
         info.opcode = opcode;
         info.operands.assign(operands.begin(), operands.end());
-        if (opcode == spv::OpVariable)
+        if (opcode == spv::kOpVariable)
         {
             module.variables.push_back(operands[idIndex]);
         }
@@ -238,8 +238,8 @@ std::expected<void, std::string> readInstruction(Module& module, std::uint32_t o
 void readExecutionMode(Module& module, std::uint32_t opcode,
                        std::span<const std::uint32_t> operands)
 {
-    if (opcode == spv::OpExecutionMode && operands.size() >= 5 &&
-        operands[1] == spv::ExecutionModeLocalSize)
+    if (opcode == spv::kOpExecutionMode && operands.size() >= 5 &&
+        operands[1] == spv::kExecutionModeLocalSize)
     {
         module.reflection.localSize = {operands[2], operands[3], operands[4]};
     }
@@ -251,34 +251,34 @@ void classifyType(const IdInfo& type, const IdInfo& variable, std::uint32_t stor
 {
     switch (type.opcode)
     {
-        case spv::OpTypeSampledImage:
+        case spv::kOpTypeSampledImage:
             resource.kind = ResourceKind::SampledTexture;
             return;
-        case spv::OpTypeImage:
+        case spv::kOpTypeImage:
         {
             // OpTypeImage operands: result, sampled type, dim, depth, arrayed, MS, sampled, format
             const std::uint32_t sampled = type.operands.size() > 6 ? type.operands[6] : 0;
-            if (sampled == spv::ImageStorage)
+            if (sampled == spv::kImageStorage)
             {
                 resource.kind     = ResourceKind::StorageTexture;
                 resource.readOnly = variable.nonWritable;
                 return;
             }
             resource.unsupportedReason =
-                sampled == spv::ImageSampledWithSampler
+                sampled == spv::kImageSampledWithSampler
                     ? "separate texture objects are not supported; use a combined sampler2D"
                     : "unknown image usage";
             return;
         }
-        case spv::OpTypeSampler:
+        case spv::kOpTypeSampler:
             resource.unsupportedReason =
                 "separate samplers are not supported; use a combined sampler2D";
             return;
-        case spv::OpTypeArray:
-        case spv::OpTypeRuntimeArray:
+        case spv::kOpTypeArray:
+        case spv::kOpTypeRuntimeArray:
             resource.unsupportedReason = "arrays of resources are not supported by SDL_GPU";
             return;
-        case spv::OpTypeStruct:
+        case spv::kOpTypeStruct:
             break;
         default:
             resource.unsupportedReason = "unsupported resource type";
@@ -286,8 +286,8 @@ void classifyType(const IdInfo& type, const IdInfo& variable, std::uint32_t stor
     }
 
     // Blocks. SPIR-V 1.0 (Vulkan 1.0) marks storage buffers as Uniform + BufferBlock.
-    const bool storage = (storageClass == spv::StorageClassUniform && type.bufferBlock) ||
-                         (storageClass == spv::StorageClassStorageBuffer && type.block);
+    const bool storage = (storageClass == spv::kStorageClassUniform && type.bufferBlock) ||
+                         (storageClass == spv::kStorageClassStorageBuffer && type.block);
     if (storage)
     {
         const std::size_t memberCount = type.operands.size() - 1;  // operands after the result id
@@ -295,7 +295,7 @@ void classifyType(const IdInfo& type, const IdInfo& variable, std::uint32_t stor
         resource.readOnly =
             variable.nonWritable || (memberCount > 0 && type.nonWritableMembers >= memberCount);
     }
-    else if (storageClass == spv::StorageClassUniform && type.block)
+    else if (storageClass == spv::kStorageClassUniform && type.block)
     {
         resource.kind = ResourceKind::UniformBuffer;
     }
@@ -307,10 +307,10 @@ void classifyType(const IdInfo& type, const IdInfo& variable, std::uint32_t stor
 
 bool isResourceStorageClass(std::uint32_t storageClass)
 {
-    return storageClass == spv::StorageClassUniformConstant ||
-           storageClass == spv::StorageClassUniform ||
-           storageClass == spv::StorageClassStorageBuffer ||
-           storageClass == spv::StorageClassPushConstant;
+    return storageClass == spv::kStorageClassUniformConstant ||
+           storageClass == spv::kStorageClassUniform ||
+           storageClass == spv::kStorageClassStorageBuffer ||
+           storageClass == spv::kStorageClassPushConstant;
 }
 
 /// Classifies a variable. Returns nullopt for variables that are not shader resources.
@@ -337,7 +337,7 @@ std::optional<ResourceBinding> classifyVariable(const Module& module, const IdIn
     {
         resource.unsupportedReason = "unknown type";
     }
-    else if (storageClass == spv::StorageClassPushConstant)
+    else if (storageClass == spv::kStorageClassPushConstant)
     {
         resource.unsupportedReason =
             "push constants are not supported by SDL_GPU; use a uniform block";

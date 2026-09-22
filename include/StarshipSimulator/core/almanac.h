@@ -5,8 +5,8 @@
 #include <vector>
 
 #include "StarshipSimulator/core/astro/ephemeris.h"
+#include "StarshipSimulator/core/habitat/HabitatGeometry.h"
 #include "StarshipSimulator/core/habitat/day_schedule.h"
-#include "StarshipSimulator/core/habitat/habitat_geometry.h"
 #include "StarshipSimulator/core/habitat/metrics.h"
 #include "StarshipSimulator/core/habitat/weather.h"
 #include "StarshipSimulator/core/math.h"

@@ -116,8 +116,8 @@ const char* propKindName(PropKind kind)
 
 const PropInfo& propInfo(PropKind kind)
 {
-    static const std::array<PropInfo, kPropKindCount> infos = makeInfos();
-    return infos.at(static_cast<std::size_t>(kind));
+    static const std::array<PropInfo, kPropKindCount> kInfos = makeInfos();
+    return kInfos.at(static_cast<std::size_t>(kind));
 }
 
 CpuMesh makePropMesh(PropKind kind)
@@ -126,40 +126,41 @@ CpuMesh makePropMesh(PropKind kind)
     switch (kind)
     {
         case PropKind::Ball:
-            appendMesh(mesh, makeSphere(0.12F, 20, propMaterial::kBall), at(0.0, 0.12, 0.0));
+            appendMesh(mesh, makeSphere(0.12F, 20, prop_material::kBall), at(0.0, 0.12, 0.0));
             break;
         case PropKind::Crate:
-            appendMesh(mesh, makeBox(Vec3f(0.3F), propMaterial::kWood), at(0.0, 0.3, 0.0));
+            appendMesh(mesh, makeBox(Vec3f(0.3F), prop_material::kWood), at(0.0, 0.3, 0.0));
             break;
         case PropKind::Barrel:
-            appendMesh(mesh, makeCylinder(0.3F, 0.45F, 16, propMaterial::kStaves),
+            appendMesh(mesh, makeCylinder(0.3F, 0.45F, 16, prop_material::kStaves),
                        at(0.0, 0.45, 0.0));
             break;
         case PropKind::HayBale:
-            appendMesh(mesh, makeCylinder(0.6F, 0.6F, 20, propMaterial::kStraw), at(0.0, 0.6, 0.0));
+            appendMesh(mesh, makeCylinder(0.6F, 0.6F, 20, prop_material::kStraw),
+                       at(0.0, 0.6, 0.0));
             break;
         case PropKind::Chair:
-            appendMesh(mesh, makeBox(Vec3f(0.21F, 0.015F, 0.21F), propMaterial::kWood),
+            appendMesh(mesh, makeBox(Vec3f(0.21F, 0.015F, 0.21F), prop_material::kWood),
                        at(0.0, 0.455, 0.0));
-            appendMesh(mesh, makeBox(Vec3f(0.21F, 0.14F, 0.012F), propMaterial::kWood),
+            appendMesh(mesh, makeBox(Vec3f(0.21F, 0.14F, 0.012F), prop_material::kWood),
                        at(0.0, 0.72, -0.2));
             for (const double x : {-0.19, 0.19})
             {
                 for (const double z : {-0.19, 0.19})
                 {
-                    appendMesh(mesh, makeCylinder(0.012F, 0.22F, 6, propMaterial::kMetal),
+                    appendMesh(mesh, makeCylinder(0.012F, 0.22F, 6, prop_material::kMetal),
                                at(x, 0.22, z));
                 }
-                appendMesh(mesh, makeCylinder(0.012F, 0.2F, 6, propMaterial::kMetal),
+                appendMesh(mesh, makeCylinder(0.012F, 0.2F, 6, prop_material::kMetal),
                            at(x, 0.64, -0.2));
             }
             break;
         case PropKind::Table:
-            appendMesh(mesh, makeCylinder(0.36F, 0.015F, 24, propMaterial::kTableTop),
+            appendMesh(mesh, makeCylinder(0.36F, 0.015F, 24, prop_material::kTableTop),
                        at(0.0, 0.72, 0.0));
-            appendMesh(mesh, makeCylinder(0.03F, 0.345F, 8, propMaterial::kMetal),
+            appendMesh(mesh, makeCylinder(0.03F, 0.345F, 8, prop_material::kMetal),
                        at(0.0, 0.36, 0.0));
-            appendMesh(mesh, makeCylinder(0.22F, 0.015F, 16, propMaterial::kMetal),
+            appendMesh(mesh, makeCylinder(0.22F, 0.015F, 16, prop_material::kMetal),
                        at(0.0, 0.015, 0.0));
             break;
     }

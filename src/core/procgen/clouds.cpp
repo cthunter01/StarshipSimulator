@@ -8,9 +8,9 @@
 #include <thread>
 #include <vector>
 
+#include "StarshipSimulator/core/SplitMix64.h"
 #include "StarshipSimulator/core/math.h"
-#include "StarshipSimulator/core/procgen/noise.h"
-#include "StarshipSimulator/core/rng.h"
+#include "StarshipSimulator/core/procgen/SimplexNoise.h"
 
 namespace StarshipSimulator
 {

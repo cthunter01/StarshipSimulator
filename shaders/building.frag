@@ -26,7 +26,7 @@ layout(set = 2, binding = 4) uniform sampler2D cloudMap;
 
 layout(location = 0) out vec4 outColor;
 
-// Must match StarshipSimulator::buildingMaterial and packFacade().
+// Must match StarshipSimulator::building_material and packFacade().
 const uint WALL = 0u, ROOF_TILES = 1u, FLAT_ROOF = 2u, STONE = 3u, WOOD = 4u, METAL = 5u,
            LAMP_GLASS = 6u, AWNING = 7u, WATER = 8u, SOFFIT = 9u, FOLIAGE = 10u;
 const uint STYLE_HOUSE = 0u, STYLE_TOWER = 1u, STYLE_BARN = 2u, STYLE_HALL = 3u;

@@ -12,15 +12,15 @@
 #include <utility>
 #include <vector>
 
-#include "StarshipSimulator/core/habitat/habitat_geometry.h"
+#include "StarshipSimulator/core/SplitMix64.h"
+#include "StarshipSimulator/core/habitat/HabitatGeometry.h"
+#include "StarshipSimulator/core/habitat/Landscape.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
-#include "StarshipSimulator/core/habitat/landscape.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/physics/colliders.h"
 #include "StarshipSimulator/core/procgen/props.h"
 #include "StarshipSimulator/core/procgen/terrain_grid.h"
 #include "StarshipSimulator/core/procgen/trees.h"
-#include "StarshipSimulator/core/rng.h"
 
 namespace StarshipSimulator
 {
@@ -255,8 +255,8 @@ std::optional<TownFrame> placeTown(const Site& site, int valley, int index, int 
 {
     const HabitatGeometry& geometry  = *site.geometry;
     const SettlementSpec&  spec      = geometry.spec().settlements;
-    const double           R         = geometry.radius();
-    const double           landHalf  = geometry.landHalfAngle() * R;
+    const double           radius    = geometry.radius();
+    const double           landHalf  = geometry.landHalfAngle() * radius;
     const double           floorSpan = geometry.floorZMax() - geometry.floorZMin();
 
     TownFrame town;
@@ -288,22 +288,22 @@ std::optional<TownFrame> placeTown(const Site& site, int valley, int index, int 
         riverTheta = landscape.riverAngle(valley, z);
         const double slope =
             (landscape.riverAngle(valley, z + 10.0) - landscape.riverAngle(valley, z - 10.0)) /
-            20.0 * R;
+            20.0 * radius;
         along = glm::normalize(Vec2d(slope, 1.0));
     }
     // Beside the river: step away from it until the town's middle is well clear of the water.
     const double halfRiver = 0.5 * geometry.spec().terrain.riverWidthM;
     double       offset    = landscape.hasRivers() ? halfRiver + 20.0 + (0.55 * town.halfWidth)
                                                    : random.uniform(-0.3, 0.3) * landHalf;
-    double       theta     = riverTheta + (side * offset / R);
+    double       theta     = riverTheta + (side * offset / radius);
     while (landscape.hasRivers() &&
            landscape.shoreDistance(z, theta, 400.0) < (0.45 * town.halfWidth) + 10.0 &&
            offset < landHalf - town.halfWidth)
     {
         offset += 15.0;
-        theta = riverTheta + (side * offset / R);
+        theta = riverTheta + (side * offset / radius);
     }
-    town.plane     = FloorPlane{.z0 = z, .theta0 = wrapAngle(theta), .radius = R};
+    town.plane     = FloorPlane{.z0 = z, .theta0 = wrapAngle(theta), .radius = radius};
     town.riverSide = landscape.hasRivers() ? side : 1.0;
     // Across (away from the river) is always along turned a quarter left: the layout's houses and
     // wings rely on that handedness. So turn `along` round if need be.
@@ -422,7 +422,11 @@ private:
                     y);
                 bend_.emplace_back(town_.u(river), town_.w(river));
             }
-            std::ranges::sort(bend_, {}, [](const Vec2d& e) { return e.x; });
+            // By u, and by the swing where two share a u: std::sort may leave equal elements in
+            // any order, and each standard library picks a different one.
+            std::ranges::sort(bend_, [](const Vec2d& a, const Vec2d& b) {
+                return a.x != b.x ? a.x < b.x : a.y < b.y;
+            });
             const double middle = bend(0.0);
             const double slope  = (bend(5.0) - bend(-5.0)) / 10.0;
             for (Vec2d& e : bend_)
@@ -1419,16 +1423,16 @@ std::optional<Settlement> planFarm(const Site& site, int valley, std::size_t ind
                                    std::vector<StandingTree>&  trees)
 {
     const HabitatGeometry& geometry = *site.geometry;
-    const double           R        = geometry.radius();
-    const double           landHalf = geometry.landHalfAngle() * R;
+    const double           radius   = geometry.radius();
+    const double           landHalf = geometry.landHalfAngle() * radius;
     const double margin = std::min(800.0, 0.1 * (geometry.floorZMax() - geometry.floorZMin()));
     for (int attempt = 0; attempt < kFarmAttempts; ++attempt)
     {
         const double z =
             random.uniform(geometry.floorZMin() + margin, geometry.floorZMax() - margin);
         const double theta =
-            geometry.landCenter(valley) + (random.uniform(-0.8, 0.8) * landHalf / R);
-        const FloorPlane  plane{.z0 = z, .theta0 = wrapAngle(theta), .radius = R};
+            geometry.landCenter(valley) + (random.uniform(-0.8, 0.8) * landHalf / radius);
+        const FloorPlane  plane{.z0 = z, .theta0 = wrapAngle(theta), .radius = radius};
         const GroundCheck check{.site = site, .plane = plane, .valley = valley};
         const Vec3d       here    = plane.point(Vec2d(0.0), 0.0);
         const bool        crowded = std::ranges::any_of(others, [&](const Settlement& other) {

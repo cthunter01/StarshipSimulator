@@ -15,13 +15,13 @@
 #include "StarshipSimulator/core/almanac.h"
 #include "StarshipSimulator/core/astro/astro_time.h"
 #include "StarshipSimulator/core/astro/ephemeris.h"
-#include "StarshipSimulator/core/habitat/habitat_geometry.h"
+#include "StarshipSimulator/core/habitat/HabitatGeometry.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
 #include "StarshipSimulator/core/habitat/metrics.h"
 #include "StarshipSimulator/core/habitat/weather.h"
-#include "StarshipSimulator/core/physics/player_controller.h"
+#include "StarshipSimulator/core/physics/PlayerController.h"
 #include "StarshipSimulator/core/scenario/scenario.h"
-#include "StarshipSimulator/render/gpu_device.h"
+#include "StarshipSimulator/render/GpuDevice.h"
 
 namespace StarshipSimulator
 {

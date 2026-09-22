@@ -7,9 +7,9 @@
 #include <utility>
 #include <vector>
 
-#include "StarshipSimulator/core/habitat/habitat_geometry.h"
+#include "StarshipSimulator/core/SplitMix64.h"
+#include "StarshipSimulator/core/habitat/HabitatGeometry.h"
 #include "StarshipSimulator/core/math.h"
-#include "StarshipSimulator/core/rng.h"
 
 namespace StarshipSimulator
 {
@@ -71,10 +71,10 @@ std::vector<Bird> birdsNear(const HabitatGeometry& geometry, const Vec3d& camera
                             std::uint64_t seed, const BirdSettings& settings)
 {
     std::vector<Bird> birds;
-    const double      cellM = std::max(50.0, settings.flockCellM);
-    const double      R     = geometry.radius();
+    const double      cellM  = std::max(50.0, settings.flockCellM);
+    const double      radius = geometry.radius();
     // The cells wrap exactly once around the habitat.
-    const auto   around  = std::max<std::int64_t>(4, std::llround(2.0 * kPi * R / cellM));
+    const auto   around  = std::max<std::int64_t>(4, std::llround(2.0 * kPi * radius / cellM));
     const double cellArc = (2.0 * kPi) / static_cast<double>(around);
     const double drift   = settings.windMS * seconds;
 
@@ -85,7 +85,7 @@ std::vector<Bird> birdsNear(const HabitatGeometry& geometry, const Vec3d& camera
         static_cast<std::int64_t>(std::ceil((camera.z + settings.rangeM - drift) / cellM));
     // How many cells around cover the range (the arc at the floor).
     const auto spread = std::max<std::int64_t>(
-        1, static_cast<std::int64_t>(std::ceil(settings.rangeM / (R * cellArc))) + 1);
+        1, static_cast<std::int64_t>(std::ceil(settings.rangeM / (radius * cellArc))) + 1);
     const auto centre = static_cast<std::int64_t>(std::floor(cameraTheta / cellArc));
 
     const double rangeSq = settings.rangeM * settings.rangeM;
