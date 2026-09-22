@@ -18,6 +18,7 @@ enum class BlendMode : std::uint8_t
     Additive,  // dst + src
     Multiply,  // dst * src
     Alpha,     // premultiplied: src + dst * (1 - src.a)
+    Lighten,   // max(src, dst): what a long exposure does to a moving point of light
 };
 
 enum class DepthMode : std::uint8_t

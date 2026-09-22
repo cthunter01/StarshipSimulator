@@ -25,6 +25,8 @@ struct InputFrame
     bool       screenshot       = false;
     bool       toggleComfort    = false;
     bool       toggleWings      = false;  // strap the wings on, or take them off
+    bool       toggleAlmanac    = false;  // the almanac: what this place is, in numbers
+    bool       togglePhoto      = false;  // photo mode: the HUD out of the way, a long exposure
     bool       throwBall        = false;
     bool       kick             = false;  // push whatever is in front of you
     bool       toggleEditor     = false;

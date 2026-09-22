@@ -6,16 +6,18 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
-#include <filesystem>
 #include <format>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include <SDL3/SDL_gpu.h>
 
+#include "StarshipSimulator/core/almanac.h"
 #include "StarshipSimulator/core/astro/astro_time.h"
 #include "StarshipSimulator/core/astro/ephemeris.h"
 #include "StarshipSimulator/core/astro/sky_objects.h"
+#include "StarshipSimulator/core/habitat/day_schedule.h"
 #include "StarshipSimulator/core/habitat/habitat_geometry.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
 #include "StarshipSimulator/core/habitat/landscape.h"
@@ -25,6 +27,7 @@
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/physics/player_controller.h"
 #include "StarshipSimulator/core/physics/rotating_frame.h"
+#include "StarshipSimulator/core/scenario/scenario.h"
 #include "StarshipSimulator/core/units.h"
 #include "StarshipSimulator/render/gpu_device.h"
 #include "StarshipSimulator/render/imgui_layer.h"
@@ -211,6 +214,13 @@ void drawLocation(const HudModel& model, HudSettings& settings, PlayerSettings& 
     }
     ImGui::SameLine();
     ImGui::Checkbox("Editor (Tab)", &settings.showEditor);
+    ImGui::SameLine();
+    ImGui::Checkbox("Almanac (K)", &settings.showAlmanac);
+    if (ImGui::BeginItemTooltip())
+    {
+        ImGui::TextUnformatted("What this place is, in numbers: spin, air, the mirrors, the hull.");
+        ImGui::EndTooltip();
+    }
     if (model.throwReport)
     {
         drawThrowReport(*model.throwReport);
@@ -399,7 +409,7 @@ void drawSkyLabel(const std::optional<SkyLabel>& label)
                   IM_COL32(220, 220, 220, alpha * 3 / 4), label->details.c_str());
 }
 
-void drawMetrics(const HudModel& model)
+void drawMetrics(const HudModel& model, HudSettings& settings, HudActions& actions)
 {
     const HabitatMetrics&     m    = *model.metrics;
     const OneillCylinderSpec& spec = model.geometry->spec();
@@ -426,6 +436,16 @@ void drawMetrics(const HudModel& model)
                                   materialClassName(m.material)));
     ui::textMuted(buildableToday(m.material) ? "Buildable with materials we have today."
                                              : "Needs materials that do not exist yet.");
+    if (ImGui::Button("Change it"))
+    {
+        settings.showEditor = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Other habitats"))
+    {
+        settings.showGallery   = true;
+        actions.refreshGallery = true;
+    }
 }
 
 void drawRenderer(const HudModel& model)
@@ -441,6 +461,59 @@ void drawRenderer(const HudModel& model)
     ui::field("Physics", std::format("{} props moving", model.movingProps));
 }
 
+/// A slider for a value stored in one unit and shown in another (metres shown as kilometres).
+bool sliderScaled(const char* label, double& value, double perUnit, double low, double high,
+                  const char* format)
+{
+    double     shown   = value / perUnit;
+    const bool changed = sliderDouble(label, shown, low, high, format);
+    if (changed)
+    {
+        value = shown * perUnit;
+    }
+    return changed;
+}
+
+/// "06:30" for an hour of the day.
+std::string clockHour(double hour)
+{
+    const double wrapped = std::fmod(std::fmod(hour, 24.0) + 24.0, 24.0);
+    const int    minutes = static_cast<int>(std::lround(wrapped * 60.0)) % (24 * 60);
+    return std::format("{:02}:{:02}", minutes / 60, minutes % 60);
+}
+
+void drawEditorEndcaps(OneillCylinderSpec& spec)
+{
+    int antisunward = static_cast<int>(spec.antisunwardEndcap.shape);
+    int sunward     = static_cast<int>(spec.sunwardEndcap.shape);
+    ImGui::Combo("Anti-sunward end", &antisunward, "Flat wall\0Dome\0Mountain ramp\0");
+    ImGui::Combo("Sunward end", &sunward, "Flat wall\0Dome\0Mountain ramp\0");
+    spec.antisunwardEndcap.shape = static_cast<EndcapShape>(antisunward);
+    spec.sunwardEndcap.shape     = static_cast<EndcapShape>(sunward);
+    sliderDouble("Ramp slope (deg)", spec.antisunwardEndcap.rampSlopeDeg, 10.0, 40.0, "%.0f");
+    sliderDouble("Ramp top (share of R)", spec.antisunwardEndcap.rampTopRadiusFraction, 0.1, 0.9,
+                 "%.2f");
+    sliderDouble("Hub opening (m)", spec.antisunwardEndcap.hubRadiusM, 10.0, 400.0, "%.0f");
+    spec.sunwardEndcap.rampSlopeDeg          = spec.antisunwardEndcap.rampSlopeDeg;
+    spec.sunwardEndcap.rampTopRadiusFraction = spec.antisunwardEndcap.rampTopRadiusFraction;
+    spec.sunwardEndcap.hubRadiusM            = spec.antisunwardEndcap.hubRadiusM;
+    const double depth = endcapDepthInside(spec.antisunwardEndcap, spec.radiusM) +
+                         endcapDepthInside(spec.sunwardEndcap, spec.radiusM);
+    ui::textWrapped(
+        std::format("The ramps reach {:.0f} m into the cylinder, leaving {:.0f} m of "
+                    "level valley between them.",
+                    depth, std::max(spec.lengthM - depth, 0.0)));
+}
+
+void drawEditorPartner(OneillCylinderSpec& spec)
+{
+    ImGui::Checkbox("Counter-rotating partner", &spec.partner.enabled);
+    sliderScaled("Distance (km)", spec.partner.separationM, 1000.0, 10.0, 300.0, "%.0f");
+    ui::textWrapped(std::format(
+        "At least {:.0f} km, so the mirrors clear each other however the pair is turned.",
+        minimumPartnerSeparation(spec) / 1000.0));
+}
+
 void drawEditorShape(OneillCylinderSpec& spec)
 {
     sliderDouble("Radius (m)", spec.radiusM, 200.0, 10000.0, "%.0f");
@@ -448,95 +521,232 @@ void drawEditorShape(OneillCylinderSpec& spec)
     sliderDouble("Gravity (g)", spec.surfaceGravityG, 0.1, 1.5, "%.2f");
     ImGui::SliderInt("Valleys", &spec.stripPairs, 1, 6);
     sliderDouble("Window share", spec.windowFraction, 0.2, 0.7, "%.2f");
+    sliderDouble("People per km2", spec.populationDensityPerKm2, 0.0, 20000.0, "%.0f");
     const HabitatMetrics preview = computeMetrics(spec);
     ui::textMuted(std::format("Spins at {:.2f} rpm; hull: {}", preview.rpm,
                               materialClassName(preview.material)));
-
     if (ImGui::CollapsingHeader("Endcaps"))
     {
-        int antisunward = static_cast<int>(spec.antisunwardEndcap.shape);
-        int sunward     = static_cast<int>(spec.sunwardEndcap.shape);
-        ImGui::Combo("Anti-sunward end", &antisunward, "Flat wall\0Dome\0Mountain ramp\0");
-        ImGui::Combo("Sunward end", &sunward, "Flat wall\0Dome\0Mountain ramp\0");
-        spec.antisunwardEndcap.shape = static_cast<EndcapShape>(antisunward);
-        spec.sunwardEndcap.shape     = static_cast<EndcapShape>(sunward);
-        sliderDouble("Ramp slope (deg)", spec.antisunwardEndcap.rampSlopeDeg, 10.0, 40.0, "%.0f");
-        spec.sunwardEndcap.rampSlopeDeg = spec.antisunwardEndcap.rampSlopeDeg;
+        drawEditorEndcaps(spec);
     }
     if (ImGui::CollapsingHeader("Partner cylinder"))
     {
-        ImGui::Checkbox("Counter-rotating partner", &spec.partner.enabled);
-        double kilometres = spec.partner.separationM / 1000.0;
-        sliderDouble("Distance (km)", kilometres, 10.0, 300.0, "%.0f");
-        spec.partner.separationM = kilometres * 1000.0;
-        ui::textMuted(std::format("At least {:.0f} km, so the mirrors clear each other",
-                                  minimumPartnerSeparation(spec) / 1000.0));
-    }
-    if (ImGui::CollapsingHeader("Terrain and air"))
-    {
-        ImGui::InputScalar("Seed", ImGuiDataType_U64, &spec.terrain.seed);
-        sliderDouble("Hills (m)", spec.terrain.hillHeightM, 0.0, 200.0, "%.0f");
-        sliderDouble("Mountains (m)", spec.terrain.mountainHeightM, 0.0, 600.0, "%.0f");
-        sliderDouble("Hill spacing (m)", spec.terrain.featureSizeM, 100.0, 3000.0, "%.0f");
-        double kilopascals = spec.atmosphere.surfacePressurePa / 1000.0;
-        sliderDouble("Air pressure (kPa)", kilopascals, 20.0, 110.0, "%.1f");
-        spec.atmosphere.surfacePressurePa = kilopascals * 1000.0;
-    }
-    if (ImGui::CollapsingHeader("Water, woods and towns"))
-    {
-        sliderDouble("River width (m)", spec.terrain.riverWidthM, 0.0, 120.0, "%.0f");
-        ImGui::SliderInt("Lakes per valley", &spec.terrain.lakesPerValley, 0, 8);
-        sliderDouble("Lake size (m)", spec.terrain.lakeRadiusM, 10.0, 800.0, "%.0f");
-        sliderDouble("Woods", spec.terrain.forestCover, 0.0, 0.9, "%.2f");
-        ImGui::SliderInt("Towns per valley", &spec.settlements.townsPerValley, 0, 12);
-        sliderDouble("Town size (m)", spec.settlements.townRadiusM, 40.0, 800.0, "%.0f");
-        ImGui::SliderInt("Farms per valley", &spec.settlements.farmsPerValley, 0, 60);
+        drawEditorPartner(spec);
     }
 }
 
-void drawEditorFiles(EditorState& editor, HudActions& actions)
+/// The mirrors and the day they make.
+void drawEditorDay(OneillCylinderSpec& spec, DayScheduleSpec& day)
+{
+    sliderDouble("Mirror angle (deg)", spec.mirrors.openingAngleDeg, 20.0, 150.0, "%.0f");
+    ui::textMuted(describeSun(spec.mirrors.openingAngleDeg));
+    sliderDouble("Reflectivity", spec.mirrors.reflectivity, 0.3, 1.0, "%.2f");
+    ImGui::Separator();
+    ImGui::Checkbox("The mirrors keep a daily schedule", &day.enabled);
+    ImGui::BeginDisabled(!day.enabled);
+    sliderDouble("Daylight (hours)", day.dayLengthHours, 1.0, 23.0, "%.1f");
+    sliderDouble("Sunrise (local hour)", day.sunriseHour, 0.0, 23.9, "%.1f");
+    sliderDouble("Noon angle (deg)", day.noonAngleDeg, 20.0, 85.0, "%.0f");
+    sliderDouble("Midnight angle (deg)", day.nightAngleDeg, 90.0, 150.0, "%.0f");
+    ImGui::EndDisabled();
+    if (!day.enabled)
+    {
+        ui::textWrapped("The mirrors stand still at the angle above: the same hour, for ever.");
+        return;
+    }
+    ui::textWrapped(std::format(
+        "Sunrise {}, sunset {}: {:.1f} hours of daylight and {:.1f} of night. The sun climbs to "
+        "{:.0f} degrees at midday, and at midnight the mirrors stand {:.0f} degrees open, so no "
+        "sunlight gets in and the windows show the stars.",
+        clockHour(day.sunriseHour), clockHour(sunsetHour(day)), day.dayLengthHours,
+        24.0 - day.dayLengthHours,
+        radiansToDegrees(sunElevation(degreesToRadians(day.noonAngleDeg))), day.nightAngleDeg));
+}
+
+void drawEditorLand(TerrainSpec& terrain, SettlementSpec& settlements)
+{
+    ImGui::InputScalar("Seed", ImGuiDataType_U64, &terrain.seed);
+    ui::textMuted("The one number the whole landscape grows from.");
+    sliderDouble("Hills (m)", terrain.hillHeightM, 0.0, 200.0, "%.0f");
+    sliderDouble("Endcap relief (m)", terrain.mountainHeightM, 0.0, 600.0, "%.0f");
+    sliderDouble("Hill spacing (m)", terrain.featureSizeM, 100.0, 3000.0, "%.0f");
+    ImGui::Separator();
+    sliderDouble("River width (m)", terrain.riverWidthM, 0.0, 120.0, "%.0f");
+    ImGui::SliderInt("Lakes per valley", &terrain.lakesPerValley, 0, 8);
+    sliderDouble("Lake size (m)", terrain.lakeRadiusM, 10.0, 800.0, "%.0f");
+    sliderDouble("Woods", terrain.forestCover, 0.0, 0.9, "%.2f");
+    ImGui::Separator();
+    ImGui::SliderInt("Towns per valley", &settlements.townsPerValley, 0, 12);
+    sliderDouble("Town size (m)", settlements.townRadiusM, 40.0, 800.0, "%.0f");
+    ImGui::SliderInt("Farms per valley", &settlements.farmsPerValley, 0, 60);
+    ui::textMuted("The tramway follows the towns, so moving them moves the line.");
+}
+
+void drawEditorAir(AtmosphereSpec& air, ClimateSpec& climate, double radiusM)
+{
+    sliderScaled("Air pressure (kPa)", air.surfacePressurePa, 1000.0, 20.0, 110.0, "%.1f");
+    sliderDouble("Temperature (K)", air.temperatureK, 260.0, 310.0, "%.0f");
+    ImGui::Separator();
+    sliderDouble("Cloud base (m)", climate.cloudBaseM, 50.0, 0.7 * radiusM, "%.0f");
+    sliderDouble("Cloud top (m)", climate.cloudTopM, 100.0, 0.8 * radiusM, "%.0f");
+    sliderDouble("Cloudiness", climate.cloudiness, 0.0, 1.0, "%.2f");
+    sliderDouble("Rain", climate.raininess, 0.0, 1.0, "%.2f");
+    sliderDouble("Morning mist", climate.mistiness, 0.0, 1.0, "%.2f");
+    sliderDouble("Wind (m/s)", climate.windSpeedMS, 0.0, 20.0, "%.1f");
+    ImGui::Separator();
+    sliderDouble("Year (days)", climate.yearDays, 4.0, 400.0, "%.0f");
+    sliderDouble("Season swing (hours)", climate.seasonSwingHours, 0.0, 8.0, "%.1f");
+    sliderDouble("Season at the epoch", climate.seasonAtEpoch, 0.0, 0.999, "%.3f");
+    ui::textWrapped(std::format(
+        "A deck {:.0f} m thick, with {:.0f} m of clear air above it before the far side. The "
+        "season knob decides where in the year the first of January 2000 fell, and so which "
+        "season a visit starting today begins in.",
+        std::max(climate.cloudTopM - climate.cloudBaseM, 0.0),
+        std::max(radiusM - climate.cloudTopM, 0.0)));
+}
+
+/// Where in the solar system the habitat flies, when the visit starts, and where you stand.
+void drawEditorPlace(Scenario& draft, const SkyModel& sky)
+{
+    int location = static_cast<int>(draft.sky.location);
+    ImGui::Combo("Where", &location,
+                 "Earth-Moon L4\0Earth-Moon L5\0Sun-Earth L4\0Sun-Earth L5\0Sun-Mars L4\0"
+                 "Sun-Mars L5\0");
+    draft.sky.location = static_cast<astro::Location>(location);
+    ui::field("Visit begins", astro::formatIsoTime(draft.sky.start));
+    if (ImGui::Button("Use the moment outside"))
+    {
+        draft.sky.start = sky.time;
+    }
+    sliderDouble("Clock offset from UTC (h)", draft.sky.utcOffsetHours, -14.0, 14.0, "%.1f");
+    ImGui::Separator();
+    ImGui::SliderInt("Start in valley", &draft.start.valley, 0,
+                     std::max(draft.habitat.stripPairs - 1, 0));
+    const double half = 0.5 * draft.habitat.lengthM / 1000.0;
+    sliderScaled("Start along (km)", draft.start.zM, 1000.0, -half, half, "%.2f");
+    sliderDouble("Facing (deg)", draft.start.headingDeg, 0.0, 360.0, "%.0f");
+    ui::textMuted("0 degrees faces the sunward end; the angle turns you to the left.");
+}
+
+void numberRow(const char* label, const std::string& value)
+{
+    ImGui::TableNextRow();
+    ImGui::TableNextColumn();
+    ui::textMuted(label);
+    ImGui::TableNextColumn();
+    ui::text(value);
+}
+
+/// What the habitat in the editor would be like to live in, worked out as you drag the sliders.
+void drawEditorNumbers(const OneillCylinderSpec& spec)
+{
+    const HabitatMetrics metrics = computeMetrics(spec);
+    if (ImGui::BeginTable("numbers", 2, ImGuiTableFlags_SizingStretchProp))
+    {
+        numberRow("Spin",
+                  std::format("{:.3f} rpm, one turn in {:.0f} s", metrics.rpm, metrics.periodS));
+        numberRow("Floor speed", std::format("{:.0f} m/s", metrics.rimSpeed));
+        numberRow("Gravity", std::format("{:.2f} m/s2 ({:.2f} g)", metrics.floorGravity,
+                                         spec.surfaceGravityG));
+        numberRow("Head to foot", std::format("{:.2f} % lighter at head height",
+                                              100.0 * metrics.headToFootGradient));
+        numberRow("Coriolis", std::format("{:.2f} % of gravity at walking pace",
+                                          100.0 * metrics.coriolisWalkingRatio));
+        numberRow("Air at the axis",
+                  std::format("{:.0f} % of the floor's pressure, {:.1f} K colder",
+                              100.0 * metrics.axisPressureRatio, metrics.axisTemperatureDropK));
+        numberRow("Land", std::format("{:.1f} km2", metrics.landAreaM2 / 1e6));
+        numberRow("Windows", std::format("{:.1f} km2", metrics.windowAreaM2 / 1e6));
+        numberRow("Volume", std::format("{:.1f} km3", metrics.volumeM3 / 1e9));
+        numberRow("Room for", std::format("{:.0f} people", metrics.population));
+        numberRow("Hull", std::format("{:.3f} MJ/kg of hoop strength: {}",
+                                      metrics.hoopSpecificStrength / 1e6,
+                                      materialClassName(metrics.material)));
+        ImGui::EndTable();
+    }
+    ui::textWrapped(buildableToday(metrics.material)
+                        ? "Nothing here needs a material we cannot already make."
+                        : "This one waits on materials nobody can make at scale yet, so it is a "
+                          "picture of a further future.");
+}
+
+void drawEditorFiles(EditorState& editor, HudSettings& settings, HudActions& actions)
 {
     ImGui::InputText("Name", editor.saveName.data(), editor.saveName.size());
-    ImGui::SameLine();
-    if (ImGui::Button("Save"))
+    ui::textMuted("What it is, in a line or two:");
+    ImGui::InputTextMultiline("##description", editor.description.data(), editor.description.size(),
+                              ImVec2(0.0F, ImGui::GetFontSize() * 3.5F));
+    if (ImGui::Button("Save it"))
     {
         actions.save = true;
     }
-    if (editor.scenarios.empty())
+    ImGui::SameLine();
+    if (ImGui::Button("Browse habitats..."))
+    {
+        settings.showGallery   = true;
+        actions.refreshGallery = true;
+    }
+    ui::textWrapped(
+        "Habitats you save go next to the presets, as small TOML files. Send one to "
+        "someone and they walk the same world, down to the last tree.");
+}
+
+void drawEditorTabs(const HudModel& model, EditorState& editor, HudSettings& settings,
+                    HudActions& actions)
+{
+    if (!ImGui::BeginTabBar("editor"))
     {
         return;
     }
-    const auto label = [&](int i) {
-        return editor.scenarios.at(static_cast<std::size_t>(i)).stem().string();
-    };
-    const int count = static_cast<int>(editor.scenarios.size());
-    editor.selected = std::clamp(editor.selected, 0, count - 1);
-    if (ImGui::BeginCombo("Scenario", label(editor.selected).c_str()))
+    Scenario& draft = editor.draft;
+    if (ImGui::BeginTabItem("Shape"))
     {
-        for (int i = 0; i < count; ++i)
-        {
-            if (ImGui::Selectable(label(i).c_str(), i == editor.selected))
-            {
-                editor.selected = i;
-            }
-        }
-        ImGui::EndCombo();
+        drawEditorShape(draft.habitat);
+        ImGui::EndTabItem();
     }
-    ImGui::SameLine();
-    if (ImGui::Button("Load"))
+    if (ImGui::BeginTabItem("Day"))
     {
-        actions.load = editor.scenarios.at(static_cast<std::size_t>(editor.selected));
+        drawEditorDay(draft.habitat, draft.day);
+        ImGui::EndTabItem();
     }
+    if (ImGui::BeginTabItem("Land"))
+    {
+        drawEditorLand(draft.habitat.terrain, draft.habitat.settlements);
+        ImGui::EndTabItem();
+    }
+    if (ImGui::BeginTabItem("Air"))
+    {
+        drawEditorAir(draft.habitat.atmosphere, draft.climate, draft.habitat.radiusM);
+        ImGui::EndTabItem();
+    }
+    if (ImGui::BeginTabItem("Place"))
+    {
+        drawEditorPlace(draft, model.sky);
+        ImGui::EndTabItem();
+    }
+    if (ImGui::BeginTabItem("Numbers"))
+    {
+        drawEditorNumbers(draft.habitat);
+        ImGui::EndTabItem();
+    }
+    if (ImGui::BeginTabItem("File"))
+    {
+        drawEditorFiles(editor, settings, actions);
+        ImGui::EndTabItem();
+    }
+    ImGui::EndTabBar();
 }
 
 void drawEditor(const HudModel& model, EditorState& editor, HudSettings& settings,
                 HudActions& actions)
 {
-    ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 30.0F, 0.0F), ImGuiCond_FirstUseEver);
+    const float scale = ImGui::GetFontSize() / 13.0F;
+    ImGui::SetNextWindowSize(ImVec2(430.0F * scale, 460.0F * scale), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Habitat editor", &settings.showEditor))
     {
-        drawEditorShape(editor.draft);
-        const auto problems = validate(editor.draft);
+        drawEditorTabs(model, editor, settings, actions);
+        ImGui::Separator();
+        const auto problems = validateScenario(editor.draft);
         for (const std::string& problem : problems)
         {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0F, 0.5F, 0.4F, 1.0F));
@@ -544,13 +754,79 @@ void drawEditor(const HudModel& model, EditorState& editor, HudSettings& setting
             ImGui::PopStyleColor();
         }
         ImGui::BeginDisabled(!problems.empty() || model.generating);
-        if (ImGui::Button(model.generating ? "Generating..." : "Regenerate"))
+        if (ImGui::Button(model.generating ? "Building..." : "Build it"))
         {
             actions.regenerate = true;
         }
         ImGui::EndDisabled();
+        ui::textMutedWrapped("Nothing outside changes until you build it.");
+    }
+    ImGui::End();
+}
+
+void drawGalleryEntry(const GalleryEntry& entry, int index, const HudModel& model,
+                      EditorState& editor, HudActions& actions)
+{
+    ImGui::PushID(index);
+    if (ImGui::Selectable(entry.title.c_str(), index == editor.selected))
+    {
+        editor.selected = index;
+    }
+    ImGui::Indent();
+    if (entry.problem.empty())
+    {
+        ui::textWrapped(entry.description);
+        ui::textMutedWrapped(entry.summary);
+    }
+    else
+    {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0F, 0.5F, 0.4F, 1.0F));
+        ui::textWrapped(entry.problem);
+        ImGui::PopStyleColor();
+    }
+    ImGui::BeginDisabled(!entry.problem.empty() || model.generating);
+    if (ImGui::Button("Go there"))
+    {
+        actions.load = entry.path;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Edit a copy"))
+    {
+        actions.editCopy = entry.path;
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ui::textMuted(entry.preset ? "came with the program" : "saved here");
+    ImGui::Unindent();
+    ImGui::Separator();
+    ImGui::PopID();
+}
+
+/// Every habitat file this machine has: the presets and the ones saved here.
+void drawGallery(const HudModel& model, EditorState& editor, HudSettings& settings,
+                 HudActions& actions)
+{
+    const float scale = ImGui::GetFontSize() / 13.0F;
+    ImGui::SetNextWindowSize(ImVec2(460.0F * scale, 430.0F * scale), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Habitats", &settings.showGallery))
+    {
+        ui::textWrapped(
+            "The habitats that came with the program and the ones you have saved. "
+            "Each is a small text file: give it to someone and it builds the same "
+            "world on their machine.");
+        if (ImGui::Button("Look again"))
+        {
+            actions.refreshGallery = true;
+        }
         ImGui::Separator();
-        drawEditorFiles(editor, actions);
+        if (editor.gallery.empty())
+        {
+            ui::textMuted("No habitat files found.");
+        }
+        for (std::size_t i = 0; i < editor.gallery.size(); ++i)
+        {
+            drawGalleryEntry(editor.gallery[i], static_cast<int>(i), model, editor, actions);
+        }
     }
     ImGui::End();
 }
@@ -565,8 +841,187 @@ void drawHelp(const HudModel& model, HudSettings& settings)
         ui::textMuted("WASD move, Shift run, Space jump (fly: rise), Ctrl descend");
         ui::textMuted("F walk/fly, V wings, G throw a ball, E kick, C comfort, wheel fly speed");
         ui::textMuted("I identify, B binoculars, P pause time, comma/period slower/faster");
-        ui::textMuted("Tab editor, F1 HUD, F12 screenshot");
+        ui::textMuted("K almanac, F2 photo mode, Tab editor, F1 HUD, F12 screenshot");
     }
+}
+
+/// The tours on offer, and the way out of one that is running.
+void drawTours(const HudModel& model, HudActions& actions)
+{
+    if (model.touring)
+    {
+        ui::textMuted("A tour is running. Press Stop, or take the controls, to end it.");
+        if (ImGui::Button("Stop the tour"))
+        {
+            actions.stopTour = true;
+        }
+        return;
+    }
+    ui::textMuted("Sit back and be shown around. Moving takes the controls back.");
+    for (std::size_t i = 0; i < model.tours.size(); ++i)
+    {
+        const TourName& tour = model.tours[i];
+        ImGui::PushID(static_cast<int>(i));
+        if (ImGui::Button("Take it"))
+        {
+            actions.startTour = i;
+        }
+        ImGui::PopID();
+        ImGui::SameLine();
+        ui::text(std::format("{} ({:.0f} s)", tour.name, tour.lengthS));
+        ImGui::Indent();
+        ui::textMuted(tour.blurb);
+        ImGui::Unindent();
+    }
+}
+
+/// What the tour is saying, across the bottom of the screen.
+void drawTourCaption(const HudModel& model)
+{
+    if (!model.touring || model.tourCaption.empty() || model.tourFade <= 0.01)
+    {
+        return;
+    }
+    const float  scale  = ImGui::GetFontSize() / 13.0F;
+    const ImVec2 screen = ImGui::GetIO().DisplaySize;
+    const float  width  = std::min(760.0F * scale, screen.x - (40.0F * scale));
+    ImGui::SetNextWindowPos(ImVec2(0.5F * (screen.x - width), screen.y - (140.0F * scale)),
+                            ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(width, 0.0F), ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.72F * static_cast<float>(model.tourFade));
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
+                                   ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNav;
+    if (ImGui::Begin("##tour", nullptr, flags))
+    {
+        ImGui::PushStyleColor(ImGuiCol_Text,
+                              ImVec4(1.0F, 1.0F, 1.0F, static_cast<float>(model.tourFade)));
+        ui::textWrapped(model.tourCaption);
+        ImGui::PopStyleColor();
+    }
+    ImGui::End();
+}
+
+/// The almanac: a window of pages about the place, with the numbers it is really running on.
+void drawAlmanac(const HudModel& model, HudSettings& settings)
+{
+    const float  scale  = ImGui::GetFontSize() / 13.0F;
+    const ImVec2 screen = ImGui::GetIO().DisplaySize;
+    const ImVec2 size(std::min(660.0F * scale, screen.x - (24.0F * scale)),
+                      std::min(470.0F * scale, screen.y - (60.0F * scale)));
+    ImGui::SetNextWindowSize(size, ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(
+        ImVec2(std::max(12.0F * scale, screen.x - size.x - (16.0F * scale)), 60.0F * scale),
+        ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Almanac", &settings.showAlmanac))
+    {
+        ImGui::End();
+        return;
+    }
+    if (model.almanac.empty())
+    {
+        ui::textMuted("Nothing to describe yet.");
+        ImGui::End();
+        return;
+    }
+    settings.almanacPage =
+        std::clamp(settings.almanacPage, 0, static_cast<int>(model.almanac.size()) - 1);
+
+    // The contents down the left, the page itself on the right.
+    ImGui::BeginChild("contents", ImVec2(196.0F * scale, 0.0F), ImGuiChildFlags_Borders);
+    for (std::size_t i = 0; i < model.almanac.size(); ++i)
+    {
+        const bool chosen = std::cmp_equal(i, settings.almanacPage);
+        if (ImGui::Selectable(model.almanac[i].title.c_str(), chosen))
+        {
+            settings.almanacPage = static_cast<int>(i);
+        }
+    }
+    ImGui::EndChild();
+    ImGui::SameLine();
+
+    ImGui::BeginChild("page");
+    const AlmanacPage& page = model.almanac[static_cast<std::size_t>(settings.almanacPage)];
+    ImGui::SeparatorText(page.title.c_str());
+    ui::textWrapped(page.story);
+    ImGui::Spacing();
+    for (const AlmanacFact& fact : page.facts)
+    {
+        // The labels here are whole phrases, so they get a line of their own with the number
+        // after them, and the note under both.
+        ui::textMuted(fact.label);
+        ImGui::SameLine();
+        ImGui::TextUnformatted(fact.value.c_str());
+        if (!fact.note.empty())
+        {
+            ImGui::Indent(16.0F * scale);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+            ui::textWrapped(fact.note);
+            ImGui::PopStyleColor();
+            ImGui::Unindent(16.0F * scale);
+        }
+        ImGui::Spacing();
+    }
+    ImGui::EndChild();
+    ImGui::End();
+}
+
+/// Photo mode: the controls that matter for a picture, and nothing else.
+void drawPhotoMode(const HudModel& model, HudSettings& settings, HudActions& actions)
+{
+    const float scale = ImGui::GetFontSize() / 13.0F;
+    ImGui::SetNextWindowPos(ImVec2(12.0F * scale, 12.0F * scale), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(330.0F * scale, 0.0F), ImGuiCond_Always);
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                                   ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
+    if (!ImGui::Begin("Photo mode (F2)", nullptr, flags))
+    {
+        ImGui::End();
+        return;
+    }
+    ui::textMuted("Fly where you like; the HUD stays out of the picture.");
+    ImGui::SliderFloat("Exposure", &settings.exposure, 0.1F, 16.0F, "%.2f",
+                       ImGuiSliderFlags_Logarithmic);
+    ImGui::SliderFloat("Field of view", &settings.fieldOfViewDeg, 2.0F, 100.0F, "%.0f deg",
+                       ImGuiSliderFlags_Logarithmic);
+    ImGui::SliderFloat("Painted colours", &settings.grade, 0.0F, 1.0F, "%.2f");
+
+    ImGui::Separator();
+    if (ImGui::Checkbox("Long exposure", &settings.trails))
+    {
+        settings.trailsReset = true;
+    }
+    if (ImGui::BeginItemTooltip())
+    {
+        ImGui::TextUnformatted(
+            "Keeps the brightest each pixel has been. Hold still and the stars "
+            "draw arcs as the habitat turns: a full circle every two minutes.");
+        ImGui::EndTooltip();
+    }
+    ImGui::BeginDisabled(!settings.trails);
+    ImGui::SameLine();
+    if (ImGui::Button("Start again"))
+    {
+        settings.trailsReset = true;
+    }
+    ImGui::EndDisabled();
+
+    ImGui::BeginDisabled(settings.trails);
+    ImGui::SliderInt("Picture size", &settings.captureScale, 1, 4,
+                     settings.captureScale > 1 ? "%dx the window" : "the window");
+    ImGui::EndDisabled();
+    ui::textMuted(settings.trails
+                      ? std::format("{} x {} pixels (an exposure is held at the window's size)",
+                                    model.photoWidth, model.photoHeight)
+                      : std::format("{} x {} pixels", model.photoWidth, model.photoHeight));
+    if (ImGui::Button("Take the picture (F12)"))
+    {
+        actions.screenshot = true;
+    }
+    if (!model.status.empty())
+    {
+        ui::textWrapped(model.status);
+    }
+    ImGui::End();
 }
 
 }  // namespace
@@ -593,6 +1048,31 @@ HudActions drawHud(const HudModel& model, HudSettings& settings, EditorState& ed
 {
     HudActions  actions;
     const float scale = ImGui::GetFontSize() / 13.0F;
+    if (settings.photoMode)
+    {
+        drawPhotoMode(model, settings, actions);
+        drawTourCaption(model);
+        return actions;
+    }
+    if (model.touring)
+    {
+        // A tour shows the place, not the instruments: just the caption and a way to stop.
+        drawTourCaption(model);
+        ImGui::SetNextWindowPos(ImVec2(12.0F * scale, 12.0F * scale), ImGuiCond_Always);
+        ImGui::SetNextWindowBgAlpha(0.5F);
+        const ImGuiWindowFlags bare = ImGuiWindowFlags_NoDecoration |
+                                      ImGuiWindowFlags_AlwaysAutoResize |
+                                      ImGuiWindowFlags_NoSavedSettings;
+        if (ImGui::Begin("##touring", nullptr, bare))
+        {
+            if (ImGui::Button("Stop the tour"))
+            {
+                actions.stopTour = true;
+            }
+        }
+        ImGui::End();
+        return actions;
+    }
     ImGui::SetNextWindowPos(ImVec2(12.0F * scale, 12.0F * scale), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(440.0F * scale, 0.0F), ImGuiCond_FirstUseEver);
     if (ImGui::Begin(model.title.c_str()))
@@ -602,13 +1082,17 @@ HudActions drawHud(const HudModel& model, HudSettings& settings, EditorState& ed
         {
             drawTimeAndLook(model, settings, actions);
         }
+        if (ImGui::CollapsingHeader("Guided tours"))
+        {
+            drawTours(model, actions);
+        }
         if (ImGui::CollapsingHeader("Weather and the year"))
         {
             drawWeather(model, settings);
         }
         if (ImGui::CollapsingHeader("This habitat"))
         {
-            drawMetrics(model);
+            drawMetrics(model, settings, actions);
         }
         if (ImGui::CollapsingHeader("Renderer"))
         {
@@ -630,6 +1114,14 @@ HudActions drawHud(const HudModel& model, HudSettings& settings, EditorState& ed
     if (settings.showEditor)
     {
         drawEditor(model, editor, settings, actions);
+    }
+    if (settings.showGallery)
+    {
+        drawGallery(model, editor, settings, actions);
+    }
+    if (settings.showAlmanac)
+    {
+        drawAlmanac(model, settings);
     }
     drawSkyLabel(model.sky.label);
     return actions;

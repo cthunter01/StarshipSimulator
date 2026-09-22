@@ -1,5 +1,6 @@
 # Unit tests link the core and physics libraries, so they run anywhere (no window or GPU needed).
 add_executable(StarshipSimulator_tests
+    almanac_test.cpp
     app_options_test.cpp
     assets_test.cpp
     astro_test.cpp
@@ -7,6 +8,7 @@ add_executable(StarshipSimulator_tests
     buildings_test.cpp
     camera_test.cpp
     clouds_test.cpp
+    determinism_test.cpp
     habitat_mesher_test.cpp
     habitat_test.cpp
     mesh_test.cpp
@@ -21,6 +23,7 @@ add_executable(StarshipSimulator_tests
     spirv_reflect_test.cpp
     star_catalog_test.cpp
     terrain_test.cpp
+    tour_test.cpp
     transit_test.cpp
     uniforms_test.cpp
     weather_test.cpp

@@ -28,6 +28,10 @@ axis, overview (or `--camera x,y,z,yaw,pitch` in the
 habitat frame; `--scenario data/presets/coriolis_playground.toml` for the small habitat). Write captures to the
 scratchpad and inspect them with the Read tool before reporting visual work as done. The window opens briefly
 on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
+- The panels: `--panel editor|gallery|almanac` opens one at startup (repeatable), which is the only way
+  to get them into a capture; `--capture-ui` then includes them. `--tour 1|2|3` (or part of a tour's
+  name) sets off on a guided tour, and captures step 1/60 s per frame, so `--capture-frames 1800`
+  lands 30 s into it
 - The weather: `--weather clear|fair|cloudy|overcast|mist|rain|storm` holds it still (otherwise it runs itself
   from the clock); the season follows the date, so `--time 2045-07-21T10:00` is autumn in the Island Three
   preset. Captures and `--benchmark` are always silent; `--mute` silences an ordinary run
@@ -35,6 +39,11 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
   jupiter|Vega|partner` (spins the habitat so it shows through window 0 and floats you off the axis facing it),
   `--fov 2.5` to zoom in. Captures step a fixed 1/60 s per frame and load the sky data synchronously, so they
   are repeatable; keep the window size small (e.g. 960x540), the compositor may resize large windows
+- Photo mode (F2) hides the HUD, frees the camera and offers a long exposure and an enlarged
+  picture. The exposure keeps the brightest each pixel has been (`BlendMode::Lighten` into a
+  separate target), so the stars draw arcs as the habitat turns while everything still stays sharp;
+  an enlarged picture renders the scene at 2-4x and scales it down. The two do not combine: an
+  exposure is held at one size, so while one is running the picture comes out at the window's size
 - Performance: `build/clang-release/bin/StarshipSimulator --size 1920x1080 --no-vsync --no-gpu-debug --benchmark`
   prints average/p99 frame times over a fixed tour and per view (M3 on the RTX A1000: ~6 ms average, ~13 ms
   p99; towns and physics in M4 added about 1 ms; M6, with the clouds, the crowds and the tramway, measures
@@ -63,6 +72,18 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
     `weather` (`ClimateSpec`, `weatherAt`: cloud, rain, wetness, mist, wind and the season as a smooth function
     of time, never simulated or remembered, so two people at the same moment see the same sky; `seasonalDay`
     stretches the day schedule over the year)
+  - `tour.h`: guided tours (`habitatTours(geometry, name)` builds them for the habitat you are in,
+    `tourAt` gives the eye, the angles and the caption at a moment). Stops hold a viewpoint, a
+    caption, how long the move to it takes and how long it is held, and may set the mirror angle,
+    the weather or the time scale. Every caption and every distance is worked out from the habitat
+    (the tours must also fit a 250 m cylinder, which `tour_test` checks), and
+    `place(geometry, z, theta, height)` puts a stop that many metres above the floor -- heights are
+    positive, the radius shrinks -- nudging it to the nearest open ground so no trunk stands in
+    the frame
+  - `almanac.h`: the pages the almanac shows (K in the app) -- what the habitat is, in numbers and
+    plain words, worked out from the habitat you are standing in and the moment you are in it.
+    `dropDeflection` and `jumpDeflection` fly the simulation's own free flight rather than quoting
+    a formula, so the book and the world cannot disagree
   - `astro/`: `SimTime` (int64 microseconds since J2000, UT), `ephemeris` (Astronomy Engine: bodies, Lagrange
     point locations, `computeSky`, `habitatFromEqj`: the spin axis points at the Sun), `star_catalog` (HYG),
     `sky_objects` (phases, naming what the crosshair points at)
@@ -98,7 +119,10 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
     or world generation takes several seconds
   - `scenario/`: TOML habitat files (toml++, used only in `scenario.cpp`; bump `kGeneratorVersion` when
     generation changes; `[climate]` holds the cloud deck, how often it rains and the length of the year,
-    `season_at_epoch` deciding where in that year J2000 falls, and so which season a preset starts in);
+    `season_at_epoch` deciding where in that year J2000 falls, and so which season a preset starts in).
+    `validateScenario` returns every problem with a whole scenario as a sentence (the editor lists them
+    all while you drag sliders; `parseScenario` reports the first); `describeHabitat` sums one up in a
+    line for the gallery;
     `gpu_abi/`: uniform structs, SPIR-V reflection, `color_grade` (the grading LUT),
     `ground_atlas` (the towns' ground maps packed for the landscape shader); plus camera, frustum, sim
     clock, app options
@@ -133,8 +157,11 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
     throws away every pixel with land in front before the march runs, and `layout(early_fragment_tests)`
     makes sure it happens early. From below the deck the pass draws the faces where rays enter that cylinder,
     from inside it the faces where they leave, so each pixel is shaded exactly once
-- `src/app/`: the `StarshipSimulator` executable (main loop, input, HUD, sky data loading on a worker thread);
-  its headers are private. `walkTo` stands the player on the terrain grid rather than the analytic
+- `src/app/`: the `StarshipSimulator` executable (main loop, input, HUD, editor, gallery, sky data loading
+  on a worker thread); its headers are private. The editor holds a whole `Scenario` as its draft
+  (shape, day, land, air, place and time), not just the habitat's shape: nothing reaches the world
+  until "Build it", which is `buildDraft`. The gallery reads every preset and saved file at startup
+  (and on "Look again"), so a broken file shows its error rather than going missing. `walkTo` stands the player on the terrain grid rather than the analytic
   terrain: the two differ wherever the tramway has graded the land. The people, the birds and the
   trams are worked out fresh every frame from
   `animationSeconds` and handed to both the renderer and the physics. The weather and the season come from
@@ -173,7 +200,13 @@ on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs.
   frame; shaders get only that matrix (never times). Simulated time (`SimTime`) is separate from the spin, which
   always runs in real time
 - Determinism: procedural generation uses our own `SplitMix64`/`SimplexNoise` (never `std::` distributions) and
-  core builds with `-ffp-contract=off`; `buildHabitatMeshes` output must not depend on the thread count
+  core builds with `-ffp-contract=off`; `buildHabitatMeshes` output must not depend on the thread count.
+  **One random draw to a statement**: C++ does not say which argument of a call (or which operand of
+  `+`) is worked out first, so `f(rng.uniform(), rng.uniform())` hands the two values over in
+  whichever order the compiler chose, and the same habitat file then grows a different town under a
+  different compiler. Put each draw in its own named variable first. `determinism_test` hashes a
+  whole generated world and is checked against both GCC and Clang; when generation changes on
+  purpose, bump `Scenario::kGeneratorVersion` and record the new hash
 - Precision: world positions are `double`. The GPU only sees camera-relative `float` data (compute
   `position - camera` in double, then convert). Depth is reverse-Z with an infinite far plane: clear to 0,
   compare `GREATER`

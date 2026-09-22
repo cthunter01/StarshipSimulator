@@ -322,9 +322,13 @@ PlantedTile plantTile(const HabitatGeometry& geometry, const TerrainGrid& grid,
             const Vec3d local = grow->position - planted.tile.origin;
             lowest            = glm::min(lowest, local);
             highest           = glm::max(highest, local);
+            // One draw to a line: C++ does not say which argument of a call is worked out first,
+            // so two draws in one call would come out in a different order under another compiler
+            // and the same habitat file would grow a different wood.
+            const double turn = random.uniform();
+            const double tint = random.uniform();
             planted.bySpecies.at(index).push_back(
-                {.position = Vec3f(local),
-                 .packed   = packTree(height, random.uniform(), grow->species, random.uniform())});
+                {.position = Vec3f(local), .packed = packTree(height, turn, grow->species, tint)});
         }
     }
     planted.tile.boundsMin = Vec3f(lowest - Vec3d(kCrownMargin));

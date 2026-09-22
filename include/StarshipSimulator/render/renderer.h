@@ -96,6 +96,10 @@ struct FrameOptions
     ImDrawData*                          ui = nullptr;  // HUD drawn over the scene, may be null
     std::optional<std::filesystem::path> screenshot;    // save this frame as a PNG
     bool                                 screenshotIncludesUi = false;
+    // Photo mode: hold a long exposure, and render the saved picture larger than the window.
+    bool          trails       = false;  // keep the brightest each pixel has been: star trails
+    bool          trailsReset  = false;  // start the exposure again this frame
+    std::uint32_t captureScale = 1;      // 2 or 3 renders the screenshot supersampled
 };
 
 struct FrameResult
@@ -151,18 +155,25 @@ private:
                          const SceneView& view, const HabitatFrame& habitatFrame);
     static void uploadPerFrameData(SDL_GPUCommandBuffer* commands, const SceneView& view,
                                    const Frustum& frustum);
-    void        drawShadows(SDL_GPUCommandBuffer* commands, const SceneView& view,
-                            const gpu::FrameUniforms& frame);
+    /// Adds this frame to the long exposure and returns what the display should show.
+    SDL_GPUTexture* accumulate(SDL_GPUCommandBuffer* commands, const FrameOptions& options,
+                               std::uint32_t width, std::uint32_t height);
+    void            drawShadows(SDL_GPUCommandBuffer* commands, const SceneView& view,
+                                const gpu::FrameUniforms& frame);
     void drawDisplay(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* target, const SceneView& view,
-                     ImDrawData* ui);
+                     ImDrawData* ui, SDL_GPUTexture* source);
     [[nodiscard]] std::expected<std::filesystem::path, std::string> captureAndSubmit(
         SDL_GPUCommandBuffer* commands, const SceneView& view, const std::filesystem::path& path,
-        ImDrawData* ui, std::uint32_t width, std::uint32_t height);
+        ImDrawData* ui, std::uint32_t width, std::uint32_t height, SDL_GPUTexture* source);
 
     GpuDevice*           device_;
     std::vector<GpuStar> stars_;
     ShaderLibrary        shaders_;
     RenderTargets        targets_;
+    GpuTexture           trails_;  // the long exposure, when photo mode is holding one
+    std::uint32_t        trailsWidth_  = 0;
+    std::uint32_t        trailsHeight_ = 0;
+    bool                 trailsClear_  = true;
     SkyTextures          skyTextures_;
     ShadowMap            shadowMap_;
     GpuMesh              hull_;

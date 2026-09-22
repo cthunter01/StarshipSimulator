@@ -181,4 +181,48 @@ TEST(Scenario, ErrorsSayWhatAndWhere)
     EXPECT_FALSE(loadScenario(presets() / "does_not_exist.toml").has_value());
 }
 
+TEST(Scenario, DescribesAHabitatInOneLine)
+{
+    const std::string line = describeHabitat(OneillCylinderSpec{});  // Island Three
+    EXPECT_NE(line.find("8.0 km across"), std::string::npos) << line;
+    EXPECT_NE(line.find("32 km long"), std::string::npos) << line;
+    EXPECT_NE(line.find("1.00 g"), std::string::npos) << line;
+    EXPECT_NE(line.find("structural steel"), std::string::npos) << line;
+
+    OneillCylinderSpec huge;
+    huge.radiusM = 1000000.0;  // a Bishop ring's radius: hoop stress no known material takes
+    EXPECT_NE(describeHabitat(huge).find("future materials"), std::string::npos);
+}
+
+TEST(Scenario, ValidateNamesEverythingWrongAtOnce)
+{
+    // The editor shows the whole list while you drag sliders, so one problem must not hide
+    // another.
+    EXPECT_TRUE(validateScenario(Scenario{}).empty());
+
+    Scenario broken;
+    broken.habitat.radiusM    = 50.0;  // too small to hold together
+    broken.day.nightAngleDeg  = 80.0;  // sunlight would still get in at midnight
+    broken.day.dayLengthHours = 30.0;  // longer than a day
+    broken.start.valley       = 7;     // there is no seventh valley
+    const auto problems       = validateScenario(broken);
+    EXPECT_GE(problems.size(), 4U);
+    for (const std::string& problem : problems)
+    {
+        EXPECT_FALSE(problem.empty());
+    }
+}
+
+TEST(Scenario, EveryPresetIsReadyToOpen)
+{
+    for (const char* name : {"island_three.toml", "coriolis_playground.toml"})
+    {
+        const auto loaded = loadScenario(presets() / name);
+        ASSERT_TRUE(loaded.has_value()) << loaded.error().describe();
+        EXPECT_TRUE(validateScenario(*loaded).empty()) << validateScenario(*loaded).front();
+        EXPECT_FALSE(describeHabitat(loaded->habitat).empty());
+        EXPECT_FALSE(loaded->description.empty()) << name << " needs a line saying what it is";
+    }
+}
+
 }  // namespace

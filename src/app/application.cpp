@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
+#include <charconv>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -34,6 +36,7 @@
 #include <SDL3/SDL_video.h>
 
 #include "StarshipSimulator/audio/audio_device.h"
+#include "StarshipSimulator/core/almanac.h"
 #include "StarshipSimulator/core/app_options.h"
 #include "StarshipSimulator/core/astro/astro_time.h"
 #include "StarshipSimulator/core/astro/ephemeris.h"
@@ -68,6 +71,7 @@
 #include "StarshipSimulator/core/procgen/trees.h"
 #include "StarshipSimulator/core/rng.h"
 #include "StarshipSimulator/core/scenario/scenario.h"
+#include "StarshipSimulator/core/tour.h"
 #include "StarshipSimulator/physics/physics_world.h"
 #include "StarshipSimulator/render/gpu_birds.h"
 #include "StarshipSimulator/render/gpu_device.h"
@@ -289,11 +293,72 @@ std::string fileNameFor(std::string_view title)
     return name.empty() ? std::string("habitat") : name;
 }
 
-void setSaveName(EditorState& editor, std::string_view title)
+template <std::size_t N>
+void setText(std::array<char, N>& field, std::string_view text)
 {
-    editor.saveName.fill('\0');
-    const std::size_t length = std::min(title.size(), editor.saveName.size() - 1);
-    std::ranges::copy(title.substr(0, length), editor.saveName.begin());
+    field.fill('\0');
+    std::ranges::copy(text.substr(0, std::min(text.size(), N - 1)), field.begin());
+}
+
+/// Puts a scenario into the editor: the whole file, and its title and description as text to edit.
+void loadDraft(EditorState& editor, const Scenario& scenario)
+{
+    editor.draft = scenario;
+    setText(editor.saveName, scenario.title);
+    setText(editor.description, scenario.description);
+}
+
+/// Which tour a --tour value asks for: a 1-based number, or any part of a tour's name.
+std::optional<std::size_t> findTour(const std::vector<Tour>& tours, const std::string& wanted)
+{
+    const auto folded = [](std::string_view text) {
+        std::string out;
+        for (const char letter : text)
+        {
+            out += static_cast<char>(std::tolower(static_cast<unsigned char>(letter)));
+        }
+        return out;
+    };
+    std::size_t       number = 0;
+    const char* const first  = std::to_address(wanted.begin());
+    const char* const last   = std::to_address(wanted.end());
+    if (std::from_chars(first, last, number).ec == std::errc{} && number >= 1 &&
+        number <= tours.size())
+    {
+        return number - 1;
+    }
+    const std::string needle = folded(wanted);
+    for (std::size_t i = 0; i < tours.size(); ++i)
+    {
+        if (!needle.empty() && folded(tours[i].name).contains(needle))
+        {
+            return i;
+        }
+    }
+    return std::nullopt;
+}
+
+/// What a habitat file says about itself, for the gallery. A file that will not read still gets an
+/// entry, so a broken one is visible rather than quietly missing.
+GalleryEntry galleryEntryFor(const std::filesystem::path& path, bool preset)
+{
+    GalleryEntry entry;
+    entry.path        = path;
+    entry.preset      = preset;
+    entry.title       = path.stem().string();
+    const auto loaded = loadScenario(path);
+    if (!loaded)
+    {
+        entry.problem = loaded.error().describe();
+        return entry;
+    }
+    if (!loaded->title.empty())
+    {
+        entry.title = loaded->title;
+    }
+    entry.description = loaded->description;
+    entry.summary     = describeHabitat(loaded->habitat);
+    return entry;
 }
 
 Vec3d radial(double theta)
@@ -380,9 +445,14 @@ Application::Application(AppOptions options)
     simTime_ = options_.startTime.value_or(scenario_.sky.start);
     hudSettings_.fieldOfViewDeg =
         static_cast<float>(options_.fieldOfViewDeg.value_or(kNormalFovDeg));
-    editor_.draft = scenario_.habitat;
-    setSaveName(editor_, scenario_.title);
+    loadDraft(editor_, scenario_);
     refreshScenarioList();
+    for (const std::string& panel : options_.panels)
+    {
+        hudSettings_.showEditor  = hudSettings_.showEditor || panel == "editor";
+        hudSettings_.showGallery = hudSettings_.showGallery || panel == "gallery";
+        hudSettings_.showAlmanac = hudSettings_.showAlmanac || panel == "almanac";
+    }
 
     GeneratedWorld world = generateWorld(scenario_.habitat, scenario_.start);
     if (!world.geometry)
@@ -409,6 +479,17 @@ Application::Application(AppOptions options)
     if (options_.lookAt)
     {
         lookAtName(*options_.lookAt);
+    }
+    if (options_.tour)
+    {
+        if (const auto which = findTour(tours_, *options_.tour))
+        {
+            startTour(*which);
+        }
+        else
+        {
+            log::warn("No tour is called '{}'", *options_.tour);
+        }
     }
 }
 
@@ -449,6 +530,8 @@ void Application::adoptWorld(GeneratedWorld world, bool placeAtStartPoint)
     physics_               = std::move(world.physics);
     player_.setMover(&physics_->character());
     metrics_ = computeMetrics(geometry_->spec());
+    tours_   = habitatTours(*geometry_, scenario_.title);
+    touring_.reset();
     ball_.reset();
     thrown_.clear();
     const auto counted = [](std::size_t n, std::string_view one, std::string_view many) {
@@ -474,7 +557,9 @@ void Application::adoptWorld(GeneratedWorld world, bool placeAtStartPoint)
     }
     else if (player_.locomotion() == Locomotion::Walk)
     {
-        player_.placeOnGround(*geometry_, eye.z, HabitatGeometry::angleOf(eye));
+        // The editor can make the habitat shorter than where you were standing.
+        const double z = std::clamp(eye.z, geometry_->floorZMin(), geometry_->floorZMax());
+        player_.placeOnGround(*geometry_, z, HabitatGeometry::angleOf(eye));
     }
     else
     {
@@ -525,24 +610,53 @@ void Application::loadScenarioFile(const std::filesystem::path& path)
         status_ = loaded.error().describe();
         return;
     }
-    scenario_                   = std::move(*loaded);
-    editor_.draft               = scenario_.habitat;
+    scenario_ = std::move(*loaded);
+    loadDraft(editor_, scenario_);
     hudSettings_.mirrorAngleDeg = static_cast<float>(scenario_.habitat.mirrors.openingAngleDeg);
     hudSettings_.followSchedule = scenario_.day.enabled;
     simTime_                    = scenario_.sky.start;
-    setSaveName(editor_, scenario_.title);
     startGeneration(scenario_.habitat, true);
+}
+
+/// Opens a habitat file in the editor without going there, so it can be changed or saved under a
+/// new name.
+void Application::editScenarioFile(const std::filesystem::path& path)
+{
+    auto loaded = loadScenario(path);
+    if (!loaded)
+    {
+        status_ = loaded.error().describe();
+        return;
+    }
+    loadDraft(editor_, *loaded);
+    setText(editor_.saveName, editor_.draft.title + " copy");  // don't write over the original
+    hudSettings_.showEditor = true;
+    status_                 = std::format("{} is open in the editor", editor_.draft.title);
+}
+
+/// Everything in the editor becomes the habitat you are in, and the world is built again.
+void Application::buildDraft()
+{
+    const astro::SimTime wasStarting = scenario_.sky.start;
+    const std::string    title(editor_.saveName.data());
+    scenario_                   = editor_.draft;
+    scenario_.title             = title.empty() ? editor_.draft.title : title;
+    scenario_.description       = std::string(editor_.description.data());
+    hudSettings_.mirrorAngleDeg = static_cast<float>(scenario_.habitat.mirrors.openingAngleDeg);
+    hudSettings_.followSchedule = scenario_.day.enabled;
+    if (scenario_.sky.start != wasStarting)
+    {
+        simTime_ = scenario_.sky.start;  // the editor moved the visit to another moment
+    }
+    startGeneration(scenario_.habitat, false);
 }
 
 void Application::saveDraft()
 {
     const std::string title(editor_.saveName.data());
-    Scenario          copy               = scenario_;
-    copy.title                           = title.empty() ? scenario_.title : title;
-    copy.habitat                         = editor_.draft;
-    copy.habitat.mirrors.openingAngleDeg = static_cast<double>(hudSettings_.mirrorAngleDeg);
-    copy.sky.start                       = simTime_;  // the visit resumes from this moment
-    copy.day.enabled                     = hudSettings_.followSchedule;
+    Scenario          copy = editor_.draft;
+    copy.title             = title.empty() ? scenario_.title : title;
+    copy.description       = std::string(editor_.description.data());
     const std::filesystem::path path =
         userDirectory() / "habitats" / (fileNameFor(copy.title) + ".toml");
     const auto saved = saveScenario(copy, path);
@@ -550,22 +664,32 @@ void Application::saveDraft()
     refreshScenarioList();
 }
 
+/// Reads every habitat file this machine has, so the gallery can say what each one is.
 void Application::refreshScenarioList()
 {
-    editor_.scenarios.clear();
+    editor_.gallery.clear();
+    bool preset = true;
     for (const std::filesystem::path& directory :
          {dataDirectory() / "presets", userDirectory() / "habitats"})
     {
-        std::error_code error;
+        std::vector<std::filesystem::path> files;
+        std::error_code                    error;
         for (const auto& entry : std::filesystem::directory_iterator(directory, error))
         {
             if (entry.path().extension() == ".toml")
             {
-                editor_.scenarios.push_back(entry.path());
+                files.push_back(entry.path());
             }
         }
+        std::ranges::sort(files);
+        for (const std::filesystem::path& file : files)
+        {
+            editor_.gallery.push_back(galleryEntryFor(file, preset));
+        }
+        preset = false;
     }
-    std::ranges::sort(editor_.scenarios);
+    editor_.selected =
+        std::clamp(editor_.selected, 0, std::max(static_cast<int>(editor_.gallery.size()) - 1, 0));
 }
 
 void Application::placeAtStart()
@@ -1192,12 +1316,126 @@ std::optional<SkyLabel> Application::skyLabel() const
             (kLabelSeconds + kLabelFadeSeconds - identifiedAge_) / kLabelFadeSeconds, 0.0, 1.0))};
 }
 
+std::vector<TourName> Application::tourNames() const
+{
+    std::vector<TourName> names;
+    names.reserve(tours_.size());
+    for (const Tour& tour : tours_)
+    {
+        names.push_back({.name = tour.name, .blurb = tour.blurb, .lengthS = tour.lengthS()});
+    }
+    return names;
+}
+
+void Application::startTour(std::size_t which)
+{
+    if (which >= tours_.size())
+    {
+        return;
+    }
+    touring_                 = which;
+    tourSeconds_             = 0.0;
+    hudSettings_.showEditor  = false;
+    hudSettings_.showGallery = false;
+    hudSettings_.showAlmanac = false;
+    player_.setLocomotion(Locomotion::Fly);
+    status_ = std::format("Tour: {}", tours_[which].name);
+}
+
+void Application::stepTour(double realSeconds)
+{
+    if (!touring_)
+    {
+        return;
+    }
+    const Tour& tour = tours_[*touring_];
+    tourSeconds_ += realSeconds;
+    const TourFrame frame = tourAt(tour, tourSeconds_);
+    tourCaption_          = frame.caption;
+    tourFade_             = frame.captionFade;
+    if (frame.finished)
+    {
+        touring_.reset();
+        tourCaption_.clear();
+        tourFade_ = 0.0;
+        status_   = "Tour finished";
+        return;
+    }
+    // The tour flies the camera and sets the habitat to whatever the stop asks for.
+    const TourStop& stop = tour.stops[frame.stop];
+    if (stop.mirrorAngleDeg)
+    {
+        hudSettings_.mirrorAngleDeg = static_cast<float>(*stop.mirrorAngleDeg);
+        hudSettings_.followSchedule = false;
+    }
+    if (stop.weather)
+    {
+        const Weather held        = weatherNamed(*stop.weather).value_or(Weather{});
+        hudSettings_.forceWeather = true;
+        hudSettings_.cloudCover   = static_cast<float>(held.cloudCover);
+        hudSettings_.rain         = static_cast<float>(held.rain);
+        hudSettings_.wetness      = static_cast<float>(held.wetness);
+        hudSettings_.mist         = static_cast<float>(held.mist);
+    }
+    if (stop.timeScale)
+    {
+        hudSettings_.timeScale  = *stop.timeScale;
+        hudSettings_.timePaused = false;
+    }
+    flyTo(frame.eye, frame.yawDeg, frame.pitchDeg);
+}
+
+glm::uvec2 Application::photoSize() const
+{
+    int width  = 0;
+    int height = 0;
+    SDL_GetWindowSizeInPixels(window_.get(), &width, &height);
+    const auto scale =
+        hudSettings_.photoMode && hudSettings_.trails
+            ? 1U
+            : static_cast<std::uint32_t>(std::clamp(hudSettings_.captureScale, 1, 4));
+    return {static_cast<std::uint32_t>(std::max(width, 0)) * scale,
+            static_cast<std::uint32_t>(std::max(height, 0)) * scale};
+}
+
+AlmanacState Application::almanacState() const
+{
+    AlmanacState state;
+    state.geometry           = geometry_.get();
+    state.metrics            = metrics_;
+    state.weather            = weather_;
+    state.day                = seasonalDay(scenario_.day, scenario_.climate, weather_.season);
+    state.mirrorAngleRad     = mirrorAngle();
+    state.localHour          = astro::hourOfDay(simTime_, scenario_.sky.utcOffsetHours);
+    state.eye                = player_.eyePosition();
+    state.velocity           = player_.velocity();
+    state.location           = scenario_.sky.location;
+    state.sky                = sky_.bodies.empty() ? nullptr : &sky_;
+    state.partner            = scenario_.habitat.partner.enabled;
+    state.partnerSeparationM = scenario_.habitat.partner.separationM;
+    if (settlements_)
+    {
+        state.towns     = settlements_->townCount();
+        state.farms     = settlements_->places.size() - settlements_->townCount();
+        state.buildings = settlements_->buildings.size();
+    }
+    state.treeMillions = trees_ ? static_cast<double>(trees_->treeCount()) / 1e6 : 0.0;
+    state.tramLines    = tramLines_.size();
+    for (const TramLine& line : tramLines_)
+    {
+        state.tramStops += line.stops.size();
+        state.trackKm += line.lengthM / 1000.0;
+    }
+    return state;
+}
+
 SkyModel Application::skyModel() const
 {
     const astro::CalendarTime utc = astro::toCalendar(simTime_);
     SkyModel                  model;
     model.clock     = std::format("{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC", utc.year, utc.month,
                                   utc.day, utc.hour, utc.minute, static_cast<int>(utc.second));
+    model.time      = simTime_;
     model.localHour = astro::hourOfDay(simTime_, scenario_.sky.utcOffsetHours);
     model.location  = astro::locationName(scenario_.sky.location);
     model.partner   = geometry_->spec().partner.enabled;
@@ -1309,6 +1547,13 @@ HudActions Application::drawUi()
         .sky           = skyModel(),
         .sound         = audio_ != nullptr && audio_->isOpen(),
         .weather       = weather_,
+        .almanac       = almanacPages(almanacState()),
+        .tours         = tourNames(),
+        .tourCaption   = tourCaption_,
+        .tourFade      = tourFade_,
+        .touring       = touring_.has_value(),
+        .photoWidth    = photoSize().x,
+        .photoHeight   = photoSize().y,
         .cloudBaseM    = scenario_.climate.cloudBaseM,
         .cloudTopM     = scenario_.climate.cloudTopM,
     };
@@ -1354,6 +1599,33 @@ void Application::applyInput(const InputFrame& input, const HudActions& actions)
     {
         hudSettings_.showEditor = !hudSettings_.showEditor;
     }
+    if (input.toggleAlmanac || actions.toggleAlmanac)
+    {
+        hudSettings_.showAlmanac = !hudSettings_.showAlmanac;
+    }
+    if (actions.startTour)
+    {
+        startTour(*actions.startTour);
+    }
+    if (actions.stopTour || (touring_ && input.move.forward != 0.0))
+    {
+        touring_.reset();  // taking the controls ends the tour
+        tourCaption_.clear();
+        status_ = "Tour stopped";
+    }
+    if (input.togglePhoto)
+    {
+        hudSettings_.photoMode = !hudSettings_.photoMode;
+        if (hudSettings_.photoMode)
+        {
+            player_.setLocomotion(Locomotion::Fly);  // stand anywhere, including nowhere
+            status_.clear();
+        }
+        else
+        {
+            hudSettings_.trails = false;
+        }
+    }
     if (input.toggleHud)
     {
         showHud_ = !showHud_;
@@ -1374,16 +1646,23 @@ void Application::applyInput(const InputFrame& input, const HudActions& actions)
     }
     if (actions.regenerate)
     {
-        scenario_.habitat = editor_.draft;
-        startGeneration(editor_.draft, false);
+        buildDraft();
     }
     if (actions.save)
     {
         saveDraft();
     }
+    if (actions.refreshGallery)
+    {
+        refreshScenarioList();
+    }
     if (actions.load)
     {
         loadScenarioFile(*actions.load);
+    }
+    if (actions.editCopy)
+    {
+        editScenarioFile(*actions.editCopy);
     }
     applySkyInput(input, actions);
 }
@@ -1599,6 +1878,14 @@ std::optional<int> Application::render(int frame, bool screenshotRequested, ImDr
     {
         frameOptions.screenshot = nextScreenshotPath();
     }
+    // Photo mode holds a long exposure and takes the picture larger than the window.
+    frameOptions.trails      = hudSettings_.photoMode && hudSettings_.trails;
+    frameOptions.trailsReset = hudSettings_.trailsReset;
+    // An exposure is held at the size it was started at, so an enlarged picture would throw it
+    // away: while one is running, the picture comes out at the size of the window.
+    frameOptions.captureScale =
+        frameOptions.trails ? 1U : static_cast<std::uint32_t>(hudSettings_.captureScale);
+    hudSettings_.trailsReset = false;
 
     gpu::LightingSettings lighting;
     lighting.haze                      = static_cast<double>(hudSettings_.haze);
@@ -1778,8 +2065,9 @@ int Application::run()
         updateWeather(realSeconds);
         updateSky();
         updateSound(realSeconds);
+        stepTour(realSeconds);
 
-        if (const auto exitCode = render(frame, input.screenshot, ui))
+        if (const auto exitCode = render(frame, input.screenshot || actions.screenshot, ui))
         {
             return *exitCode;
         }

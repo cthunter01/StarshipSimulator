@@ -43,6 +43,14 @@ SDL_GPUColorTargetBlendState blendState(BlendMode mode)
             return make(SDL_GPU_BLENDFACTOR_ZERO, SDL_GPU_BLENDFACTOR_SRC_COLOR);
         case BlendMode::Alpha:
             return make(SDL_GPU_BLENDFACTOR_ONE, SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA);
+        case BlendMode::Lighten:
+        {
+            SDL_GPUColorTargetBlendState state =
+                make(SDL_GPU_BLENDFACTOR_ONE, SDL_GPU_BLENDFACTOR_ONE);
+            state.color_blend_op = SDL_GPU_BLENDOP_MAX;
+            state.alpha_blend_op = SDL_GPU_BLENDOP_MAX;
+            return state;
+        }
     }
     return {};
 }

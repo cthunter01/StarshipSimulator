@@ -7,6 +7,7 @@ StarshipSimulator_add_shaders(StarshipSimulator_shaders
         body.frag
         body.vert
         building.frag
+        accumulate.frag
         bird.frag
         bird.vert
         cloud_shell.vert

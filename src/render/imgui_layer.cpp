@@ -153,6 +153,13 @@ void textWrapped(const std::string& text)
     ImGui::PopTextWrapPos();
 }
 
+void textMutedWrapped(const std::string& text)
+{
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    textWrapped(text);
+    ImGui::PopStyleColor();
+}
+
 void field(const char* label, const std::string& value)
 {
     textMuted(label);

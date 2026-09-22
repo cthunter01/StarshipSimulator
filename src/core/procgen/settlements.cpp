@@ -949,9 +949,13 @@ private:
         const int trees = static_cast<int>(random_->uniform(0.0, 3.5));
         for (int t = 0; t < trees; ++t)
         {
-            const Vec2d p = bent(random_->uniform(area.u0 + 4.0, area.u1 - 4.0),
-                                 random_->uniform(area.w0 + 4.0, area.w1 - 4.0));
-            const bool  clear =
+            // One draw to a line: C++ does not say which argument of a call is worked out
+            // first, so two draws in one call come out in whichever order the compiler picked,
+            // and the same habitat file would grow a different town under a different compiler.
+            const double alongU  = random_->uniform(area.u0 + 4.0, area.u1 - 4.0);
+            const double acrossW = random_->uniform(area.w0 + 4.0, area.w1 - 4.0);
+            const Vec2d  p       = bent(alongU, acrossW);
+            const bool   clear =
                 std::none_of(plan_.buildings.begin() + static_cast<std::ptrdiff_t>(first),
                              plan_.buildings.end(), [&](const Building& b) {
                                  return boxDistance(p, b.centre, b.halfSize, b.angle) < 3.5;
@@ -1439,32 +1443,39 @@ std::optional<Settlement> planFarm(const Site& site, int valley, std::size_t ind
         const double angle = random.uniform(0.0, 2.0 * kPi);
         const Vec2d  dir(std::cos(angle), std::sin(angle));
         Building     house;
-        house.use           = BuildingUse::Farmhouse;
-        house.settlement    = index;
-        house.centre        = Vec2d(0.0);
-        house.halfSize      = Vec2d(random.uniform(5.5, 6.5), random.uniform(4.0, 4.6));
-        house.angle         = angle;
-        house.storeys       = 2;
-        house.roof          = RoofKind::Gable;
-        house.roofPitchDeg  = random.uniform(30.0, 38.0);
-        house.wallColour    = static_cast<std::uint8_t>(random.next() % 3);
-        house.roofColour    = static_cast<std::uint8_t>(random.next() % 4);
-        house.shutterColour = static_cast<std::uint8_t>(1 + (random.next() % 4));
-        house.seed          = static_cast<std::uint32_t>(random.next());
-        Building barn       = house;
-        barn.use            = BuildingUse::Barn;
-        barn.centre =
-            (dir * random.uniform(20.0, 26.0)) + (rotate90(dir) * random.uniform(-6.0, 6.0));
-        barn.halfSize         = Vec2d(random.uniform(9.0, 12.0), random.uniform(5.5, 6.5));
-        barn.angle            = angle + (0.5 * kPi);
-        barn.storeys          = 1;
-        barn.storeyHeightM    = random.uniform(5.5, 6.5);
-        barn.roofPitchDeg     = random.uniform(35.0, 42.0);
-        barn.wallColour       = static_cast<std::uint8_t>(random.next() % 2);
-        barn.shutterColour    = 0;
-        barn.seed             = static_cast<std::uint32_t>(random.next());
-        const auto houseLevel = check.footprint(house.centre, house.halfSize, house.angle);
-        const auto barnLevel  = check.footprint(barn.centre, barn.halfSize, barn.angle);
+        house.use        = BuildingUse::Farmhouse;
+        house.settlement = index;
+        house.centre     = Vec2d(0.0);
+        // One draw to a line: which argument of a call is worked out first is up to the
+        // compiler, so two draws in one call would come out in a different order elsewhere.
+        const double houseLong = random.uniform(5.5, 6.5);
+        const double houseDeep = random.uniform(4.0, 4.6);
+        house.halfSize         = Vec2d(houseLong, houseDeep);
+        house.angle            = angle;
+        house.storeys          = 2;
+        house.roof             = RoofKind::Gable;
+        house.roofPitchDeg     = random.uniform(30.0, 38.0);
+        house.wallColour       = static_cast<std::uint8_t>(random.next() % 3);
+        house.roofColour       = static_cast<std::uint8_t>(random.next() % 4);
+        house.shutterColour    = static_cast<std::uint8_t>(1 + (random.next() % 4));
+        house.seed             = static_cast<std::uint32_t>(random.next());
+        Building barn          = house;
+        barn.use               = BuildingUse::Barn;
+        const double barnAway  = random.uniform(20.0, 26.0);
+        const double barnAside = random.uniform(-6.0, 6.0);
+        barn.centre            = (dir * barnAway) + (rotate90(dir) * barnAside);
+        const double barnLong  = random.uniform(9.0, 12.0);
+        const double barnDeep  = random.uniform(5.5, 6.5);
+        barn.halfSize          = Vec2d(barnLong, barnDeep);
+        barn.angle             = angle + (0.5 * kPi);
+        barn.storeys           = 1;
+        barn.storeyHeightM     = random.uniform(5.5, 6.5);
+        barn.roofPitchDeg      = random.uniform(35.0, 42.0);
+        barn.wallColour        = static_cast<std::uint8_t>(random.next() % 2);
+        barn.shutterColour     = 0;
+        barn.seed              = static_cast<std::uint32_t>(random.next());
+        const auto houseLevel  = check.footprint(house.centre, house.halfSize, house.angle);
+        const auto barnLevel   = check.footprint(barn.centre, barn.halfSize, barn.angle);
         if (!houseLevel || !barnLevel)
         {
             continue;
@@ -1753,10 +1764,11 @@ void addStandingTrees(TreeLayer& layer, const Settlements& settlements)
             const Vec3d local = tree.position - origin;
             low               = glm::min(low, local);
             high              = glm::max(high, local);
+            const double turn = random.uniform();  // one draw to a line: see planFarm
+            const double tint = random.uniform();
             bySpecies.at(static_cast<std::size_t>(tree.species))
                 .push_back({.position = Vec3f(local),
-                            .packed   = packTree(tree.heightM, random.uniform(), tree.species,
-                                                 random.uniform())});
+                            .packed   = packTree(tree.heightM, turn, tree.species, tint)});
         }
         if (low.x > high.x)
         {

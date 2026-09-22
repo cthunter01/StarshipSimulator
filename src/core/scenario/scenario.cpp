@@ -1,5 +1,6 @@
 #include "StarshipSimulator/core/scenario/scenario.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <expected>
@@ -14,6 +15,7 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 #include <toml++/toml.hpp>
 
@@ -21,6 +23,7 @@
 #include "StarshipSimulator/core/astro/ephemeris.h"
 #include "StarshipSimulator/core/habitat/day_schedule.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
+#include "StarshipSimulator/core/habitat/metrics.h"
 #include "StarshipSimulator/core/habitat/weather.h"
 
 namespace StarshipSimulator
@@ -403,35 +406,66 @@ void readSkyAndDay(TableReader& top, Scenario& scenario, std::optional<ScenarioE
     }
 }
 
-/// Problems with the sky and day settings (the habitat has its own validate()).
-std::optional<std::string> validateSkyAndDay(const Scenario& scenario)
+/// Problems with the day and the climate (the habitat has its own validate()).
+void dayAndClimateProblems(const Scenario& scenario, std::vector<std::string>& problems)
 {
     const DayScheduleSpec& day = scenario.day;
-    if (std::abs(scenario.sky.utcOffsetHours) > 14.0)
+    if (day.dayLengthHours < 1.0 || day.dayLengthHours > 23.0)
     {
-        return "utc_offset_hours must be between -14 and 14";
+        problems.emplace_back("the day must last between 1 and 23 hours");
     }
-    if (day.dayLengthHours < 1.0 || day.dayLengthHours > 23.0 || day.sunriseHour < 0.0 ||
-        day.sunriseHour >= 24.0)
+    if (day.sunriseHour < 0.0 || day.sunriseHour >= 24.0)
     {
-        return "the day must last 1..23 hours and start at an hour of 0..24";
+        problems.emplace_back("sunrise must fall at an hour of 0 to 24");
     }
-    if (day.noonAngleDeg < 20.0 || day.noonAngleDeg > 85.0 || day.nightAngleDeg < 90.0 ||
-        day.nightAngleDeg > 150.0)
+    if (day.noonAngleDeg < 20.0 || day.noonAngleDeg > 85.0)
     {
-        return "the noon mirror angle must be 20..85 degrees and the night angle 90..150";
+        problems.emplace_back("the noon mirror angle must be between 20 and 85 degrees");
+    }
+    if (day.nightAngleDeg < 90.0 || day.nightAngleDeg > 150.0)
+    {
+        problems.emplace_back(
+            "the night mirror angle must be between 90 and 150 degrees, or sunlight still gets in "
+            "at midnight");
     }
     if (scenario.climate.cloudTopM > 0.8 * scenario.habitat.radiusM)
     {
-        return "the cloud deck must stay well inside the habitat (cloud_top_m under 0.8 * radius)";
+        problems.push_back(
+            std::format("the cloud deck must stay well inside the habitat: its top belongs below "
+                        "{:.0f} m, not {:.0f} m",
+                        0.8 * scenario.habitat.radiusM, scenario.climate.cloudTopM));
     }
     if (!validClimate(scenario.climate))
     {
-        return "the climate needs a cloud deck 50 m or more above the floor (top above base), "
-               "cloudiness, raininess and mistiness of 0..1, wind up to 40 m/s, a year of "
-               "1..10000 days and a season swing of 0..8 hours";
+        problems.emplace_back(
+            "the climate needs a cloud deck 50 m or more above the floor (top above base), "
+            "cloudiness, raininess and mistiness of 0..1, wind up to 40 m/s, a year of "
+            "1..10000 days and a season swing of 0..8 hours");
     }
-    return std::nullopt;
+}
+
+/// Problems with where and when the visit starts.
+void skyAndStartProblems(const Scenario& scenario, std::vector<std::string>& problems)
+{
+    if (std::abs(scenario.sky.utcOffsetHours) > 14.0)
+    {
+        problems.emplace_back("the habitat's clock must be within 14 hours of UTC");
+    }
+    if (scenario.start.valley < 0 || scenario.start.valley >= scenario.habitat.stripPairs)
+    {
+        problems.push_back(
+            std::format("this habitat has valleys 0 to {}, so the visit cannot "
+                        "start in valley {}",
+                        scenario.habitat.stripPairs - 1, scenario.start.valley));
+    }
+    const double halfFloor = std::max(0.5 * scenario.habitat.lengthM, 0.0);
+    if (std::abs(scenario.start.zM) > halfFloor)
+    {
+        problems.push_back(
+            std::format("the visit starts outside the habitat: it must begin within {:.0f} m of "
+                        "the middle, not {:.0f} m",
+                        halfFloor, scenario.start.zM));
+    }
 }
 
 std::string boolean(bool value)
@@ -512,15 +546,18 @@ std::expected<Scenario, ScenarioError> parseScenario(std::string_view toml)
     {
         return std::unexpected(*error);
     }
-    if (const auto problem = validateSkyAndDay(scenario))
-    {
-        return std::unexpected(ScenarioError{.message = *problem, .line = 0});
-    }
     if (const auto problems = validate(scenario.habitat); !problems.empty())
     {
         const toml::node* habitat = root.get("habitat");
         return std::unexpected(ScenarioError{.message = problems.front(),
                                              .line    = habitat != nullptr ? lineOf(*habitat) : 0});
+    }
+    std::vector<std::string> settings;
+    dayAndClimateProblems(scenario, settings);
+    skyAndStartProblems(scenario, settings);
+    if (!settings.empty())
+    {
+        return std::unexpected(ScenarioError{.message = settings.front(), .line = 0});
     }
     return scenario;
 }
@@ -594,6 +631,22 @@ std::string serializeScenario(const Scenario& scenario)
         number(climate.raininess), number(climate.windSpeedMS), number(climate.mistiness),
         number(climate.yearDays), number(climate.seasonSwingHours), number(climate.seasonAtEpoch));
     return out;
+}
+
+std::string describeHabitat(const OneillCylinderSpec& spec)
+{
+    const HabitatMetrics metrics = computeMetrics(spec);
+    return std::format("{:.1f} km across, {:.0f} km long, {:.2f} g, {:.0f} km2 of land, {}",
+                       2.0 * spec.radiusM / 1000.0, spec.lengthM / 1000.0, spec.surfaceGravityG,
+                       metrics.landAreaM2 / 1e6, materialClassName(metrics.material));
+}
+
+std::vector<std::string> validateScenario(const Scenario& scenario)
+{
+    std::vector<std::string> problems = validate(scenario.habitat);
+    dayAndClimateProblems(scenario, problems);
+    skyAndStartProblems(scenario, problems);
+    return problems;
 }
 
 std::expected<Scenario, ScenarioError> loadScenario(const std::filesystem::path& path)

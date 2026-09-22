@@ -5,7 +5,7 @@ the land overhead, and see an astronomically accurate sky. The goal: help people
 space that we could actually build, with the real physics of spin gravity (Coriolis drift, gravity that fades
 toward the axis) and real stars and planets outside.
 
-**Status: M6: people and transit.** Walk the valleys of Gerard O'Neill's Island Three, an 8 km wide, 32 km long
+**Status: M7: share the vision.** Walk the valleys of Gerard O'Neill's Island Three, an 8 km wide, 32 km long
 cylinder at the Earth-Moon L5 point: farmland curving up overhead through blue haze, three window strips, three
 mirrors bringing in the sunlight, mountain ramps at one end and a dome at the other. The physics is real:
 gravity comes from spin (and fades as you climb toward the axis), jumps and thrown balls drift from the Coriolis
@@ -48,7 +48,20 @@ meet it with embankments and cuttings sloped at a constant angle, and where the 
 track crosses it on a braced timber trestle. At the antisunward end a funicular climbs seven
 kilometres of endcap ramp to the hub at the axis, where the spin gravity has all but gone. And there you can strap on a pair of wings (V): a real aerofoil in the habitat's own
 air, which glides but cannot be kept up by muscle alone down in the valley, and which a fit person can climb on
-near the axis — the oldest promise of an O'Neill cylinder. Next up, M7: sharing the vision.
+near the axis — the oldest promise of an O'Neill cylinder.
+
+The place explains itself. Press K for the almanac: seven pages on what this habitat is, in numbers and plain
+words, worked out from the one you are standing in rather than quoted from a book — the drop of a dropped ball
+is flown through the same free-flight code the ball itself uses. Guided tours (in the HUD, or `--tour 1`) fly
+you around and talk: the whole place in five minutes, how the mirrors make a day, and what the sky outside is
+doing; moving takes the controls back. F2 is photo mode: the HUD gets out of the way, and you can hold the
+shutter open for star trails or save a picture at four times the screen's size. The habitat editor (Tab) is the
+whole file, not just the shape: valleys, endcaps, mirrors and the day they keep, terrain, rivers, woods, towns,
+air, clouds, the length of the year, where in the solar system it flies and when the visit starts, with every
+derived number updating as you drag and every problem spelled out before you can build it. The gallery lists
+the habitats that came with the program and the ones you have saved, each a small TOML file; a determinism test
+pins a whole generated world to a hash, so the file you send someone builds the same world on their machine,
+under either compiler. Next up, M8: more revolved worlds.
 
 ## Requirements
 - Linux with a Vulkan GPU
@@ -75,6 +88,7 @@ cmake --workflow --preset dev          # configure + build + test, Clang Debug
 
 Controls: click the view to capture the mouse (Esc releases it). WASD to move, Shift to run, Space to jump
 (walk), rise (fly) or flap (wings), Ctrl to descend, F toggles walking/flying, V straps on a pair of wings,
+K opens the almanac (what this place is, in numbers), F2 is photo mode (long exposures and enlarged pictures),
 G throws a ball (its path is compared with the
 same throw on a planet), E kicks whatever is in front of you, C toggles comfort mode (no Coriolis force on you), mouse wheel sets fly speed, Tab opens
 the habitat editor, I names the star, planet or moon under the crosshair, B toggles binoculars, P pauses time,
@@ -94,6 +108,8 @@ StarshipSimulator --mirror 30                         # hold the mirrors: 45 is 
 StarshipSimulator --weather rain                      # hold the weather: clear, fair, cloudy, overcast, mist, rain, storm
 StarshipSimulator --mute                              # no sound
 StarshipSimulator --scenario data/presets/coriolis_playground.toml   # a small, fast-spinning habitat
+StarshipSimulator --tour 1                            # set off on a guided tour (1, 2, 3, or part of its name)
+StarshipSimulator --panel gallery                     # open a panel at startup (editor, gallery, almanac)
 StarshipSimulator --capture shot.png --capture-ui     # render, save a PNG, exit
 StarshipSimulator --no-vsync --benchmark              # frame times over a fixed tour (use a Release build)
 ```

@@ -45,6 +45,7 @@ namespace ui
 void text(const std::string& text);
 void textMuted(const std::string& text);
 void textWrapped(const std::string& text);
+void textMutedWrapped(const std::string& text);
 /// "label: value" on one line with the value aligned after the label column.
 void field(const char* label, const std::string& value);
 }  // namespace ui

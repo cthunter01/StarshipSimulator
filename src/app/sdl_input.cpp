@@ -48,6 +48,9 @@ void SdlInput::handleKey(SDL_Keycode key, InputFrame& frame, ImGuiLayer& imgui)
         case SDLK_F1:
             frame.toggleHud = true;
             break;
+        case SDLK_F2:
+            frame.togglePhoto = true;
+            break;
         case SDLK_F5:
             frame.reloadShaders = true;
             break;
@@ -59,6 +62,9 @@ void SdlInput::handleKey(SDL_Keycode key, InputFrame& frame, ImGuiLayer& imgui)
             break;
         case SDLK_V:
             frame.toggleWings = true;
+            break;
+        case SDLK_K:
+            frame.toggleAlmanac = true;
             break;
         case SDLK_G:
             frame.throwBall = true;

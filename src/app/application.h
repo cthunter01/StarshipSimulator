@@ -12,6 +12,7 @@
 #include <SDL3/SDL_video.h>
 
 #include "StarshipSimulator/audio/audio_device.h"
+#include "StarshipSimulator/core/almanac.h"
 #include "StarshipSimulator/core/app_options.h"
 #include "StarshipSimulator/core/astro/astro_time.h"
 #include "StarshipSimulator/core/astro/ephemeris.h"
@@ -38,6 +39,7 @@
 #include "StarshipSimulator/core/procgen/trees.h"
 #include "StarshipSimulator/core/scenario/scenario.h"
 #include "StarshipSimulator/core/sim_clock.h"
+#include "StarshipSimulator/core/tour.h"
 #include "StarshipSimulator/physics/physics_world.h"
 #include "StarshipSimulator/render/gpu_birds.h"
 #include "StarshipSimulator/render/gpu_device.h"
@@ -129,6 +131,8 @@ private:
     void                 startGeneration(const OneillCylinderSpec& spec, bool placeAtStart);
     void                 pollGeneration();
     void                 loadScenarioFile(const std::filesystem::path& path);
+    void                 editScenarioFile(const std::filesystem::path& path);
+    void                 buildDraft();
     void                 saveDraft();
     void                 refreshScenarioList();
     void                 placeAtStart();
@@ -143,24 +147,30 @@ private:
     void                 applyCameraPose(const CameraPose& pose);
 
     // The sky and the clock
-    void                                  startSkyLoad();
-    void                                  pollSky();
-    void                                  adoptSky(SkyData data);
-    void                                  advanceClock(double realSeconds);
-    void                                  updateSky();
-    void                                  updateWeather(double realSeconds);
-    void                                  updateSound(double realSeconds);
-    [[nodiscard]] audio::SoundMix         soundMix() const;
-    void                                  setTime(astro::SimTime time);
-    void                                  stepTimeScale(int steps);
-    void                                  identify();
-    void                                  lookAtBody(astro::Body body);
-    void                                  lookAtPartner();
-    void                                  lookAtName(std::string_view name);
-    void                                  lookOut(Vec3d directionEqj, std::string_view name);
-    [[nodiscard]] double                  mirrorAngle() const;  // radians
-    [[nodiscard]] double                  autoExposure() const;
-    [[nodiscard]] SkyModel                skyModel() const;
+    void                          startSkyLoad();
+    void                          pollSky();
+    void                          adoptSky(SkyData data);
+    void                          advanceClock(double realSeconds);
+    void                          updateSky();
+    void                          updateWeather(double realSeconds);
+    void                          updateSound(double realSeconds);
+    [[nodiscard]] audio::SoundMix soundMix() const;
+    void                          setTime(astro::SimTime time);
+    void                          stepTimeScale(int steps);
+    void                          identify();
+    void                          lookAtBody(astro::Body body);
+    void                          lookAtPartner();
+    void                          lookAtName(std::string_view name);
+    void                          lookOut(Vec3d directionEqj, std::string_view name);
+    [[nodiscard]] double          mirrorAngle() const;  // radians
+    [[nodiscard]] double          autoExposure() const;
+    [[nodiscard]] SkyModel        skyModel() const;
+    [[nodiscard]] AlmanacState    almanacState() const;
+    /// How big a picture taken now would come out, in pixels.
+    [[nodiscard]] glm::uvec2              photoSize() const;
+    [[nodiscard]] std::vector<TourName>   tourNames() const;
+    void                                  startTour(std::size_t which);
+    void                                  stepTour(double realSeconds);
     [[nodiscard]] std::optional<SkyLabel> skyLabel() const;
     [[nodiscard]] std::vector<BodyDraw>   bodyDraws(const gpu::LightingSettings& lighting) const;
 
@@ -231,6 +241,11 @@ private:
     double                       stride_ = 0.0;  // metres walked since the last footstep
     gpu::CloudSettings           cloudSettings_;
     std::optional<Benchmark>     benchmark_;
+    std::vector<Tour>            tours_;
+    std::optional<std::size_t>   touring_;  // which tour is running
+    double                       tourSeconds_ = 0.0;
+    std::string                  tourCaption_;
+    double                       tourFade_ = 0.0;
 
     HudSettings   hudSettings_;
     EditorState   editor_;

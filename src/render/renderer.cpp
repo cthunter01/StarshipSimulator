@@ -3,6 +3,7 @@
 #include <imgui.h>
 #include <imgui_impl_sdlgpu3.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <exception>
@@ -42,6 +43,7 @@
 #include "StarshipSimulator/render/passes/sky_passes.h"
 #include "StarshipSimulator/render/passes/tonemap_pass.h"
 #include "StarshipSimulator/render/passes/town_passes.h"
+#include "StarshipSimulator/render/pipeline.h"
 #include "StarshipSimulator/render/render_targets.h"
 #include "StarshipSimulator/render/shadow_map.h"
 #include "StarshipSimulator/render/texture.h"
@@ -52,26 +54,28 @@ namespace StarshipSimulator
 
 struct Renderer::Passes
 {
-    MilkyWayPass  milkyWay;
-    StarPass      stars;
-    PlanetPass    planets;
-    BodyPass      bodies;
-    HullPass      hull;
-    LandscapePass landscape;
-    CloudPass     clouds;
-    BirdPass      birds;
-    RainPass      rain;
-    WaterPass     water;
-    TreePass      trees;
-    BuildingPass  buildings;
-    PropPass      props;
-    PeoplePass    people;
-    TransitPass   transit;
-    TerrainPass   terrain;
-    MirrorPass    mirrors;
-    GlassPass     glass;
-    MarkerPass    markers;
-    TonemapPass   tonemap;
+    MilkyWayPass        milkyWay;
+    StarPass            stars;
+    PlanetPass          planets;
+    BodyPass            bodies;
+    HullPass            hull;
+    LandscapePass       landscape;
+    CloudPass           clouds;
+    BirdPass            birds;
+    RainPass            rain;
+    WaterPass           water;
+    TreePass            trees;
+    BuildingPass        buildings;
+    PropPass            props;
+    PeoplePass          people;
+    TransitPass         transit;
+    TerrainPass         terrain;
+    MirrorPass          mirrors;
+    GlassPass           glass;
+    MarkerPass          markers;
+    TonemapPass         tonemap;
+    GpuGraphicsPipeline exposure;  // copies the scene into the long exposure, keeping the brightest
+    GpuSampler          exposureSampler;
 };
 
 namespace
@@ -81,8 +85,26 @@ constexpr std::uint32_t kBytesPerPixel = 4;
 
 constexpr std::array<std::uint8_t, 2> kClearSky{0, 0};
 
-/// Linear filtering with mipmaps, repeating both ways: the cloud map wraps round the habitat and
-/// along it.
+/// Plain linear filtering, clamped: for copying one full-screen image into another.
+GpuSampler createClampSampler(SDL_GPUDevice* device)
+{
+    const SDL_GPUSamplerCreateInfo info{
+        .min_filter     = SDL_GPU_FILTER_LINEAR,
+        .mag_filter     = SDL_GPU_FILTER_LINEAR,
+        .address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+        .address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+        .address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+    };
+    GpuSampler sampler(device, SDL_CreateGPUSampler(device, &info));
+    if (!sampler.valid())
+    {
+        throw std::runtime_error(std::format("Cannot create a sampler: {}", SDL_GetError()));
+    }
+    return sampler;
+}
+
+/// Linear filtering with mipmaps, repeating both ways/// Linear filtering with mipmaps, repeating
+/// both ways: the cloud map wraps round the habitat and along it.
 GpuSampler createWrappingSampler(SDL_GPUDevice* device)
 {
     const SDL_GPUSamplerCreateInfo info{
@@ -194,6 +216,18 @@ std::unique_ptr<Renderer::Passes> Renderer::createPasses() const
         .glass     = GlassPass(device, shaders_, formats),
         .markers   = MarkerPass(device, shaders_, formats),
         .tonemap   = TonemapPass(device, shaders_, device_->swapchainFormat()),
+        .exposure =
+            [&] {
+                const GpuShader     vertex   = shaders_.load("fullscreen.vert");
+                const GpuShader     fragment = shaders_.load("accumulate.frag");
+                PipelineDescription description;
+                description.vertexShader   = vertex.get();
+                description.fragmentShader = fragment.get();
+                description.blend          = BlendMode::Lighten;
+                description.colorFormat    = formats.color;
+                return createPipeline(device, description, "long exposure");
+            }(),
+        .exposureSampler = createClampSampler(device),
     });
 }
 
@@ -278,20 +312,40 @@ FrameResult Renderer::renderFrame(const SceneView& view, const FrameOptions& opt
         return result;
     }
 
-    targets_.resize(width, height);
+    // A photograph can be rendered larger than the window and scaled down, which is the cheapest
+    // anti-aliasing there is. The HUD is drawn at window size, so it never goes in an enlarged one.
+    std::uint32_t scale = 1;
+    if (options.screenshot && !options.screenshotIncludesUi)
+    {
+        scale = std::clamp(options.captureScale, 1U, 4U);
+    }
+    std::uint32_t sceneWidth  = width * scale;
+    std::uint32_t sceneHeight = height * scale;
+    try
+    {
+        targets_.resize(sceneWidth, sceneHeight);
+    }
+    catch (const std::exception&)
+    {
+        scale       = 1;  // no room for the big one: take the picture at window size
+        sceneWidth  = width;
+        sceneHeight = height;
+        targets_.resize(sceneWidth, sceneHeight);
+    }
     if (options.ui != nullptr)
     {
         ImGui_ImplSDLGPU3_PrepareDrawData(options.ui, commands);  // copy pass: before render passes
     }
-    drawScene(commands, view, width, height, result);
-    drawDisplay(commands, swapchain, view, options.ui);
+    drawScene(commands, view, sceneWidth, sceneHeight, result);
+    SDL_GPUTexture* shown = accumulate(commands, options, sceneWidth, sceneHeight);
+    drawDisplay(commands, swapchain, view, options.ui, shown);
     result.presented = true;
 
     if (options.screenshot)
     {
-        result.screenshot =
-            captureAndSubmit(commands, view, *options.screenshot,
-                             options.screenshotIncludesUi ? options.ui : nullptr, width, height);
+        result.screenshot = captureAndSubmit(commands, view, *options.screenshot,
+                                             options.screenshotIncludesUi ? options.ui : nullptr,
+                                             sceneWidth, sceneHeight, shown);
     }
     else if (!SDL_SubmitGPUCommandBuffer(commands))
     {
@@ -462,6 +516,55 @@ void Renderer::uploadPerFrameData(SDL_GPUCommandBuffer* commands, const SceneVie
     SDL_EndGPUCopyPass(copy);
 }
 
+SDL_GPUTexture* Renderer::accumulate(SDL_GPUCommandBuffer* commands, const FrameOptions& options,
+                                     std::uint32_t width, std::uint32_t height)
+{
+    if (!options.trails)
+    {
+        trailsClear_ = true;
+        return targets_.resolved();
+    }
+    SDL_GPUDevice* device = device_->get();
+    if (!trails_.valid() || trailsWidth_ != width || trailsHeight_ != height)
+    {
+        const SDL_GPUTextureCreateInfo info{
+            .type   = SDL_GPU_TEXTURETYPE_2D,
+            .format = targets_.formats().color,
+            .usage  = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER,
+            .width  = width,
+            .height = height,
+            .layer_count_or_depth = 1,
+            .num_levels           = 1,
+            .sample_count         = SDL_GPU_SAMPLECOUNT_1,
+        };
+        trails_ = GpuTexture(device, SDL_CreateGPUTexture(device, &info));
+        if (!trails_.valid())
+        {
+            return targets_.resolved();  // no room for an exposure: show the plain frame
+        }
+        trailsWidth_  = width;
+        trailsHeight_ = height;
+        trailsClear_  = true;
+    }
+    // Start the exposure again, or add this frame to the one already being held.
+    const bool                   restart = trailsClear_ || options.trailsReset;
+    const SDL_GPUColorTargetInfo target{
+        .texture     = trails_.get(),
+        .clear_color = {.r = 0.0F, .g = 0.0F, .b = 0.0F, .a = 1.0F},
+        .load_op     = restart ? SDL_GPU_LOADOP_CLEAR : SDL_GPU_LOADOP_LOAD,
+        .store_op    = SDL_GPU_STOREOP_STORE,
+    };
+    SDL_GPURenderPass*                 pass = SDL_BeginGPURenderPass(commands, &target, 1, nullptr);
+    const SDL_GPUTextureSamplerBinding scene{.texture = targets_.resolved(),
+                                             .sampler = passes_->exposureSampler.get()};
+    SDL_BindGPUGraphicsPipeline(pass, passes_->exposure.get());
+    SDL_BindGPUFragmentSamplers(pass, 0, &scene, 1);
+    SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+    SDL_EndGPURenderPass(pass);
+    trailsClear_ = false;
+    return trails_.get();
+}
+
 void Renderer::drawShadows(SDL_GPUCommandBuffer* commands, const SceneView& view,
                            const gpu::FrameUniforms& frame)
 {
@@ -511,7 +614,7 @@ void Renderer::drawShadows(SDL_GPUCommandBuffer* commands, const SceneView& view
 }
 
 void Renderer::drawDisplay(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* target,
-                           const SceneView& view, ImDrawData* ui)
+                           const SceneView& view, ImDrawData* ui, SDL_GPUTexture* source)
 {
     const SDL_GPUColorTargetInfo color{
         .texture  = target,
@@ -519,7 +622,7 @@ void Renderer::drawDisplay(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* targe
         .store_op = SDL_GPU_STOREOP_STORE,
     };
     SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &color, 1, nullptr);
-    passes_->tonemap.draw(commands, pass, targets_.resolved(), view.exposure, view.grade);
+    passes_->tonemap.draw(commands, pass, source, view.exposure, view.grade);
     if (ui != nullptr)
     {
         ImGui_ImplSDLGPU3_RenderDrawData(ui, commands, pass);
@@ -529,7 +632,7 @@ void Renderer::drawDisplay(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* targe
 
 std::expected<std::filesystem::path, std::string> Renderer::captureAndSubmit(
     SDL_GPUCommandBuffer* commands, const SceneView& view, const std::filesystem::path& path,
-    ImDrawData* ui, std::uint32_t width, std::uint32_t height)
+    ImDrawData* ui, std::uint32_t width, std::uint32_t height, SDL_GPUTexture* source)
 {
     SDL_GPUDevice*                 device      = device_->get();
     const SDL_GPUTextureFormat     format      = device_->swapchainFormat();
@@ -558,7 +661,7 @@ std::expected<std::filesystem::path, std::string> Renderer::captureAndSubmit(
     }
 
     // Draw the frame again into a texture we can read back (never blit the swapchain).
-    drawDisplay(commands, capture.get(), view, ui);
+    drawDisplay(commands, capture.get(), view, ui, source);
     SDL_GPUCopyPass*           copy = SDL_BeginGPUCopyPass(commands);
     const SDL_GPUTextureRegion region{.texture = capture.get(), .w = width, .h = height, .d = 1};
     const SDL_GPUTextureTransferInfo destination{.transfer_buffer = download.get(), .offset = 0};

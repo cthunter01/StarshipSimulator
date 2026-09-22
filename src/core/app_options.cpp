@@ -143,6 +143,36 @@ std::expected<void, std::string> applySkyOption(AppOptions& options, std::string
     return {};
 }
 
+/// What to show when the program starts, and what to capture.
+std::expected<void, std::string> applyShowOption(AppOptions& options, std::string_view name,
+                                                 std::string_view value)
+{
+    if (name == "--tour")
+    {
+        options.tour = std::string(value);
+    }
+    else if (name == "--panel")
+    {
+        if (value != "editor" && value != "gallery" && value != "almanac")
+        {
+            return std::unexpected(
+                std::format("--panel expects editor, gallery or almanac, got '{}'", value));
+        }
+        options.panels.emplace_back(value);
+    }
+    else if (name == "--capture-frames")
+    {
+        const auto frames = parseNumber<int>(value);
+        if (!frames || *frames < 1)
+        {
+            return std::unexpected(
+                std::format("--capture-frames expects a positive number, got '{}'", value));
+        }
+        options.captureFrames = *frames;
+    }
+    return {};
+}
+
 std::expected<void, std::string> applyValueOption(AppOptions& options, std::string_view name,
                                                   std::string_view value)
 {
@@ -200,15 +230,9 @@ std::expected<void, std::string> applyValueOption(AppOptions& options, std::stri
     {
         return applySkyOption(options, name, value);
     }
-    else if (name == "--capture-frames")
+    else
     {
-        const auto frames = parseNumber<int>(value);
-        if (!frames || *frames < 1)
-        {
-            return std::unexpected(
-                std::format("--capture-frames expects a positive number, got '{}'", value));
-        }
-        options.captureFrames = *frames;
+        return applyShowOption(options, name, value);
     }
     return {};
 }
@@ -251,7 +275,8 @@ bool takesValue(std::string_view name)
 {
     return name == "--size" || name == "--camera" || name == "--capture" ||
            name == "--capture-frames" || name == "--scenario" || name == "--view" ||
-           name == "--mirror" || name == "--weather" || isSkyOption(name);
+           name == "--mirror" || name == "--weather" || name == "--panel" || name == "--tour" ||
+           isSkyOption(name);
 }
 
 }  // namespace
@@ -356,6 +381,8 @@ Options:
   --capture FILE.png       Render, save a screenshot to FILE.png, then exit
   --capture-frames N       Frames to render before the capture (default 90)
   --capture-ui             Include the HUD in the capture
+  --panel NAME             Open a panel at startup (editor, gallery or almanac); repeatable
+  --tour N|NAME            Set off on a guided tour at startup (1, 2, 3, or part of its name)
   --benchmark              Fly a fixed tour of viewpoints, print frame times, then exit
 
 Controls:
@@ -364,7 +391,7 @@ Controls:
   F walk/fly, G throw a ball, C comfort mode (no Coriolis on you), mouse wheel fly speed
   I identify the star, planet or moon under the crosshair, B binoculars
   P pause the clock, comma/period slower/faster time
-  Tab habitat editor, F1 HUD, F5 reload shaders, F12 screenshot
+  K almanac, F2 photo mode, Tab habitat editor, F1 HUD, F5 reload shaders, F12 screenshot
 )";
 }
 

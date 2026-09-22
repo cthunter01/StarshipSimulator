@@ -1,6 +1,7 @@
 # The simulation core: math, camera, clocks, controllers, procedural meshes and GPU ABI helpers.
 # It must not depend on SDL, ImGui or the renderer (enforced by the 'layering' test).
 add_library(StarshipSimulator_core STATIC
+    almanac.cpp
     app_options.cpp
     assets/assets.cpp
     audio/soundscape.cpp
@@ -11,6 +12,7 @@ add_library(StarshipSimulator_core STATIC
     camera.cpp
     frustum.cpp
     sim_clock.cpp
+    tour.cpp
     gpu_abi/color_grade.cpp
     gpu_abi/ground_atlas.cpp
     gpu_abi/spirv_reflect.cpp

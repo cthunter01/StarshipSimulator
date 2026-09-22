@@ -122,6 +122,18 @@ TEST(AppOptions, WeatherAndSound)
     EXPECT_FALSE(StarshipSimulator::weatherNamed("hail").has_value());
 }
 
+TEST(AppOptions, PanelsAndTours)
+{
+    const auto parsed = parse({"--panel", "editor", "--panel", "gallery", "--tour", "mirrors"});
+    ASSERT_TRUE(parsed.has_value()) << parsed.error();
+    EXPECT_EQ(parsed->panels, (std::vector<std::string>{"editor", "gallery"}));
+    EXPECT_EQ(parsed->tour, "mirrors");
+    EXPECT_TRUE(parse({})->panels.empty());
+    EXPECT_FALSE(parse({})->tour.has_value());
+    EXPECT_NE(parse({"--panel", "kitchen"}).error().find("--panel"), std::string::npos);
+    EXPECT_NE(parse({"--tour"}).error().find("needs a value"), std::string::npos);
+}
+
 TEST(AppOptions, HelpFlag)
 {
     EXPECT_TRUE(parse({"-h"})->showHelp);

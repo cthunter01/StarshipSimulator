@@ -6,6 +6,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "StarshipSimulator/core/astro/astro_time.h"
 #include "StarshipSimulator/core/astro/ephemeris.h"
@@ -52,6 +53,8 @@ struct AppOptions
     std::optional<std::filesystem::path> capturePath;  // render, save a PNG, then exit
     int                                  captureFrames = 90;
     bool                                 captureUi     = false;
+    std::vector<std::string>             panels;  // opened at startup: editor, gallery, almanac
+    std::optional<std::string>           tour;    // a guided tour to set off on: a number or name
 };
 
 /// The weather a `--weather` name asks for ("clear", "fair", "cloudy", "overcast", "rain",

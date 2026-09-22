@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "StarshipSimulator/core/astro/astro_time.h"
 #include "StarshipSimulator/core/astro/ephemeris.h"
@@ -38,8 +39,9 @@ struct SkySpec
 struct Scenario
 {
     static constexpr int kFormatVersion = 1;  // file layout
-    // World generation: 2 added rivers, lakes and woods; 3 towns and farms.
-    static constexpr int kGeneratorVersion = 3;
+    // World generation: 2 added rivers, lakes and woods; 3 towns and farms; 4 the tramway's
+    // earthworks, and fixing draws that came out in a different order under another compiler.
+    static constexpr int kGeneratorVersion = 4;
 
     int                formatVersion    = kFormatVersion;
     int                generatorVersion = kGeneratorVersion;
@@ -59,6 +61,14 @@ struct ScenarioError
 
     [[nodiscard]] std::string describe() const;
 };
+
+/// A habitat in one line, for a list of them: how big it is, how hard it pulls, how much land it
+/// holds and what its hull would have to be made of.
+[[nodiscard]] std::string describeHabitat(const OneillCylinderSpec& spec);
+
+/// Everything that stops a scenario being built, as human-readable messages (empty when it is
+/// ready to open). The habitat, its day, its climate and where the visit starts are all checked.
+[[nodiscard]] std::vector<std::string> validateScenario(const Scenario& scenario);
 
 /// Parses a scenario from TOML. Unknown keys, wrong types and invalid habitats are errors.
 [[nodiscard]] std::expected<Scenario, ScenarioError> parseScenario(std::string_view toml);
