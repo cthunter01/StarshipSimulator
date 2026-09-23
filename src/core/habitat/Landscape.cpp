@@ -228,16 +228,15 @@ double Landscape::woodland(double z, double theta) const
     return glm::smoothstep(woodsThreshold_ - kWoodsSoftness, woodsThreshold_ + kWoodsSoftness, n);
 }
 
-double Landscape::shapeNearWater(double natural, double shore, double floodplainM)
+double Landscape::shapeNearWater(double natural, double shore, double floodplainM, double level)
 {
     if (shore >= floodplainM)
     {
         return natural;
     }
     const double nearWater =
-        shore >= 0.0
-            ? std::lerp(kWaterLevelM, kPlainHeightM, glm::smoothstep(0.0, kBankWidthM, shore))
-            : kWaterLevelM - (kWaterDepthM * glm::smoothstep(0.0, kShelfM, -shore));
+        shore >= 0.0 ? std::lerp(level, kPlainHeightM, glm::smoothstep(0.0, kBankWidthM, shore))
+                     : level - (kWaterDepthM * glm::smoothstep(0.0, kShelfM, -shore));
     const double weight = 1.0 - glm::smoothstep(kBankWidthM, floodplainM, shore);
     return std::lerp(natural, nearWater, weight);
 }
@@ -262,6 +261,12 @@ void Landscape::planAround(const TerrainSpec& terrain)
     floodplainM_              = std::min(kFloodplainM, 0.25 * halfWidth);
     meanderM_                 = std::clamp(0.3 * halfWidth, 0.0, 700.0);
     meanderM_ = std::min(meanderM_, std::max(0.0, halfWidth - margin - halfRiver - floodplainM_));
+    if (frame_.waterReachM)
+    {
+        // The floor rises away from the middle line and the water lies level: it keeps to the
+        // bottom of the band.
+        meanderM_ = std::min(meanderM_, std::max(0.0, *frame_.waterReachM - halfRiver));
+    }
     if (halfRiver > 0.0 && halfWidth - margin - meanderM_ > halfRiver)
     {
         riverHalfWidthM_ = halfRiver;
@@ -291,9 +296,17 @@ void Landscape::planAround(const TerrainSpec& terrain)
         const double width   = random.uniform(0.7, 1.2);
         const double stretch = random.uniform(1.3, 2.4);
         Lake         lake;
-        lake.valley          = 0;
-        lake.plan            = Vec2d(across, along);
-        lake.halfWidthM      = std::min(terrain.lakeRadiusM * width, room);
+        lake.valley     = 0;
+        lake.plan       = Vec2d(across, along);
+        lake.halfWidthM = std::min(terrain.lakeRadiusM * width, room);
+        if (frame_.waterReachM)
+        {
+            // Wholly within the bottom of the band, where the level water can lie.
+            const double reach = *frame_.waterReachM;
+            lake.halfWidthM    = std::min(lake.halfWidthM, 0.8 * reach);
+            const double limit = reach - lake.halfWidthM;
+            lake.plan.x        = std::clamp(across, -limit, limit);
+        }
         lake.halfLengthM     = std::min(lake.halfWidthM * stretch, 0.45 * segment);
         const SurfaceSpot at = band.toSurface(lake.plan);
         lake.z               = at.z;

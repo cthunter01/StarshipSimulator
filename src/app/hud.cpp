@@ -60,9 +60,24 @@ bool sliderDouble(const char* label, double& value, double min, double max, cons
     return ImGui::SliderScalar(label, ImGuiDataType_Double, &value, &min, &max, format);
 }
 
-std::string describeSun(double openingAngleDeg, HabitatKind kind)
+/// What the light is doing at this mirror angle. windowLatitudeDeg: a sphere's polar windows.
+std::string describeSun(double openingAngleDeg, HabitatKind kind, double windowLatitudeDeg)
 {
     const double alpha = degreesToRadians(openingAngleDeg);
+    if (daylightKindFor(kind) == DaylightKind::POLAR_WINDOWS)
+    {
+        // The mirrors outside the polar windows, shuttered at night.
+        if (daylightFactor(alpha) <= 0.0)
+        {
+            return "Night: the shutters are closed over the poles";
+        }
+        const double lowest = polarWindowElevation(degreesToRadians(90.0), windowLatitudeDeg);
+        return std::format(
+            "The light comes in {:.0f} degrees up over each pole (never lower than {:.0f}, or "
+            "none would reach the equator)",
+            radiansToDegrees(polarWindowElevation(alpha, windowLatitudeDeg)),
+            radiansToDegrees(lowest));
+    }
     if (daylightKindFor(kind) == DaylightKind::END_CAPS)
     {
         // The mirrors outside the glass ends, shuttered at night.
@@ -136,6 +151,36 @@ void drawThrowReport(const ThrowReport& report)
         report.along >= 0.0 ? "further" : "shorter"));
 }
 
+/// Where you are, in the habitat's own terms.
+std::string describeWhere(const HabitatGeometry& geometry, const Vec3d& eye,
+                          const GroundSample& ground)
+{
+    if (geometry.band(0).axis == BandAxis::AROUND)
+    {
+        // Land that runs round the axis: how far round it you are, and how far from its middle.
+        const LandBand& band = geometry.band(0);
+        const Vec2d     plan = band.toPlan(eye.z, HabitatGeometry::angleOf(eye));
+        const double    round =
+            std::fmod(plan.y - band.alongMinM + band.alongLengthM(), band.alongLengthM());
+        if (geometry.kind() == HabitatKind::BERNAL_SPHERE)
+        {
+            // On a sphere, how far north or south of the equator: the gravity goes with it.
+            const double r = std::hypot(eye.x, eye.y);
+            return std::format("{:.0f} m round the land, {:.0f} deg {}", round,
+                               std::abs(radiansToDegrees(std::atan2(eye.z, r))),
+                               eye.z >= 0.0 ? "sunward" : "anti-sunward");
+        }
+        return std::format("{:.0f} m round the land, {:.0f} m along the axis", round, eye.z);
+    }
+    std::string where = regionKindName(ground.region.kind);
+    if (ground.region.index >= 0)
+    {
+        where += std::format(" {}", ground.region.index + 1);
+    }
+    return std::format("{}, {:.2f} km along, {:.0f} deg around", where, eye.z / 1000.0,
+                       radiansToDegrees(HabitatGeometry::angleOf(eye)));
+}
+
 void drawLocation(const HudModel& model, HudSettings& settings, PlayerSettings& player,
                   HudActions& actions)
 {
@@ -150,27 +195,7 @@ void drawLocation(const HudModel& model, HudSettings& settings, PlayerSettings& 
                                        geometry.spec().atmosphere.surfacePressurePa / 1000.0;
     const double coriolis = glm::length(RotatingFrame(geometry.omega()).coriolis(you.velocity()));
 
-    if (geometry.band(0).axis == BandAxis::AROUND)
-    {
-        // Land that runs round the axis: how far round it you are, and how far from its middle.
-        const LandBand& band = geometry.band(0);
-        const Vec2d     plan = band.toPlan(eye.z, HabitatGeometry::angleOf(eye));
-        const double    round =
-            std::fmod(plan.y - band.alongMinM + band.alongLengthM(), band.alongLengthM());
-        ui::field("Where",
-                  std::format("{:.0f} m round the land, {:.0f} m along the axis", round, eye.z));
-    }
-    else
-    {
-        std::string where = regionKindName(ground.region.kind);
-        if (ground.region.index >= 0)
-        {
-            where += std::format(" {}", ground.region.index + 1);
-        }
-        ui::field("Where",
-                  std::format("{}, {:.2f} km along, {:.0f} deg around", where, eye.z / 1000.0,
-                              radiansToDegrees(HabitatGeometry::angleOf(eye))));
-    }
+    ui::field("Where", describeWhere(geometry, eye, ground));
     if (!model.place.empty())
     {
         ui::field("Place", model.place);
@@ -327,8 +352,8 @@ void drawTimeAndLook(const HudModel& model, HudSettings& settings, HudActions& a
         settings.followSchedule = false;  // the user took over
     }
     ImGui::Checkbox("Mirrors follow the day schedule", &settings.followSchedule);
-    ui::textMuted(
-        describeSun(static_cast<double>(settings.mirrorAngleDeg), model.geometry->kind()));
+    ui::textMuted(describeSun(static_cast<double>(settings.mirrorAngleDeg), model.geometry->kind(),
+                              model.geometry->spec().sphere.windowLatitudeDeg));
     if (model.sky.sky != nullptr)
     {
         drawSkyObjects(model.sky, actions);
@@ -365,8 +390,11 @@ void drawWeather(const HudModel& model, HudSettings& settings)
                                  100.0 * now.cloudCover, model.cloudBaseM, model.cloudTopM));
     ui::field("Ground", now.wetness > 0.02 ? std::format("wet ({:.0f}%)", 100.0 * now.wetness)
                                            : std::string("dry"));
-    ui::field("Wind", std::format("{:.1f} m/s along the valley, {:.1f} m/s across", now.windAlongMS,
-                                  now.windAroundMS));
+    ui::field("Wind",
+              std::format("{:.1f} m/s {}, {:.1f} m/s across", now.windAlongMS,
+                          model.geometry->band(0).axis == BandAxis::AROUND ? "round the land"
+                                                                           : "along the valley",
+                          now.windAroundMS));
     ui::field("Year", std::format("{} ({:.0f}% through), days {:.1f} h long",
                                   seasonName(now.season), 100.0 * now.season, now.dayLengthHours));
     ui::field("About", std::format("{} people and {} birds near you", model.people, model.birds));
@@ -439,17 +467,35 @@ void drawMetrics(const HudModel& model, HudSettings& settings, HudActions& actio
 {
     const HabitatMetrics& m    = *model.metrics;
     const HabitatSpec&    spec = model.geometry->spec();
-    ui::field("Size", std::format("{:.1f} km across, {:.1f} km long", 2.0 * spec.radiusM / 1000.0,
-                                  spec.lengthM / 1000.0));
+    if (spec.kind == HabitatKind::BERNAL_SPHERE)
+    {
+        ui::field("Size", std::format("a sphere {:.0f} m across", 2.0 * spec.radiusM));
+    }
+    else
+    {
+        ui::field("Size", std::format("{:.1f} km across, {:.1f} km long",
+                                      2.0 * spec.radiusM / 1000.0, spec.lengthM / 1000.0));
+    }
     ui::field("Spin", std::format("{:.2f} rpm, one turn every {:.0f} s", m.rpm, m.periodS));
     ui::field("Floor", std::format("{:.2f} g, moving at {:.0f} m/s",
                                    m.floorGravity / units::kStandardGravity, m.rimSpeed));
-    ui::field("Land", std::format("{:.0f} km^2 for {:.1f} million people", m.landAreaM2 / 1e6,
-                                  m.population / 1e6));
+    if (m.landAreaM2 < 1e7)
+    {
+        // A small habitat: hectares and people, not square kilometres and millions.
+        ui::field("Land", std::format("{:.0f} hectares for {:.0f} people", m.landAreaM2 / 1e4,
+                                      m.population));
+    }
+    else
+    {
+        ui::field("Land", std::format("{:.0f} km^2 for {:.1f} million people", m.landAreaM2 / 1e6,
+                                      m.population / 1e6));
+    }
     const Landscape& land = model.geometry->landscape();
+    const char*      river =
+        model.geometry->bandCount() > 1 ? ", a river in each valley" : ", a river round the land";
     ui::field("Nature", std::format("{:.1f} million trees, {} lakes{}",
                                     static_cast<double>(model.trees) / 1e6, land.lakes().size(),
-                                    land.hasRivers() ? ", a river in each valley" : ""));
+                                    land.hasRivers() ? river : ""));
     ui::field("Towns", std::format("{} towns and {} farms, {} buildings", model.towns, model.farms,
                                    model.buildings));
     ui::field("Transit", std::format("{} lines, {:.0f} km of track, {} stops, {} cars running",
@@ -554,6 +600,22 @@ void drawEditorShape(HabitatSpec& spec)
                                   materialClassName(preview.material)));
         return;
     }
+    if (spec.kind == HabitatKind::BERNAL_SPHERE)
+    {
+        // A sphere: its size, how far the land reaches from the equator, where the glass begins.
+        sliderDouble("Radius (m)", spec.radiusM, 100.0, 1000.0, "%.0f");
+        sliderDouble("Land to latitude (deg)", spec.sphere.landLatitudeDeg, 5.0, 60.0, "%.0f");
+        sliderDouble("Windows from latitude (deg)", spec.sphere.windowLatitudeDeg,
+                     spec.sphere.landLatitudeDeg + 5.0, 85.0, "%.0f");
+        sliderDouble("Gravity (g)", spec.surfaceGravityG, 0.1, 1.5, "%.2f");
+        sliderDouble("People per km2", spec.populationDensityPerKm2, 0.0, 25000.0, "%.0f");
+        const HabitatMetrics preview = computeMetrics(spec);
+        ui::textMuted(std::format(
+            "Spins at {:.2f} rpm; hull: {}. Gravity at the land's edge: {:.2f} of the equator's",
+            preview.rpm, materialClassName(preview.material),
+            std::cos(degreesToRadians(spec.sphere.landLatitudeDeg))));
+        return;
+    }
     sliderDouble("Radius (m)", spec.radiusM, 200.0, 10000.0, "%.0f");
     sliderDouble("Length (m)", spec.lengthM, 1000.0, 60000.0, "%.0f");
     sliderDouble("Gravity (g)", spec.surfaceGravityG, 0.1, 1.5, "%.2f");
@@ -577,7 +639,8 @@ void drawEditorShape(HabitatSpec& spec)
 void drawEditorDay(HabitatSpec& spec, DayScheduleSpec& day)
 {
     sliderDouble("Mirror angle (deg)", spec.mirrors.openingAngleDeg, 20.0, 150.0, "%.0f");
-    ui::textMuted(describeSun(spec.mirrors.openingAngleDeg, spec.kind));
+    ui::textMuted(
+        describeSun(spec.mirrors.openingAngleDeg, spec.kind, spec.sphere.windowLatitudeDeg));
     sliderDouble("Reflectivity", spec.mirrors.reflectivity, 0.3, 1.0, "%.2f");
     ImGui::Separator();
     ImGui::Checkbox("The mirrors keep a daily schedule", &day.enabled);
@@ -590,6 +653,16 @@ void drawEditorDay(HabitatSpec& spec, DayScheduleSpec& day)
     if (!day.enabled)
     {
         ui::textWrapped("The mirrors stand still at the angle above: the same hour, for ever.");
+        return;
+    }
+    if (daylightKindFor(spec.kind) != DaylightKind::MIRROR_STRIPS)
+    {
+        // The light comes in through glass at the ends or the poles; shutters close them at night.
+        ui::textWrapped(std::format(
+            "Sunrise {}, sunset {}: {:.1f} hours of daylight and {:.1f} of night. Past ninety "
+            "degrees the shutters close over the glass, which then shows the stars.",
+            clockHour(day.sunriseHour), clockHour(sunsetHour(day)), day.dayLengthHours,
+            24.0 - day.dayLengthHours));
         return;
     }
     ui::textWrapped(std::format(
@@ -658,6 +731,23 @@ void drawEditorPlace(Scenario& draft, const SkyModel& sky)
     }
     sliderDouble("Clock offset from UTC (h)", draft.sky.utcOffsetHours, -14.0, 14.0, "%.1f");
     ImGui::Separator();
+    const HabitatSpec& habitat = draft.habitat;
+    if (habitat.kind != HabitatKind::ONEILL_CYLINDER)
+    {
+        // One band of land, all the way round the axis: along it is round, across it toward the
+        // ends (or the poles).
+        draft.start.band   = 0;
+        const double round = kPi * habitat.radiusM;
+        const double across =
+            habitat.kind == HabitatKind::BERNAL_SPHERE
+                ? habitat.radiusM * degreesToRadians(habitat.sphere.landLatitudeDeg)
+                : 0.5 * habitat.lengthM;
+        sliderDouble("Start round (m)", draft.start.alongM, -round, round, "%.0f");
+        sliderDouble("Start across (m)", draft.start.acrossM, -across, across, "%.0f");
+        sliderDouble("Facing (deg)", draft.start.headingDeg, 0.0, 360.0, "%.0f");
+        ui::textMuted("0 degrees faces spinward, round the land; the angle turns you to the left.");
+        return;
+    }
     ImGui::SliderInt("Start in valley", &draft.start.band, 0,
                      std::max(draft.habitat.stripPairs - 1, 0));
     const double half = 0.5 * draft.habitat.lengthM / 1000.0;

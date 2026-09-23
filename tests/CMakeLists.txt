@@ -24,6 +24,7 @@ add_executable(StarshipSimulator_tests
     settlements_tests.cpp
     SimClockTests.cpp
     SoundscapeTests.cpp
+    sphere_tests.cpp
     spirv_reflect_tests.cpp
     star_catalog_tests.cpp
     terrain_tests.cpp

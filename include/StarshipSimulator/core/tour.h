@@ -54,7 +54,6 @@ struct TourFrame
 /// The camera `seconds` into a tour: eased between stops, holding still to be read at each.
 [[nodiscard]] TourFrame tourAt(const Tour& tour, double seconds);
 
-/// The tours written for a habitat, built around its own size and layout.
 /// The tours on offer in a habitat, named after it. Everything they say and every distance they
 /// move comes from the habitat itself, so they work in any one.
 [[nodiscard]] std::vector<Tour> habitatTours(const HabitatGeometry& geometry,

@@ -24,6 +24,10 @@ layout(location = 2) out vec2 outUv;
 // would turn it straight along the axis, and one flared further sends it in at an angle, down onto
 // the land. So by day the flare is 45 degrees plus half the light's elevation; at night they fold
 // flat, out of the way of the glass, and the ends show the stars.
+//
+// A Bernal sphere's axis points at the Sun, so the light arrives along the axis instead: petals
+// round each polar window's rim, flared out from the axis by half the light's elevation, turn it
+// in across the axis and through the glass; at night they fold flat.
 const int PETALS = 8;
 
 void endCapPetal(int index, vec2 uv)
@@ -38,11 +42,20 @@ void endCapPetal(int index, vec2 uv)
     float daylight  = smoothstep(0.0, twilight, alpha) * (1.0 - smoothstep(PI / 2.0 - twilight, PI / 2.0, alpha));
     float elevation = clamp(atan(sin(2.0 * alpha), abs(cos(2.0 * alpha))), radians(15.0), radians(40.0));
     float flare     = mix(PI / 2.0, PI / 4.0 + 0.5 * elevation, daylight);
+    if (sphericalHull())
+    {
+        // The window's latitude from its rim, and the elevation the light is held to (see
+        // polarWindowElevation in mirror_optics.cpp).
+        float lowest = 0.5 * acos(habitat.light.z / habitat.light.w) + radians(3.0);
+        float high   = max(radians(45.0), lowest + radians(5.0));
+        elevation    = clamp(atan(sin(2.0 * alpha), abs(cos(2.0 * alpha))), lowest, high);
+        flare        = mix(PI / 2.0, 0.5 * elevation, daylight);
+    }
 
     float side    = index < PETALS ? 1.0 : -1.0;  // the +z end, then the -z end
     float glass   = side > 0.0 ? habitat.strips.w : habitat.strips.z;
     float phi     = (float(index % PETALS) + 0.5) * (2.0 * PI / float(PETALS));
-    float radius  = habitat.shape.x;
+    float radius  = sphericalHull() ? habitat.light.z : habitat.shape.x;
     float reach   = 0.9 * radius;
     vec3  outward = vec3(cos(phi), sin(phi), 0.0);
     vec3  tangent = vec3(-sin(phi), cos(phi), 0.0);
@@ -56,7 +69,10 @@ void endCapPetal(int index, vec2 uv)
 
     outCameraRelative = (placement.model * vec4(world, 1.0)).xyz;
     // The reflective face looks outward and back toward the habitat: into the Sun and the glass.
-    outNormal   = mat3(placement.model) * (cos(flare) * outward - sin(flare) * axis);
+    // A sphere's look in toward the axis and out along it, into the Sun.
+    vec3 face   = sphericalHull() ? sin(flare) * axis - cos(flare) * outward
+                                  : cos(flare) * outward - sin(flare) * axis;
+    outNormal   = mat3(placement.model) * face;
     outUv       = uv;
     gl_Position = frame.viewProjection * vec4(outCameraRelative, 1.0);
 }

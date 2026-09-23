@@ -171,6 +171,10 @@ void main()
         {
             float t = from + (step * (float(i) + jitter));
             vec3  p = eye + (view * t);
+            if (sphericalHull() && dot(p, p) > (habitat.light.w - 5.0) * (habitat.light.w - 5.0))
+            {
+                break;  // out through a sphere's wall (or its glass): no cloud beyond it
+            }
             float lod = max(log2(max(t * pixelAngle, 1.0) / texelM), 0.0);
             float height;
             float density = cloudDensity(cloudMap, p, lod, height);

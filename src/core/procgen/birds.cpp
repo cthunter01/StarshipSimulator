@@ -9,6 +9,7 @@
 
 #include "StarshipSimulator/core/SplitMix64.h"
 #include "StarshipSimulator/core/habitat/HabitatGeometry.h"
+#include "StarshipSimulator/core/habitat/habitat_spec.h"
 #include "StarshipSimulator/core/math.h"
 
 namespace StarshipSimulator
@@ -20,6 +21,7 @@ namespace
 constexpr double kMinHeightM = 14.0;  // above the ground, at the bottom of a flock's wheel
 constexpr double kMaxHeightM = 110.0;
 constexpr double kBeatsPerS  = 3.1;  // wing beats
+constexpr double kClearanceM = 6.0;  // a sphere's flocks keep this high over the rising ground
 
 /// One flock: where it wheels, how wide, how fast and how many.
 struct Flock
@@ -37,7 +39,8 @@ struct Flock
 
 std::optional<Flock> flockIn(const HabitatGeometry& geometry, std::int64_t cellZ,
                              std::int64_t cellAround, double cellM, double cellArc,
-                             std::uint64_t seed, const BirdSettings& settings, double drift)
+                             std::uint64_t seed, const BirdSettings& settings, double drift,
+                             double driftAround)
 {
     SplitMix64 rng(hashSeed(hashSeed(seed, static_cast<std::uint64_t>(cellZ)),
                             static_cast<std::uint64_t>(cellAround) + 0xB1D5ULL));
@@ -47,7 +50,7 @@ std::optional<Flock> flockIn(const HabitatGeometry& geometry, std::int64_t cellZ
     }
     Flock flock;
     flock.z     = ((static_cast<double>(cellZ) + rng.uniform()) * cellM) + drift;
-    flock.theta = (static_cast<double>(cellAround) + rng.uniform()) * cellArc;
+    flock.theta = ((static_cast<double>(cellAround) + rng.uniform()) * cellArc) + driftAround;
     const std::optional<double> ground = geometry.groundRadius(flock.z, flock.theta);
     if (!ground)
     {
@@ -62,6 +65,21 @@ std::optional<Flock> flockIn(const HabitatGeometry& geometry, std::int64_t cellZ
     flock.spread = 6.0 + (0.35 * flock.wheelM);
     flock.birds  = 4 + static_cast<int>(26.0 * rng.uniform() * rng.uniform());
     flock.turn   = rng.uniform() < 0.5 ? -1.0 : 1.0;
+    if (geometry.kind() == HabitatKind::BERNAL_SPHERE)
+    {
+        // The ground rises steeply away from a sphere's band: only rings wholly over the land and
+        // clear of the ground at both ends.
+        for (const double end :
+             {flock.z - flock.wheelM - flock.spread, flock.z + flock.wheelM + flock.spread})
+        {
+            const std::optional<double> under = geometry.groundRadius(end, flock.theta);
+            if (!geometry.onLand(end, flock.theta) || !under ||
+                *under - (flock.radius + (0.25 * flock.spread)) < kClearanceM)
+            {
+                return std::nullopt;
+            }
+        }
+    }
     return flock;
 }
 
@@ -76,9 +94,14 @@ std::vector<Bird> birdsNear(const HabitatGeometry& geometry, const Vec3d& camera
     // The cells wrap exactly once around the habitat.
     const auto   around  = std::max<std::int64_t>(4, std::llround(2.0 * kPi * radius / cellM));
     const double cellArc = (2.0 * kPi) / static_cast<double>(around);
-    const double drift   = settings.windMS * seconds;
+    // The wind carries the flocks along the land: along the axis down a valley, round it on a
+    // sphere's band (whose ends climb steeply).
+    const bool   round       = geometry.kind() == HabitatKind::BERNAL_SPHERE;
+    const double wind        = settings.windMS * seconds;
+    const double drift       = round ? 0.0 : wind;
+    const double driftAround = round ? wind / radius : 0.0;
 
-    const double cameraTheta = HabitatGeometry::angleOf(camera);
+    const double cameraTheta = HabitatGeometry::angleOf(camera) - driftAround;
     const auto   zFrom =
         static_cast<std::int64_t>(std::floor((camera.z - settings.rangeM - drift) / cellM));
     const auto zTo =
@@ -95,7 +118,7 @@ std::vector<Bird> birdsNear(const HabitatGeometry& geometry, const Vec3d& camera
         {
             const std::int64_t         wrapped = (((centre + step) % around) + around) % around;
             const std::optional<Flock> flock =
-                flockIn(geometry, cz, wrapped, cellM, cellArc, seed, settings, drift);
+                flockIn(geometry, cz, wrapped, cellM, cellArc, seed, settings, drift, driftAround);
             if (!flock)
             {
                 continue;

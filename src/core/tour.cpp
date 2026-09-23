@@ -11,6 +11,7 @@
 
 #include "StarshipSimulator/core/habitat/HabitatGeometry.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
+#include "StarshipSimulator/core/habitat/mirror_optics.h"
 #include "StarshipSimulator/core/math.h"
 
 namespace StarshipSimulator
@@ -279,6 +280,115 @@ std::vector<Tour> kalpanaTours(const HabitatGeometry& geometry, std::string_view
     return {std::move(first), std::move(day), std::move(sky)};
 }
 
+/// A Bernal sphere's tours: its land is a belt round the equator, the ground climbs away from it
+/// toward the poles, and the light comes in through the polar windows.
+std::vector<Tour> sphereTours(const HabitatGeometry& geometry, std::string_view name)
+{
+    const HabitatSpec& spec   = geometry.spec();
+    const double       radius = geometry.radius();
+    const double       across = 2.0 * radius;
+    const double       belt   = 2.0 * geometry.band(0).halfWidthM;
+    const double       round  = 2.0 * kPi * radius;
+    const double       period = 2.0 * kPi / geometry.omega();
+    const double       edge   = geometry.floorZMax();
+    const double       climb  = radius - geometry.floorRadiusAt(edge);
+    const double       weight = geometry.floorRadiusAt(edge) / radius;
+    const double       rimZ   = geometry.profile().zMax();
+    const double       rimR   = geometry.floorRadiusAt(rimZ);
+    const double       lowest = radiansToDegrees(
+        polarWindowElevation(degreesToRadians(90.0), spec.sphere.windowLatitudeDeg));
+    const double highest = radiansToDegrees(
+        polarWindowElevation(degreesToRadians(45.0), spec.sphere.windowLatitudeDeg));
+    const double     step   = std::min(0.4, 150.0 / radius);  // radians round, between stops
+    const int        towns  = spec.settlements.townsPerValley;
+    constexpr double kAlong = 90.0;  // yaw along the land: spinward, round the axis
+    // By the axis, just inside the sunward window.
+    const Vec3d window = onAxis(rimZ - 15.0, 0.0, 20.0);
+
+    Tour first;
+    first.name  = std::format("{} in five minutes", name);
+    first.blurb = "The whole place, from the belt of land round its equator to the axis.";
+    first.stops = {
+        under(lit(at(std::format("You are standing on the equator of a sphere {} across, turning "
+                                 "once every {}. A belt of land {} wide runs round the inside, "
+                                 "{} round: you could walk it in about {:.0f} minutes.",
+                                 spanText(across), periodText(period), spanText(belt),
+                                 spanText(round), round / 1.4 / 60.0),
+                     place(geometry, 0.0, 0.0, 1.7), kAlong, 2.0, 0.5, 10.0, 2.0),
+                  50.0),
+              "fair"),
+        at(std::format("There is no sky over you. That is the far side of the land, {} away "
+                       "across the middle, and the blue between is the habitat's own air.",
+                       spanText(across)),
+           place(geometry, 0.0, 0.0, 26.0), kAlong, 72.0, 4.0, 9.0),
+        at(std::format("The ground climbs {} to the polar slopes on either hand. Walk up it and "
+                       "you weigh less: the spin makes the gravity, and at the top of the land it "
+                       "is only {:.2f} of what it is at the equator.",
+                       spanText(climb), weight),
+           place(geometry, 0.8 * edge, step, 1.7), 0.0, 15.0, 6.0, 10.0),
+        at(std::format("People live here: {} beside a river that runs round the equator and back "
+                       "into itself, a tram that only ever goes one way round, and farms up the "
+                       "slopes.",
+                       counted(towns, "village", "villages")),
+           place(geometry, 0.0, 2.0 * step, 40.0), kAlong, -22.0, 8.0, 9.0, 4.0),
+        at("A funicular climbs the polar slope to the rim of the window. Beyond the glass, mirrors "
+           "fold the sunlight in over the pole.",
+           onAxis(rimZ - 20.0, 3.0 * step, rimR - 20.0), 0.0, 40.0, 8.0, 9.0),
+        at("Climb toward the axis and the gravity fades: it is made by the spin, and the spin "
+           "reaches you through the floor.",
+           onAxis(0.0, 4.0 * step, 0.45 * radius), kAlong, -10.0, 9.0, 8.0, 5.0),
+        at("At the axis there is none left at all. This is where you could fly under your own "
+           "power, with a pair of wings.",
+           onAxis(0.0, 5.0 * step, 0.12 * radius), 0.0, 0.0, 9.0, 10.0, 9.0),
+    };
+
+    Tour day;
+    day.name  = "How the polar mirrors make a day";
+    day.blurb = "Sunrise to nightfall from one spot.";
+    TourStop morning =
+        lit(at(std::format("Morning. The axis points at the Sun, and mirrors outside each polar "
+                           "window fold its light in over the pole. It never comes in lower than "
+                           "{:.0f} degrees: any lower and none of it would reach the equator.",
+                           lowest),
+               place(geometry, 0.0, 0.0, 24.0), kAlong, 18.0, 0.5, 9.0),
+            80.0);
+    morning.weather = std::string("fair");
+    day.stops       = {
+        std::move(morning),
+        lit(at(std::format("Noon. The light stands {:.0f} degrees above each window's rim and "
+                           "comes from both poles at once, each lighting mostly the far half of "
+                           "the land.",
+                           highest),
+               place(geometry, 0.0, 0.0, 24.0), kAlong, 30.0, 4.0, 8.0),
+            45.0),
+        lit(at("Evening. The light comes in as low as the windows allow, and the shadows reach up "
+               "the slopes toward the nearer pole.",
+               place(geometry, 0.0, 0.0, 24.0), 0.0, 12.0, 4.0, 8.0),
+            88.0),
+        lit(at("Past ninety degrees the shutters close, and the polar windows show the real stars, "
+               "wheeling round the pole as the habitat turns.",
+               window, 0.0, 0.0, 8.0, 12.0),
+            110.0),
+    };
+
+    Tour sky;
+    sky.name  = "The sky outside";
+    sky.blurb = "What you see through the polar windows, and why it circles.";
+    sky.stops = {
+        under(lit(at(std::format("The poles are glass. From here by the axis the stars wheel round "
+                                 "the middle of the window, a full turn every {}: the axis points "
+                                 "at the Sun, which the mirrors hide.",
+                                 periodText(period)),
+                     window, 0.0, 0.0, 0.5, 14.0),
+                  115.0),
+              "clear"),
+        at("Those are the real stars for the date on the clock. Earth, the Moon and the planets "
+           "lie far off to the side, behind the sphere's walls.",
+           onAxis(rimZ - 30.0, 0.0, 60.0), 0.0, 20.0, 5.0, 14.0, 6.0),
+    };
+    return {std::move(first), std::move(day), std::move(sky)};
+}
+
 }  // namespace
 
 std::vector<Tour> habitatTours(const HabitatGeometry& geometry, std::string_view name)
@@ -286,6 +396,10 @@ std::vector<Tour> habitatTours(const HabitatGeometry& geometry, std::string_view
     if (geometry.kind() == HabitatKind::KALPANA_CYLINDER)
     {
         return kalpanaTours(geometry, name);
+    }
+    if (geometry.kind() == HabitatKind::BERNAL_SPHERE)
+    {
+        return sphereTours(geometry, name);
     }
     const HabitatSpec& spec   = geometry.spec();
     const double       valley = geometry.landCenter(0);

@@ -72,6 +72,9 @@ TEST(AppOptions, HabitatOptions)
     EXPECT_EQ(parsed->mirrorAngleDeg, 80.0);
     EXPECT_TRUE(parsed->benchmark);
     EXPECT_FALSE(parse({"--mirror", "200"}).has_value());
+    // A sphere's polar window is a viewpoint too, and the help says so.
+    EXPECT_EQ(parse({"--view", "pole"}).value_or(StarshipSimulator::AppOptions{}).view, "pole");
+    EXPECT_NE(StarshipSimulator::appUsage().find("pole"), std::string::npos);
 }
 
 TEST(AppOptions, SkyOptions)

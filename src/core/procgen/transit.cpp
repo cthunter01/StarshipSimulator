@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "StarshipSimulator/core/habitat/HabitatGeometry.h"
-#include "StarshipSimulator/core/habitat/Landscape.h"
+#include "StarshipSimulator/core/habitat/habitat_spec.h"
 #include "StarshipSimulator/core/habitat/land_layout.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/procgen/mesh.h"
@@ -50,6 +50,8 @@ constexpr double kTramWidthM  = kTramBodyWidthM;
 constexpr double kTramHeightM = kTramBodyHeightM;
 constexpr double kHubRadiusM  = 70.0;  // the funicular stops where the ramp reaches the hub
 constexpr double kLoopAcross  = 0.55;  // a loop runs this far across its band, off the river
+constexpr double kRimMarginM  = 3.0;   // a sphere's funicular stops this far short of the window
+constexpr double kSphereFootM = 15.0;  // and starts this far inside the land, below the fields
 
 /// The line runs down the valley, off to one side of the river's meander.
 double lineAngle(const HabitatGeometry& geometry, int valley)
@@ -142,7 +144,7 @@ GroundSample soundAt(const TramLine& line, const HabitatGeometry& geometry, cons
     // Over water the formation has to clear the surface, on a viaduct.
     if (geometry.waterDepth(spot.z, spot.theta) > 0.0)
     {
-        sample.low = std::max(sample.low, kWaterLevelM + kViaductM);
+        sample.low = std::max(sample.low, geometry.waterLevelAt(spot.z) + kViaductM);
     }
     return sample;
 }
@@ -438,19 +440,26 @@ void callRound(TramLine& line, const Settlements& settlements)
     std::ranges::stable_sort(line.stops, {}, &TramStop::alongM);
 }
 
-/// How far down the endcap the ramp still has ground to run on, before it reaches the hub.
+/// How far down the endcap the ramp still has ground to run on, before it reaches the hub. A
+/// sphere's polar slope has no hub: it runs on to the rim of the window.
 double rampFoot(const HabitatGeometry& geometry, double theta, double from)
 {
     double top = from;
+    bool   hub = false;
     for (int step = 1; step * 20.0 < from - geometry.profile().zMin(); ++step)
     {
         const double                z      = from - (step * 20.0);
         const std::optional<double> ground = geometry.groundRadius(z, theta);
         if (!ground || *ground < kHubRadiusM)
         {
+            hub = true;
             break;
         }
         top = z;
+    }
+    if (!hub && geometry.kind() == HabitatKind::BERNAL_SPHERE)
+    {
+        return geometry.profile().zMin() + kRimMarginM;
     }
     return top;
 }
@@ -466,11 +475,11 @@ void callAtTerraces(TramLine& line)
         std::string      name = "terrace";
         if (leg == 0)
         {
-            name = "the valley";
+            name = line.footName;
         }
         else if (leg == kLegs)
         {
-            name = "the hub";
+            name = line.summitName;
         }
         const bool end = leg == 0 || leg == kLegs;
         line.stops.push_back({.name     = std::move(name),
@@ -478,6 +487,27 @@ void callAtTerraces(TramLine& line)
                               .position = here.position,
                               .dwellS   = end ? 24.0 : 10.0});
     }
+}
+
+/// A sphere's funicular: from the land's antisunward edge up the polar slope to the window's rim,
+/// halfway round from where the band's plan starts (the towns keep to the middles of the band's
+/// stretches, so that is always between two of them).
+TramLine sphereFunicular(const HabitatGeometry& geometry, const TerrainGrid& grid,
+                         const LandBand& band)
+{
+    TramLine line;
+    line.kind         = LineKind::ENDCAP;
+    line.valley       = band.index;
+    line.theta        = std::fmod(band.centreTheta + kPi, 2.0 * kPi);
+    line.topSpeed     = 26.0;
+    line.trams        = 2;
+    line.footName     = "the fields";
+    line.summitName   = "the window";
+    const double foot = geometry.floorZMin() + kSphereFootM;
+    const double top  = rampFoot(geometry, line.theta, foot);
+    line.radiusM      = geometry.floorRadiusAt(0.5 * (foot + top));
+    layTrack(line, geometry, grid, foot, top, kRailHeadM);
+    return line;
 }
 
 }  // namespace
@@ -522,6 +552,15 @@ std::vector<TramLine> planTramLines(const HabitatGeometry& geometry, const Terra
     // The funicular up each valley's end of the antisunward ramp, to the hub at the axis.
     for (int valley = 0; valley < geometry.bandCount(); ++valley)
     {
+        if (geometry.kind() == HabitatKind::BERNAL_SPHERE)
+        {
+            TramLine line = sphereFunicular(geometry, grid, geometry.band(valley));
+            if (line.track.size() >= 2)
+            {
+                lines.push_back(std::move(line));
+            }
+            continue;
+        }
         if (geometry.band(valley).axis != BandAxis::ALONG_Z)
         {
             continue;
@@ -658,8 +697,11 @@ void gradeColumn(TerrainGrid& grid, const TramLine& line, std::uint32_t column, 
     const auto               middle    = std::clamp<std::int64_t>(std::llround(middleRow), 0, last);
     const double             depth =
         std::abs(formation - grid.height(column, static_cast<std::uint32_t>(middle)));
-    const double batter = kBlendM + (kSideSlope * depth);
-    const auto   reach  = static_cast<std::int64_t>((kGradeM + batter) / layout.cellU) + 1;
+    // The shelf is level across, at one distance from the axis: where the floor slopes (a
+    // sphere) the rows uphill of the middle are cut to that radius, not to the same height.
+    const auto middleRadius = static_cast<double>(grid.profile[static_cast<std::size_t>(middle)].y);
+    const double batter     = kBlendM + (kSideSlope * depth);
+    const auto   reach      = static_cast<std::int64_t>((kGradeM + batter) / layout.cellU) + 1;
     for (std::int64_t row = std::max<std::int64_t>(middle - reach, 0);
          row <= std::min(middle + reach, last); ++row)
     {
@@ -670,7 +712,8 @@ void gradeColumn(TerrainGrid& grid, const TramLine& line, std::uint32_t column, 
             continue;
         }
         const double blend = glm::smoothstep(kGradeM, kGradeM + batter, across);
-        grid.setHeight(column, at, std::lerp(formation, grid.height(column, at), blend));
+        const double level = formation + (static_cast<double>(grid.profile[at].y) - middleRadius);
+        grid.setHeight(column, at, std::lerp(level, grid.height(column, at), blend));
     }
 }
 

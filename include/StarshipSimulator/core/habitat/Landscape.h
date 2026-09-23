@@ -35,6 +35,9 @@ struct LandscapeFrame
     double                  stripAngle      = 0.0;  // radians between window centres
     double                  windowHalfAngle = 0.0;  // radians
     std::optional<LandBand> around;
+    // Where the floor rises away from the band's middle line (a sphere), water lies level and
+    // stays within this far of it (arc metres); unset where the floor is level.
+    std::optional<double> waterReachM;
 };
 
 /// A lake: an ellipse on the land, longer along its band than across.
@@ -73,13 +76,16 @@ public:
     [[nodiscard]] double woodland(double z, double theta) const;
 
     /// Terrain height near water: the bed, the banks and the flat floodplain, blended into the
-    /// natural height `natural` farther away. `shore` from shoreDistance().
+    /// natural height `natural` farther away. `shore` from shoreDistance(); `level` is the water's
+    /// surface there (HabitatGeometry::waterLevelAt), lower than kWaterLevelM where the floor rises
+    /// away from the water.
     [[nodiscard]] static double shapeNearWater(double natural, double shore,
-                                               double floodplainM = kFloodplainM);
+                                               double floodplainM = kFloodplainM,
+                                               double level       = kWaterLevelM);
     /// The same, with this landscape's own floodplain.
-    [[nodiscard]] double shape(double natural, double shore) const
+    [[nodiscard]] double shape(double natural, double shore, double level = kWaterLevelM) const
     {
-        return shapeNearWater(natural, shore, floodplainM_);
+        return shapeNearWater(natural, shore, floodplainM_, level);
     }
 
 private:

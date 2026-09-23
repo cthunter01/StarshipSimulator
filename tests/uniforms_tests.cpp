@@ -70,6 +70,9 @@ TEST(HabitatUniforms, DescribeShapeLightAndAir)
         EXPECT_NEAR(beam.z, -0.5F, 1e-6F);  // afternoon: sun toward the anti-sunward end
     }
     EXPECT_EQ(habitat.beams.at(3).w, 0.0F);
+    EXPECT_EQ(habitat.light.x, 0.0F);  // directions, not points
+    EXPECT_EQ(habitat.light.z, 0.0F);
+    EXPECT_EQ(habitat.light.w, 0.0F);  // not a sphere
     // Density falls to 0.792 at the axis: k R^2 = 0.233.
     EXPECT_NEAR(static_cast<double>(habitat.atmosphere.x) * 4000.0 * 4000.0, 0.2332, 1e-3);
     EXPECT_FLOAT_EQ(habitat.atmosphere.w, 1.0F);  // full daylight

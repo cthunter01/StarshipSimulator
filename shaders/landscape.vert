@@ -26,7 +26,7 @@ layout(location = 1) out vec3 outCameraRelative;
 vec3 groundPosition(vec2 cell)
 {
     vec4  profile = textureLod(profileMap, profileUv(cell.y), 0.0);
-    float h       = landscape.mode.x > 0.5 ? landscape.heights.z  // the water surface
+    float h       = landscape.mode.x > 0.5 ? waterLevel(profile)  // the water surface
                                            : decodeHeight(textureLod(heightMap, heightUv(cell), 0.0).r);
     float theta   = cell.x * landscape.grid.w;
     float r       = profile.y - h;

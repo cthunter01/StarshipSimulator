@@ -8,6 +8,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "StarshipSimulator/core/SplitMix64.h"
@@ -38,6 +39,9 @@ constexpr double kNormalStepM      = 0.5;
 constexpr int    kHillOctaves      = 5;
 constexpr int    kRidgeOctaves     = 5;
 constexpr double kFloodplainReachM = 250.0;  // water shapes the land out to this distance
+// A sphere's floor rises away from the equator, and water lies level (at one radius): it keeps to
+// where the floor has risen no more than this above the equator.
+constexpr double kMaxWaterRiseM = 2.5;
 
 HabitatSpec validated(const HabitatSpec& spec)
 {
@@ -56,6 +60,19 @@ HabitatSpec validated(const HabitatSpec& spec)
         throw std::invalid_argument(message);
     }
     return normalizedForKind(spec);
+}
+
+/// The z range of the land: an O'Neill or Kalpana cylinder's floor between its endcaps, or a
+/// sphere's band round the equator.
+std::pair<double, double> floorZRange(const HabitatSpec& spec)
+{
+    if (spec.kind == HabitatKind::BERNAL_SPHERE)
+    {
+        const double reach = spec.radiusM * std::sin(degreesToRadians(spec.sphere.landLatitudeDeg));
+        return {-reach, reach};
+    }
+    return {(-spec.lengthM / 2.0) + endcapDepthInside(spec.antisunwardEndcap, spec.radiusM),
+            (spec.lengthM / 2.0) - endcapDepthInside(spec.sunwardEndcap, spec.radiusM)};
 }
 
 /// The band of land that runs round the axis, if the habitat's land is laid out that way.
@@ -127,8 +144,8 @@ HabitatGeometry::HabitatGeometry(const HabitatSpec& spec)
     hills_(hashSeed(spec_.terrain.seed, 1)),
     ridges_(hashSeed(spec_.terrain.seed, 2)),
     omega_(spinRate(spec_.radiusM, spec_.surfaceGravityG)),
-    floorZMin_((-spec_.lengthM / 2.0) + endcapDepthInside(spec_.antisunwardEndcap, spec_.radiusM)),
-    floorZMax_((spec_.lengthM / 2.0) - endcapDepthInside(spec_.sunwardEndcap, spec_.radiusM)),
+    floorZMin_(floorZRange(spec_).first),
+    floorZMax_(floorZRange(spec_).second),
     bands_(planLandBands(spec_, profile_, floorZMin_, floorZMax_)),
     enclosure_(spec_, profile_),
     landscape_(spec_.terrain, LandscapeFrame{.radiusM         = spec_.radiusM,
@@ -137,7 +154,8 @@ HabitatGeometry::HabitatGeometry(const HabitatSpec& spec)
                                              .stripCount      = spec_.stripPairs,
                                              .stripAngle      = stripAngle(),
                                              .windowHalfAngle = windowHalfAngle(),
-                                             .around          = aroundBand(bands_)})
+                                             .around          = aroundBand(bands_),
+                                             .waterReachM     = waterReachAcrossM()})
 {
     walkableZMin_ = std::max(profile_->zMin() + kEndMarginM,
                              zWhereRadiusReaches(*profile_, kPoleRadiusM, false));
@@ -196,6 +214,15 @@ Region HabitatGeometry::regionAt(double z, double theta) const
     {
         return {.kind = RegionKind::OUTSIDE, .index = -1};
     }
+    if (isSphere())
+    {
+        // The band of land round the equator, and the polar slopes above it up to the windows.
+        if (z < floorZMin_ || z > floorZMax_)
+        {
+            return {.kind = RegionKind::ENDCAP, .index = -1};
+        }
+        return {.kind = RegionKind::LAND, .index = 0};
+    }
     if (spec_.kind != HabitatKind::ONEILL_CYLINDER)
     {
         // The whole floor is one band of land; the windows are the end walls.
@@ -223,6 +250,12 @@ double HabitatGeometry::distanceToWindow(double z, double theta, double radius) 
         // The glass end walls.
         return std::max(0.0, std::min(z - profile_->zMin(), profile_->zMax() - z));
     }
+    if (isSphere())
+    {
+        // Along the floor to the rim of the nearer polar window.
+        const double u = profile_->arcAt(z);
+        return std::max(0.0, std::min(u, profile_->length() - u));
+    }
     const double strip = stripAngle();
     const int nearest  = static_cast<int>(std::lround(wrapAngle(theta) / strip)) % spec_.stripPairs;
     const double arc =
@@ -234,6 +267,32 @@ double HabitatGeometry::distanceToWindow(double z, double theta, double radius) 
 double HabitatGeometry::floorRadiusAt(double z) const
 {
     return profile_->radiusAt(std::clamp(z, profile_->zMin(), profile_->zMax())).value_or(0.0);
+}
+
+double HabitatGeometry::arcBeyondLand(double z) const
+{
+    const double u = profile_->arcAt(z);
+    return std::max({0.0, profile_->arcAt(floorZMin_) - u, u - profile_->arcAt(floorZMax_)});
+}
+
+double HabitatGeometry::slopeArcM() const
+{
+    return profile_->length() - profile_->arcAt(floorZMax_);
+}
+
+double HabitatGeometry::maxWaterRiseM() const
+{
+    return isSphere() ? kMaxWaterRiseM : 0.0;
+}
+
+std::optional<double> HabitatGeometry::waterReachAcrossM() const
+{
+    if (!isSphere())
+    {
+        return std::nullopt;
+    }
+    const double radius = spec_.radiusM;
+    return radius * std::acos((radius - kMaxWaterRiseM) / radius);
 }
 
 double HabitatGeometry::spanAcrossM() const
@@ -255,14 +314,18 @@ double HabitatGeometry::waterLevelAt(double z) const
 {
     // A level surface under spin gravity is a cylinder round the axis: kWaterLevelM below the floor
     // at the land's middle line, and deeper under the floor wherever the floor rises toward the
-    // axis.
+    // axis (on a sphere; a cylinder's floor is level).
+    if (!isSphere())
+    {
+        return kWaterLevelM;
+    }
     return kWaterLevelM + (floorRadiusAt(z) - bands_.front().radiusM);
 }
 
 double HabitatGeometry::terrainHeight(double z, double theta) const
 {
     return landscape_.shape(naturalHeight(z, theta),
-                            landscape_.shoreDistance(z, theta, kFloodplainReachM));
+                            landscape_.shoreDistance(z, theta, kFloodplainReachM), waterLevelAt(z));
 }
 
 double HabitatGeometry::naturalHeight(double z, double theta) const
@@ -280,8 +343,10 @@ double HabitatGeometry::naturalHeight(double z, double theta) const
         glm::smoothstep(margin, margin + blend, distanceToWindow(z, theta, radius));
     const double hubRadius =
         std::min(spec_.antisunwardEndcap.hubRadiusM, spec_.sunwardEndcap.hubRadiusM);
-    const double hubMask = glm::smoothstep(hubRadius, hubRadius + kHubBlendM, radius);
-    const double mask    = windowMask * hubMask;
+    // A sphere has no hub: its floor ends at the polar windows' rims.
+    const double hubMask =
+        isSphere() ? 1.0 : glm::smoothstep(hubRadius, hubRadius + kHubBlendM, radius);
+    const double mask = windowMask * hubMask;
     if (mask <= 0.0)
     {
         return 0.0;
@@ -294,8 +359,11 @@ double HabitatGeometry::naturalHeight(double z, double theta) const
     const double base  = 0.5 + (0.5 * hills_.fbm(q, kHillOctaves));
     const double hills = terrain.hillHeightM * base * base;
 
-    const double beyondFloor    = std::max({0.0, floorZMin_ - z, z - floorZMax_});
-    const double mountainWeight = glm::smoothstep(0.0, kMountainBlendM, beyondFloor);
+    const double beyondFloor = std::max({0.0, floorZMin_ - z, z - floorZMax_});
+    // On a sphere the polar slopes are short: the relief grows over the first half of them.
+    const double mountainWeight = isSphere()
+                                      ? glm::smoothstep(0.0, 0.5 * slopeArcM(), arcBeyondLand(z))
+                                      : glm::smoothstep(0.0, kMountainBlendM, beyondFloor);
     double       mountains      = 0.0;
     if (mountainWeight > 0.0)
     {
@@ -323,13 +391,15 @@ double HabitatGeometry::forestDensity(double z, double theta) const
     const double water   = glm::smoothstep(15.0, 90.0, shore);
     // Woods thin out up the endcap mountains and stop near the hub.
     const double beyondFloor = std::max({0.0, floorZMin_ - z, z - floorZMax_});
-    const double treeLine    = 1.0 - glm::smoothstep(0.35, 0.6, beyondFloor / spec_.radiusM);
+    const double treeLine    = isSphere()
+                                   ? 1.0 - glm::smoothstep(0.3, 0.7, arcBeyondLand(z) / slopeArcM())
+                                   : 1.0 - glm::smoothstep(0.35, 0.6, beyondFloor / spec_.radiusM);
     return landscape_.woodland(z, theta) * walkway * water * treeLine;
 }
 
 double HabitatGeometry::waterDepth(double z, double theta) const
 {
-    return std::max(0.0, kWaterLevelM - terrainHeight(z, theta));
+    return std::max(0.0, waterLevelAt(z) - terrainHeight(z, theta));
 }
 
 std::optional<double> HabitatGeometry::groundRadius(double z, double theta) const

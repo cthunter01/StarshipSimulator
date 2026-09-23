@@ -149,6 +149,8 @@ private:
     [[nodiscard]] SurfaceSpot startSpot(double aheadM, double asideM) const;
     /// The yaw (degrees) facing a heading on the start band's plan (from its +y toward its +x).
     [[nodiscard]] double bandYaw(double headingDeg) const;
+    /// The views that differ in a sphere; false for the others.
+    bool applySphereView(std::string_view name);
     /// The views that differ on a band running round the axis; false for the others.
     bool applyRoundView(std::string_view name);
     /// The nearest angle from `theta` (going spinward) where the ground at z is open: no town, no

@@ -186,6 +186,17 @@ TEST(Scenario, PresetsLoad)
     EXPECT_EQ(playground->habitat.radiusM, 250.0);
     EXPECT_LT(playground->climate.cloudTopM, 0.8 * playground->habitat.radiusM);
 
+    const auto kalpana = loadScenario(presets() / "kalpana_one.toml");
+    ASSERT_TRUE(kalpana.has_value()) << kalpana.error().describe();
+    EXPECT_EQ(kalpana->habitat.kind, HabitatKind::KALPANA_CYLINDER);
+
+    const auto islandOne = loadScenario(presets() / "island_one.toml");
+    ASSERT_TRUE(islandOne.has_value()) << islandOne.error().describe();
+    EXPECT_EQ(islandOne->title, "Island One");
+    EXPECT_EQ(islandOne->habitat.kind, HabitatKind::BERNAL_SPHERE);
+    EXPECT_EQ(islandOne->habitat.sphere.landLatitudeDeg, 35.0);
+    EXPECT_EQ(islandOne->habitat.sphere.windowLatitudeDeg, 55.0);
+
     // The presets are written the way serializeScenario writes them.
     EXPECT_EQ(serializeScenario(island.value()),
               serializeScenario(parseScenario(serializeScenario(island.value())).value()));
@@ -320,7 +331,8 @@ TEST(Scenario, ValidateNamesEverythingWrongAtOnce)
 
 TEST(Scenario, EveryPresetIsReadyToOpen)
 {
-    for (const char* name : {"island_three.toml", "coriolis_playground.toml"})
+    for (const char* name :
+         {"island_three.toml", "coriolis_playground.toml", "kalpana_one.toml", "island_one.toml"})
     {
         const auto loaded = loadScenario(presets() / name);
         ASSERT_TRUE(loaded.has_value()) << loaded.error().describe();

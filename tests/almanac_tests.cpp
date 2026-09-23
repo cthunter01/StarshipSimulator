@@ -155,6 +155,41 @@ TEST(Almanac, TellsKalpanaOnesOwnStory)
     }
 }
 
+TEST(Almanac, TellsIslandOnesOwnStory)
+{
+    HabitatSpec spec;
+    spec.kind    = HabitatKind::BERNAL_SPHERE;
+    spec.radiusM = 250.0;
+    const HabitatGeometry geometry{spec};
+    AlmanacState          state;
+    state.geometry = &geometry;
+    state.metrics  = computeMetrics(spec);
+    // Standing on the land 30 degrees from the equator.
+    const double z       = 250.0 * std::sin(degreesToRadians(30.0));
+    state.eye            = Vec3d(geometry.floorRadiusAt(z) - 1.7, 0.0, z);
+    state.mirrorAngleRad = degreesToRadians(50.0);
+    std::string text;
+    for (const AlmanacPage& page : almanacPages(state))
+    {
+        text += page.title + page.story;
+        for (const AlmanacFact& fact : page.facts)
+        {
+            text += fact.label + fact.value + fact.note;
+        }
+    }
+    EXPECT_NE(text.find("a sphere 500 m across"), std::string::npos) << text;
+    EXPECT_NE(text.find("polar window"), std::string::npos);
+    EXPECT_NE(text.find("30 degrees from it"), std::string::npos) << "your latitude";
+    EXPECT_NE(text.find("86% of what it is at the equator"), std::string::npos)
+        << "gravity goes as cos(latitude)";
+    EXPECT_NE(text.find("45 hectares"), std::string::npos) << "the land, in hectares";
+    for (const char* wrong :
+         {"valley", "cylinder", "eight kilometres", "Eight kilometres", "km^3", "0.0 million"})
+    {
+        EXPECT_EQ(text.find(wrong), std::string::npos) << wrong;
+    }
+}
+
 TEST(Almanac, WorksWithoutASkyOrAHabitatToDescribe)
 {
     EXPECT_TRUE(almanacPages(AlmanacState{}).empty());  // nothing to say about nothing

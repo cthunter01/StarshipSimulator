@@ -9,9 +9,18 @@ layout(std140, set = UNIFORM_SET, binding = 2) uniform Landscape
     vec4 heights;   // x: height at texel value 0, y: at 1, z: water level, w: floor radius
     vec4 morph[12];  // per level: x start (m), y end, z 1 / (end - start)
     vec4 mode;       // x: 0 = ground, 1 = water surface; y: water pass (0 dims, 1 adds)
-    vec4 extent;     // x, y: z range of the profile (for arcByZ)
+    vec4 extent;     // x, y: z range of the profile (for arcByZ); z: 1 when the water lies at the
+                     // radius w below a floor that is not level (a sphere), else 0
 }
 landscape;
+
+// The water's surface on a row of the grid, measured like the heights: heights.z on a level floor;
+// where the floor rises away from the water (a sphere) the level surface is a cylinder of radius
+// extent.w, deeper under the floor wherever the floor is nearer the axis.
+float waterLevel(vec4 profile)
+{
+    return landscape.heights.z + landscape.extent.z * (profile.y - landscape.extent.w);
+}
 
 float decodeHeight(float unorm) { return mix(landscape.heights.x, landscape.heights.y, unorm); }
 vec2  heightUv(vec2 cell) { return (cell + 0.5) / landscape.grid.xy; }

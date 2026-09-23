@@ -16,7 +16,6 @@
 #include <vector>
 
 #include "StarshipSimulator/core/habitat/HabitatGeometry.h"
-#include "StarshipSimulator/core/habitat/Landscape.h"
 #include "StarshipSimulator/core/log.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/physics/CharacterMover.h"
@@ -325,10 +324,10 @@ private:
         {
             return;
         }
-        const double floor   = geometry_->profile().radiusAt(x.z).value_or(geometry_->radius());
-        const Vec3d  up      = HabitatGeometry::localUp(x);
-        const Vec3d  surface = (-up * (floor - kWaterLevelM)) + Vec3d(0.0, 0.0, x.z);
-        const double g       = geometry_->gravityAt(std::hypot(x.x, x.y));
+        const double floor  = geometry_->profile().radiusAt(x.z).value_or(geometry_->radius());
+        const Vec3d  up     = HabitatGeometry::localUp(x);
+        const Vec3d surface = (-up * (floor - geometry_->waterLevelAt(x.z))) + Vec3d(0.0, 0.0, x.z);
+        const double g      = geometry_->gravityAt(std::hypot(x.x, x.y));
         body.ApplyBuoyancyImpulse(toJolt(surface), toJoltF(up), (*props_)[index - 1].buoyancy,
                                   kWaterDrag, kWaterAngularDrag, JPH::Vec3::sZero(),
                                   toJoltF(-up * g), dt);

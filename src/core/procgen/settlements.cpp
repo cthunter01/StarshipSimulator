@@ -234,12 +234,30 @@ struct GroundCheck
         return site.grid->groundHeight(spot.z, spot.theta);
     }
 
-    /// Floor level and foundation depth for a footprint, if the ground there can take it.
+    /// The ground at p, `h` above the floor there, as high as it stands above the floor's datum
+    /// under `centre`, along the up there: where a building standing at `centre` meets it. The
+    /// same as h where the floor is level; on a sphere's sloping, curving floor, higher uphill.
+    [[nodiscard]] double heightFrom(const Vec2d& centre, const Vec2d& p, double h) const
+    {
+        if (site.geometry->kind() != HabitatKind::BERNAL_SPHERE)
+        {
+            return h;
+        }
+        const Vec3d origin = plane.point(centre, 0.0);
+        return glm::dot(plane.point(p, h) - origin, HabitatGeometry::localUp(origin));
+    }
+
+    /// Floor level and foundation depth for a footprint, if the ground there can take it. Both are
+    /// measured from the floor's datum under the footprint's centre, where the building stands.
     [[nodiscard]] std::optional<Vec2d> footprint(const Vec2d& centre, const Vec2d& half,
                                                  double angle) const
     {
         double low  = std::numeric_limits<double>::max();
         double high = std::numeric_limits<double>::lowest();
+        // The same, as the ground stands against the centre's datum: on a sloping floor the
+        // uphill corners stand higher than their own heights say.
+        double lowTrue  = std::numeric_limits<double>::max();
+        double highTrue = std::numeric_limits<double>::lowest();
         for (const Vec2d& corner : corners(centre, half, angle))
         {
             if (!dry(corner, kWaterMarginM))
@@ -249,17 +267,24 @@ struct GroundCheck
             const double h = height(corner);
             low            = std::min(low, h);
             high           = std::max(high, h);
+            const double t = heightFrom(centre, corner, h);
+            lowTrue        = std::min(lowTrue, t);
+            highTrue       = std::max(highTrue, t);
         }
         const double middle = height(centre);
         low                 = std::min(low, middle);
         high                = std::max(high, middle);
+        lowTrue             = std::min(lowTrue, middle);
+        highTrue            = std::max(highTrue, middle);
+        // Only the land's own relief limits a building: the slope of a sphere's floor it takes up
+        // on a plinth.
         if (high - low > kMaxFootprintRiseM)
         {
             return std::nullopt;
         }
         // The ground floor a step above the highest corner; the walls go well below the lowest,
         // so distant, coarser terrain never shows a gap under them.
-        return Vec2d(high + 0.15, high + 0.15 - low + 2.0);
+        return Vec2d(highTrue + 0.15, highTrue + 0.15 - lowTrue + 2.0);
     }
 };
 

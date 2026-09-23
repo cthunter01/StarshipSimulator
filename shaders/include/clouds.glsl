@@ -16,9 +16,10 @@ float coverFrom(vec2 m, float z)
 {
     float shape = m.x + 0.35 * (m.y - 0.5);
     float open  = 1.0 - habitat.cloud.z;
-    // The clouds thin out toward the ends of the habitat, where the endcaps are.
-    float ends = smoothstep(habitat.shape.y - 400.0, habitat.shape.y + 600.0, z) *
-                 (1.0 - smoothstep(habitat.shape.z - 600.0, habitat.shape.z + 400.0, z));
+    // The clouds thin out toward the ends of the land, where the endcaps (or the poles) are.
+    float fade = habitat.band.z;
+    float ends = smoothstep(habitat.shape.y - fade, habitat.shape.y + 1.5 * fade, z) *
+                 (1.0 - smoothstep(habitat.shape.z - 1.5 * fade, habitat.shape.z + fade, z));
     return smoothstep(open - 0.02, open + 0.09, shape) * ends;
 }
 

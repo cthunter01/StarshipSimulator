@@ -48,6 +48,18 @@ const HabitatGeometry& kalpana()
     return kGeometry;
 }
 
+/// Island One: a sphere 500 m across, land to 35 degrees either side of the equator.
+const HabitatGeometry& islandOne()
+{
+    static const HabitatGeometry kGeometry{[] {
+        HabitatSpec spec;
+        spec.kind    = HabitatKind::BERNAL_SPHERE;
+        spec.radiusM = 250.0;
+        return spec;
+    }()};
+    return kGeometry;
+}
+
 void checkStop(const TourStop& stop, const HabitatGeometry& geometry, const std::string& tour)
 {
     EXPECT_GT(stop.caption.size(), 40U) << "a stop with nothing to read";
@@ -81,6 +93,27 @@ TEST(Tour, EveryTourIsWorthTakingAndFitsTheHabitat)
     checkTours(island());
     checkTours(playground());
     checkTours(kalpana());
+    checkTours(islandOne());
+}
+
+TEST(Tour, TellsOfThePolarWindowsInIslandOne)
+{
+    const std::vector<Tour> tours   = habitatTours(islandOne(), "Island One");
+    const std::string&      opening = tours.front().stops.front().caption;
+    EXPECT_NE(opening.find("sphere 500 metres across"), std::string::npos) << opening;
+    bool polar = false;
+    for (const Tour& tour : tours)
+    {
+        for (const TourStop& stop : tour.stops)
+        {
+            polar = polar || stop.caption.contains("polar");
+            for (const char* wrong : {"cylinder", "valley", "window strip", "kilometres across"})
+            {
+                EXPECT_EQ(stop.caption.find(wrong), std::string::npos) << stop.caption;
+            }
+        }
+    }
+    EXPECT_TRUE(polar);
 }
 
 TEST(Tour, TellsOfTheGlassEndsInKalpanaOne)

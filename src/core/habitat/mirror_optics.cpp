@@ -21,6 +21,11 @@ constexpr double kTwilight = degreesToRadians(4.0);
 // mirrors outside can only fold the light in so steeply, and at dusk no lower than this.
 constexpr double kEndCapHighest = degreesToRadians(40.0);
 constexpr double kEndCapLowest  = degreesToRadians(15.0);
+// A sphere's polar windows: from the equator an image beyond a pole shows through the window only
+// while it stands higher than half the window's latitude above the rim (an inscribed angle), so the
+// light is held a little above that, and at most this high.
+constexpr double kPolarHighest = degreesToRadians(45.0);
+constexpr double kPolarMargin  = degreesToRadians(3.0);
 
 Vec3d outward(double angle)
 {
@@ -64,6 +69,13 @@ double endCapElevation(double openingAngle)
     return std::clamp(sunElevation(openingAngle), kEndCapLowest, kEndCapHighest);
 }
 
+double polarWindowElevation(double openingAngle, double windowLatitudeDeg)
+{
+    const double lowest  = (0.5 * degreesToRadians(windowLatitudeDeg)) + kPolarMargin;
+    const double highest = std::max(kPolarHighest, lowest + degreesToRadians(5.0));
+    return std::clamp(sunElevation(openingAngle), lowest, highest);
+}
+
 double daylightFactor(double openingAngle)
 {
     return glm::smoothstep(0.0, kTwilight, openingAngle) *
@@ -73,11 +85,19 @@ double daylightFactor(double openingAngle)
 namespace
 {
 
-/// The two sun images through a windowless cylinder's glass end caps.
+/// The two sun images through a windowless cylinder's glass end caps, or through a sphere's polar
+/// windows: points on the axis beyond the glass, as high above its rim as the mirrors put them.
 std::vector<SunBeam> endCapBeams(const HabitatGeometry& geometry, double openingAngle)
 {
-    const double intensity = daylightFactor(openingAngle) * geometry.spec().mirrors.reflectivity;
-    const double beyond    = geometry.radius() / std::tan(endCapElevation(openingAngle));
+    const HabitatSpec& spec      = geometry.spec();
+    const double       intensity = daylightFactor(openingAngle) * spec.mirrors.reflectivity;
+    const bool         sphere    = geometry.kind() == HabitatKind::BERNAL_SPHERE;
+    const double       rim =
+        sphere ? geometry.floorRadiusAt(geometry.profile().zMax()) : geometry.radius();
+    const double elevation = sphere
+                                 ? polarWindowElevation(openingAngle, spec.sphere.windowLatitudeDeg)
+                                 : endCapElevation(openingAngle);
+    const double beyond    = rim / std::tan(elevation);
     std::vector<SunBeam> beams;
     for (int end = 0; end < 2; ++end)
     {
@@ -95,7 +115,8 @@ std::vector<SunBeam> endCapBeams(const HabitatGeometry& geometry, double opening
 
 std::vector<SunBeam> sunBeams(const HabitatGeometry& geometry, double openingAngle)
 {
-    if (daylightKindFor(geometry.kind()) == DaylightKind::END_CAPS)
+    const DaylightKind daylight = daylightKindFor(geometry.kind());
+    if (daylight == DaylightKind::END_CAPS || daylight == DaylightKind::POLAR_WINDOWS)
     {
         return endCapBeams(geometry, openingAngle);
     }
@@ -118,6 +139,24 @@ Vec3d towardSunFrom(const SunBeam& beam, const Vec3d& p)
 
 double beamReach(const HabitatGeometry& geometry, const Vec3d& p, const SunBeam& beam)
 {
+    if (beam.image && geometry.kind() == HabitatKind::BERNAL_SPHERE)
+    {
+        // The sphere is convex and its walls opaque: the ray toward the image leaves it once, and
+        // the light gets in if that is through the polar window on the image's side.
+        const Vec3d  d    = towardSunFrom(beam, p);
+        const double r    = geometry.radius();
+        const double b    = glm::dot(p, d);
+        const double c    = glm::dot(p, p) - (r * r);
+        const double disc = (b * b) - c;
+        if (disc < 0.0)
+        {
+            return 0.0;
+        }
+        const Vec3d  exit   = p + (d * std::max(-b + std::sqrt(disc), 0.0));
+        const double rimZ   = geometry.profile().zMax();
+        const double toward = beam.image->z > 0.0 ? exit.z : -exit.z;
+        return glm::smoothstep(rimZ - 2.0, rimZ + 2.0, toward);
+    }
     if (beam.image)
     {
         // Seen from anywhere inside, an image on the axis beyond the glass shines through it.

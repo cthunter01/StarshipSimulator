@@ -18,6 +18,10 @@
 // along the axis, so each end shows an image of the Sun, a point on the axis beyond the glass. The
 // same day schedule sets them: the lower the image, the farther out it lies, and past 90 degrees
 // the shutters are closed.
+//
+// A Bernal sphere is lit the same way through its polar windows, but its walls between the land
+// and the glass are opaque: an image beyond one pole lights only the places from which the ray
+// toward it leaves through that pole's window, mostly the far half of the band.
 namespace StarshipSimulator
 {
 
@@ -40,6 +44,11 @@ namespace StarshipSimulator
 /// mirrors outside can only fold it in so steeply, and at dusk hold it no lower than 15 degrees.
 [[nodiscard]] double endCapElevation(double openingAngle);
 
+/// How high the light through a sphere's polar window stands above the window's rim, in radians:
+/// never lower than half the window's latitude (and a little), or no light from beyond one pole
+/// would reach the equator, and at most 45 degrees.
+[[nodiscard]] double polarWindowElevation(double openingAngle, double windowLatitudeDeg);
+
 /// 1 in full daylight, fading to 0 as the mirrors open toward 90 degrees or close toward 0.
 [[nodiscard]] double daylightFactor(double openingAngle);
 
@@ -53,7 +62,7 @@ struct SunBeam
     std::optional<Vec3d> image = std::nullopt;
 };
 
-/// One beam per window (or per glass end cap).
+/// One beam per window (or per glass end cap, or per polar window).
 [[nodiscard]] std::vector<SunBeam> sunBeams(const HabitatGeometry& geometry, double openingAngle);
 
 /// The direction toward a beam's sun image from p.

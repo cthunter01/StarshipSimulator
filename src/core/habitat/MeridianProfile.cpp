@@ -18,7 +18,8 @@ namespace StarshipSimulator
 namespace
 {
 
-constexpr int kHemisphereSegments = 60;  // 1.5 degrees each
+constexpr int kHemisphereSegments = 60;   // 1.5 degrees each
+constexpr int kSphereSegments     = 120;  // rim to rim; even, so one point is the equator exactly
 
 /// Index of the segment [i, i+1] containing key, found with a projection onto the point member.
 template <typename Projection>
@@ -154,6 +155,27 @@ MeridianProfile buildOneillProfile(const HabitatSpec& spec)
 namespace StarshipSimulator
 {
 
+namespace
+{
+
+/// A sphere's floor from the rim of one polar window to the other, through the equator. The glass
+/// beyond the rims is drawn separately, like a Kalpana cylinder's glass ends.
+MeridianProfile buildSphereProfile(const HabitatSpec& spec)
+{
+    const double       radius = spec.radiusM;
+    const double       rim    = degreesToRadians(spec.sphere.windowLatitudeDeg);
+    std::vector<Vec2d> points;
+    points.reserve(kSphereSegments + 1);
+    for (int i = 0; i <= kSphereSegments; ++i)
+    {
+        const double latitude = rim * ((2 * i) - kSphereSegments) / kSphereSegments;
+        points.emplace_back(radius * std::sin(latitude), radius * std::cos(latitude));
+    }
+    return MeridianProfile(points);
+}
+
+}  // namespace
+
 MeridianProfile buildFloorProfile(const HabitatSpec& spec)
 {
     switch (spec.kind)
@@ -163,8 +185,9 @@ MeridianProfile buildFloorProfile(const HabitatSpec& spec)
         case HabitatKind::KALPANA_CYLINDER:
             // A plain cylinder between two flat end walls.
             return buildOneillProfile(normalizedForKind(spec));
-        case HabitatKind::STANFORD_TORUS:
         case HabitatKind::BERNAL_SPHERE:
+            return buildSphereProfile(spec);
+        case HabitatKind::STANFORD_TORUS:
         case HabitatKind::BISHOP_RING:
             break;
     }

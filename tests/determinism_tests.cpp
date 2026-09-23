@@ -149,6 +149,17 @@ TEST(Determinism, KalpanaOneAlwaysMakesTheSameWorld)
     EXPECT_EQ(worldHash(kalpana->habitat), kKalpanaHash);
 }
 
+TEST(Determinism, IslandOneAlwaysMakesTheSameWorld)
+{
+    // A sphere, pinned the same way: its floor slopes up from the equator, its water lies level at
+    // one radius, and its funicular climbs to the window's rim.
+    const auto islandOne =
+        loadScenario(pathFromUtf8(STARSHIPSIMULATOR_DATA_DIR) / "presets" / "island_one.toml");
+    ASSERT_TRUE(islandOne.has_value()) << islandOne.error().describe();
+    constexpr std::uint64_t kSphereHash = 0xBEC708DA0F7D0D45ULL;
+    EXPECT_EQ(worldHash(islandOne->habitat), kSphereHash);
+}
+
 TEST(Determinism, TheThreadCountDoesNotChangeTheTerrain)
 {
     const HabitatGeometry geometry{sample()};

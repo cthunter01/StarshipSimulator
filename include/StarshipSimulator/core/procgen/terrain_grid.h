@@ -49,6 +49,9 @@ struct TerrainGrid
     std::vector<std::uint8_t> cover;
 
     std::vector<Vec4f> profile;  // per row: z, radius, inward normal (z, radius components)
+    // The water's surface as a radius from the axis where the floor is not level (a sphere); 0
+    // where the water lies at kWaterLevelM everywhere.
+    double waterDatumRadius = 0.0;
     // u as a function of z, sampled evenly over [zMin, zMax] (for rays that cross the habitat).
     std::vector<float> arcByZ;
     float              zMin = 0.0F;
@@ -64,6 +67,8 @@ struct TerrainGrid
     [[nodiscard]] Vec2d cellAt(double z, double theta) const;
     /// Height of the ground at (z, theta), as drawn.
     [[nodiscard]] double groundHeight(double z, double theta) const;
+    /// The water's surface on a row, measured like the heights (kWaterLevelM on a level floor).
+    [[nodiscard]] double waterLevelAtRow(std::uint32_t row) const;
 };
 
 /// Samples heights (and land cover) over the whole surface on all cores. Deterministic.

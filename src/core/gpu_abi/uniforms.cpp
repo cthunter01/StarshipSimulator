@@ -70,6 +70,9 @@ FrameUniforms makeFrameUniforms(const Camera& camera, std::uint32_t width, std::
     return frame;
 }
 
+/// How far the cloud deck fades in from the ends of an O'Neill cylinder's land (m).
+constexpr double kCloudFadeM = 400.0;
+
 double cloudShade(double cloudCover)
 {
     return 1.0 - (0.75 * glm::smoothstep(0.15, 0.95, cloudCover));
@@ -99,10 +102,24 @@ HabitatUniforms makeHabitatUniforms(const HabitatGeometry& geometry, double open
         }
     }
     habitat.light.y = static_cast<float>(index);
+    if (habitat.light.x > 0.5F)
+    {
+        // The glass the images shine through: a cylinder's end, or a sphere's polar window.
+        const bool sphere = geometry.kind() == HabitatKind::BERNAL_SPHERE;
+        habitat.light.z   = static_cast<float>(
+            sphere ? geometry.floorRadiusAt(geometry.profile().zMax()) : geometry.radius());
+        habitat.light.w = sphere ? static_cast<float>(geometry.radius()) : 0.0F;
+    }
     if (geometry.band(0).axis == BandAxis::AROUND)
     {
         habitat.band = Vec4f(Vec4d(1.0, 2.0 * kPi * geometry.radius(), 0.0, 0.0));
     }
+    // How far the cloud deck fades in from the land's ends (it thins toward the endcaps): 400 m in
+    // a cylinder kilometres long, less where the land is only a few hundred metres across.
+    habitat.band.z = static_cast<float>(
+        geometry.kind() == HabitatKind::ONEILL_CYLINDER
+            ? kCloudFadeM
+            : std::min(kCloudFadeM, 0.25 * (geometry.floorZMax() - geometry.floorZMin())));
     if (geometry.kind() != HabitatKind::ONEILL_CYLINDER)
     {
         habitat.strips.y = 0.0F;  // no window strips along the hull
@@ -162,9 +179,12 @@ LandscapeUniforms makeLandscapeUniforms(const TerrainGrid&               grid,
 {
     const TerrainGridLayout& layout = grid.layout;
     LandscapeUniforms        uniforms;
-    uniforms.grid    = Vec4f(Vec4d(layout.columns, layout.rows(), layout.cellU,
-                                   2.0 * kPi / static_cast<double>(layout.columns)));
-    uniforms.extent  = Vec4f(grid.zMin, grid.zMax, 0.0F, 0.0F);
+    uniforms.grid = Vec4f(Vec4d(layout.columns, layout.rows(), layout.cellU,
+                                2.0 * kPi / static_cast<double>(layout.columns)));
+    // Where the floor is not level (a sphere) the water lies at one radius, deeper under the floor
+    // away from the equator: z and w give that radius, and z says whether to use it.
+    uniforms.extent  = Vec4f(Vec4d(grid.zMin, grid.zMax, grid.waterDatumRadius > 0.0 ? 1.0 : 0.0,
+                                   grid.waterDatumRadius));
     uniforms.heights = Vec4f(grid.heightMin, grid.heightMin + grid.heightRange,
                              static_cast<float>(kWaterLevelM), static_cast<float>(layout.radiusM));
     for (std::size_t level = 0; level < std::min(morphs.size(), kMaxTerrainLevels); ++level)

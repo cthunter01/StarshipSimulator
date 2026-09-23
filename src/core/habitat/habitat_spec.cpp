@@ -292,7 +292,8 @@ std::vector<std::string> validate(const HabitatSpec& spec)
 bool habitatKindBuilt(HabitatKind kind)
 {
     // Every kind can be described and saved; the worlds inside them arrive one M8 step at a time.
-    return kind == HabitatKind::ONEILL_CYLINDER || kind == HabitatKind::KALPANA_CYLINDER;
+    return kind == HabitatKind::ONEILL_CYLINDER || kind == HabitatKind::KALPANA_CYLINDER ||
+           kind == HabitatKind::BERNAL_SPHERE;
 }
 
 bool axisPointsAtSun(HabitatKind kind)
@@ -307,6 +308,12 @@ HabitatSpec normalizedForKind(const HabitatSpec& spec)
     {
         normal.sunwardEndcap     = makeEndcap(EndcapShape::FLAT);
         normal.antisunwardEndcap = makeEndcap(EndcapShape::FLAT);
+    }
+    if (spec.kind != HabitatKind::ONEILL_CYLINDER)
+    {
+        // Only O'Neill's cylinders fly in counter-rotating pairs; the other kinds' files do not
+        // mention a partner, and the default would otherwise give them one.
+        normal.partner.enabled = false;
     }
     return normal;
 }

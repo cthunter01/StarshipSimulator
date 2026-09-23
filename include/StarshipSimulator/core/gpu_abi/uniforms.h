@@ -55,9 +55,12 @@ struct alignas(16) HabitatUniforms
     // x: fresh green, y: autumn gold, z: spring blossom, w: how far the clouds have turned (rad)
     Vec4f season{1.0F, 0.0F, 0.0F, 0.0F};
     // x: 1 when the sun images are points (beams' xyz is where), 0 when they are directions (the
-    // mirrors of an O'Neill cylinder); y: how many images there are
+    // mirrors of an O'Neill cylinder); y: how many images there are; z: the radius of the glass's
+    // rim, where the mirrors outside it are hinged (point images only); w: the hull's radius when
+    // it is a sphere, whose walls let light in only through its polar windows, else 0
     Vec4f light{0.0F};
-    // x: 1 when the land runs round the axis (its patterns must wrap), y: the round's length (m)
+    // x: 1 when the land runs round the axis (its patterns must wrap), y: the round's length (m),
+    // z: how far the cloud deck fades in from the ends of the land (m)
     Vec4f band{0.0F};
 };
 static_assert(sizeof(HabitatUniforms) == 16 * (2 + kMaxSunBeams + 11));
@@ -112,7 +115,9 @@ struct alignas(16) LandscapeUniforms
     // Per level: x: morph start (m), y: morph end, z: 1 / (end - start)
     std::array<Vec4f, kMaxTerrainLevels> morph{};
     Vec4f mode{0.0F};    // x: 0 = ground, 1 = water surface; y: water pass (0 dims, 1 adds)
-    Vec4f extent{0.0F};  // x, y: z range of the profile (for the arc-by-z table)
+    Vec4f extent{0.0F};  // x, y: z range of the profile (for the arc-by-z table); z: 1 when the
+                         // water lies at one radius, w (from the axis) below a floor that is not
+                         // level (a sphere), else 0
 };
 static_assert(sizeof(LandscapeUniforms) == 16 * (4 + kMaxTerrainLevels));
 

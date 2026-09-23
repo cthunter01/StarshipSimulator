@@ -375,6 +375,44 @@ TEST(MirrorOptics, KalpanaOneIsLitThroughBothEnds)
     EXPECT_DOUBLE_EQ(sunBeams(geometry, degreesToRadians(100.0)).front().intensity, 0.0);
 }
 
+TEST(MirrorOptics, IslandOneIsLitThroughThePoles)
+{
+    HabitatSpec spec;
+    spec.kind    = HabitatKind::BERNAL_SPHERE;
+    spec.radiusM = 250.0;
+    const HabitatGeometry geometry(spec);
+    const double          rimZ  = 250.0 * std::sin(degreesToRadians(55.0));
+    const double          rimR  = 250.0 * std::cos(degreesToRadians(55.0));
+    const auto            beams = sunBeams(geometry, degreesToRadians(45.0));
+    ASSERT_EQ(beams.size(), 2U);
+    // Images on the axis beyond each polar window, 45 degrees above its rim.
+    EXPECT_NEAR(beams[0].image.value_or(Vec3d(0.0)).z, rimZ + rimR, 1e-6);
+    EXPECT_NEAR(beams[1].image.value_or(Vec3d(0.0)).z, -(rimZ + rimR), 1e-6);
+    EXPECT_NEAR(beams[0].intensity, 0.9, 1e-12);
+
+    // From the equator both show through their windows.
+    const Vec3d equator(250.0, 0.0, 0.0);
+    EXPECT_DOUBLE_EQ(beamReach(geometry, equator, beams[0]), 1.0);
+    EXPECT_DOUBLE_EQ(beamReach(geometry, equator, beams[1]), 1.0);
+    // The far window lights the land right up to the other edge of the band ...
+    const Vec3d southEdge(250.0 * std::cos(degreesToRadians(35.0)), 0.0,
+                          -250.0 * std::sin(degreesToRadians(35.0)));
+    EXPECT_DOUBLE_EQ(beamReach(geometry, southEdge, beams[0]), 1.0);
+    // ... but high on a polar slope the wall hides the window just above it.
+    const Vec3d northSlope(250.0 * std::cos(degreesToRadians(45.0)), 0.0,
+                           250.0 * std::sin(degreesToRadians(45.0)));
+    EXPECT_DOUBLE_EQ(beamReach(geometry, northSlope, beams[0]), 0.0);
+    EXPECT_DOUBLE_EQ(beamReach(geometry, northSlope, beams[1]), 1.0);
+
+    // The light never comes in lower than half the window's latitude and a little: below that
+    // no image beyond a pole would be seen from the equator.
+    EXPECT_NEAR(radiansToDegrees(polarWindowElevation(degreesToRadians(88.0), 55.0)), 30.5, 1e-9);
+    EXPECT_NEAR(radiansToDegrees(polarWindowElevation(degreesToRadians(45.0), 55.0)), 45.0, 1e-9);
+    const auto dusk = sunBeams(geometry, degreesToRadians(88.0));
+    EXPECT_GT(beamReach(geometry, equator, dusk[0]), 0.99);
+    EXPECT_DOUBLE_EQ(sunBeams(geometry, degreesToRadians(100.0)).front().intensity, 0.0);
+}
+
 // ---- Day schedule -----------------------------------------------------------------------------
 
 TEST(DaySchedule, SunriseNoonSunsetAndMidnight)

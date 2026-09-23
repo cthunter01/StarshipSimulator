@@ -35,17 +35,23 @@ vec2 rippleSlope(vec2 uv, float t)
 
 void main()
 {
-    float depth = landscape.heights.z - decodeHeight(textureLod(heightMap, heightUv(inCell), 0.0).r);
+    vec4  profile = textureLod(profileMap, profileUv(inCell.y), 0.0);
+    float depth   = waterLevel(profile) - decodeHeight(textureLod(heightMap, heightUv(inCell), 0.0).r);
     if (depth <= 0.0)
     {
         discard;  // dry land (the ground here is above the water level)
     }
-    vec4  profile = textureLod(profileMap, profileUv(inCell.y), 0.0);
     float theta   = inCell.x * landscape.grid.w;
     vec3  radial  = vec3(cos(theta), sin(theta), 0.0);
     vec3  around  = vec3(-sin(theta), cos(theta), 0.0);
     vec3  along   = vec3(0.0, 0.0, -profile.w) + radial * profile.z;  // down the profile
     vec3  level   = vec3(0.0, 0.0, profile.z) + radial * profile.w;   // faces the axis
+    if (landscape.extent.z > 0.5)
+    {
+        // The floor slopes, the water does not: its surface faces straight up, toward the axis.
+        along = vec3(0.0, 0.0, 1.0);
+        level = -radial;
+    }
     vec3  p       = inCameraRelative + frame.cameraPosition.xyz;
 
     // Ripples fade with distance so the far water stays calm instead of shimmering.

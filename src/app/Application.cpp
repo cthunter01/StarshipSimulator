@@ -843,6 +843,14 @@ void Application::applyTransitView(std::string_view name)
     if (endcap)
     {
         const TramStop& foot = line.stops.front();
+        if (geometry.kind() == HabitatKind::BERNAL_SPHERE)
+        {
+            // Beside the lower station, in the corridor cleared for the line, looking up the
+            // polar slope it climbs.
+            const double r = geometry.floorRadiusAt(foot.position.z);
+            walkTo(foot.position.z + 4.0, line.theta + (4.4 / r), 180.0, 28.0);
+            return;
+        }
         walkTo(foot.position.z + 25.0, line.theta + (6.0 / geometry.radius()), 180.0, 6.0);
         return;
     }
@@ -957,16 +965,61 @@ double Application::openAround(double z, double theta) const
     return theta;
 }
 
+bool Application::applySphereView(std::string_view name)
+{
+    // A Bernal sphere: the land is a band round the equator, the ground climbs away from it to the
+    // polar windows, and a funicular climbs to the rim of one (the lift and hub views ride it).
+    const HabitatGeometry& geometry = *geometry_;
+    const SurfaceSpot      start    = startSpot(0.0, 0.0);
+    const double           rimZ     = geometry.profile().zMax();
+    const double           rimR     = geometry.floorRadiusAt(rimZ);
+    const double           edge     = geometry.floorZMax();
+    if (name == "window")
+    {
+        // Floating just inside the rim of the sunward window, looking up at the glass.
+        flyTo((radial(start.theta) * (rimR - 15.0)) + Vec3d(0.0, 0.0, rimZ - 15.0), 0.0, 55.0);
+    }
+    else if (name == "pole")
+    {
+        // By the axis just inside the sunward window, looking out through it along the axis.
+        flyTo((radial(start.theta) * 20.0) + Vec3d(0.0, 0.0, rimZ - 15.0), 0.0, 0.0);
+    }
+    else if (name == "sunward")
+    {
+        // At the top of the land, where the polar slope begins, looking up it.
+        const double z = edge - 10.0;
+        walkTo(z, openAround(z, start.theta), 0.0, 20.0);
+    }
+    else if (name == "endcap" || name == "ramp")
+    {
+        const double z = -edge + 10.0;
+        walkTo(z, openAround(z, start.theta), 180.0, name == "endcap" ? 20.0 : 30.0);
+    }
+    else if (name == "lift" || name == "hub")
+    {
+        applyTransitView(name);
+    }
+    else
+    {
+        return false;
+    }
+    return true;
+}
+
 bool Application::applyRoundView(std::string_view name)
 {
     // Kalpana One: the land runs round the axis between two glass end walls. The views that
     // stand somewhere on the band (the river, the towns, the tram) work as in a valley; these are
-    // the ones that differ.
+    // the ones that differ. A sphere's band shares most of them (applySphereView has the rest).
     const HabitatGeometry& geometry = *geometry_;
-    const SurfaceSpot      start    = startSpot(0.0, 0.0);
-    const double           zMin     = geometry.floorZMin();
-    const double           zMax     = geometry.floorZMax();
-    const double           reach    = std::min(30.0, 0.1 * (zMax - zMin));
+    if (geometry.kind() == HabitatKind::BERNAL_SPHERE && applySphereView(name))
+    {
+        return true;
+    }
+    const SurfaceSpot start = startSpot(0.0, 0.0);
+    const double      zMin  = geometry.floorZMin();
+    const double      zMax  = geometry.floorZMax();
+    const double      reach = std::min(30.0, 0.1 * (zMax - zMin));
     if (name == "valley" || name == "lookup")
     {
         walkTo(start.z, start.theta, bandYaw(0.0), name == "valley" ? 6.0 : 75.0);
@@ -1014,12 +1067,17 @@ void Application::applyWaterView(std::string_view name)
     const LandBand&        band      = geometry.band(valley);
     if (band.axis == BandAxis::AROUND)
     {
-        // Before the lake, looking along it; or on the river bank a little way round.
+        // Before the lake, on the bank of the river that feeds it, looking along the water; or on
+        // the river bank a little way round.
         if (name == "lake" && lake != landscape.lakes().end())
         {
-            const SurfaceSpot spot =
-                band.toSurface(lake->plan - Vec2d(0.0, lake->halfLengthM + 25.0));
-            walkTo(spot.z, spot.theta, bandYaw(0.0), -2.0);
+            const double      along = lake->plan.y - lake->halfLengthM - 25.0;
+            const double      bank  = landscape.hasRivers()
+                                          ? landscape.riverAcross(along).x +
+                                                (0.5 * geometry.spec().terrain.riverWidthM) + 10.0
+                                          : lake->plan.x;
+            const SurfaceSpot spot  = band.toSurface(Vec2d(bank, along));
+            walkTo(spot.z, spot.theta, bandYaw(-8.0), -2.0);
             return;
         }
         const double along = scenario_.start.alongM + kRiverViewAheadM;
@@ -1224,9 +1282,14 @@ void Application::updateWeather(double realSeconds)
     cloudSettings_.baseM = scenario_.climate.cloudBaseM;
     cloudSettings_.topM  = scenario_.climate.cloudTopM;
     // The clouds blow with the wind in real time, like the spin: the sky is not a clock.
-    const double radius = std::max(geometry_->radius() - scenario_.climate.cloudBaseM, 1.0);
-    cloudSettings_.driftM += weather_.windAlongMS * realSeconds;
-    cloudSettings_.turnRad += (weather_.windAroundMS / radius) * realSeconds;
+    // The main wind blows along the land: along the axis down a valley, round it where the land
+    // runs round.
+    const double radius    = std::max(geometry_->radius() - scenario_.climate.cloudBaseM, 1.0);
+    const bool   round     = geometry_->band(0).axis == BandAxis::AROUND;
+    const double alongAxis = round ? weather_.windAroundMS : weather_.windAlongMS;
+    const double roundAxis = round ? weather_.windAlongMS : weather_.windAroundMS;
+    cloudSettings_.driftM += alongAxis * realSeconds;
+    cloudSettings_.turnRad += (roundAxis / radius) * realSeconds;
 }
 
 audio::SoundMix Application::soundMix() const
@@ -1421,7 +1484,8 @@ void Application::lookAtPartner()
 void Application::lookOut(Vec3d directionEqj, std::string_view name)
 {
     // directionEqj is a copy: it often points into sky_, which updateSky() below replaces.
-    if (!axisPointsAtSun(geometry_->kind()))
+    const DaylightKind daylight = daylightKindFor(geometry_->kind());
+    if (daylight == DaylightKind::END_CAPS || daylight == DaylightKind::POLAR_WINDOWS)
     {
         lookThroughEnd(directionEqj, name);
         return;
@@ -1464,14 +1528,18 @@ void Application::lookThroughEnd(Vec3d directionEqj, std::string_view name)
 {
     // The only windows are the glass end caps, square to the axis: float by the axis, as far back
     // from the nearer one as still lets the direction through it, and look out. The spin turns
-    // the sky about the axis, so whatever is seen there circles the middle of the glass.
+    // the sky about the axis, so whatever is seen there circles the middle of the glass. A
+    // sphere's polar windows are the same: a line through the rim's circle goes out through the
+    // glass beyond it.
     updateSky();
     const HabitatGeometry& geometry = *geometry_;
     const Vec3d            d        = habitatFromSky_ * directionEqj;
     const double           slant    = std::acos(std::min(std::abs(d.z), 1.0));  // from the axis
     const double glass  = d.z >= 0.0 ? geometry.profile().zMax() : geometry.profile().zMin();
     const double length = geometry.profile().zMax() - geometry.profile().zMin();
-    const double fits   = geometry.radius() / std::max(std::tan(slant), 1e-6);
+    const bool   sphere = geometry.kind() == HabitatKind::BERNAL_SPHERE;
+    const double rim    = sphere ? geometry.floorRadiusAt(glass) : geometry.radius();
+    const double fits   = rim / std::max(std::tan(slant), 1e-6);
     const double back   = std::clamp(0.5 * fits, 10.0, length - 20.0);
     player_.setLocomotion(Locomotion::FLY);
     player_.teleport(Vec3d(-5.0, 0.0, glass - std::copysign(back, d.z)));
@@ -1481,12 +1549,13 @@ void Application::lookThroughEnd(Vec3d directionEqj, std::string_view name)
     const double yaw =
         std::atan2(glm::dot(horizontal, glm::cross(up, kNorth)), glm::dot(horizontal, kNorth));
     look_.setAngles(yaw, std::asin(std::clamp(glm::dot(d, up), -1.0, 1.0)));
-    status_ = fits > 10.0
-                  ? std::format(
-                        "Looking at {} through the glass at the end; the spin "
-                        "carries it round every {:.0f} s",
-                        name, 2.0 * kPi / geometry.omega())
-                  : std::format("{} lies beside the habitat: neither end looks toward it", name);
+    status_ =
+        fits > 10.0
+            ? std::format(
+                  "Looking at {} through the glass {}; the spin carries it round every "
+                  "{:.0f} s",
+                  name, sphere ? "of the polar window" : "at the end", 2.0 * kPi / geometry.omega())
+            : std::format("{} lies beside the habitat: neither end looks toward it", name);
 }
 
 double Application::mirrorAngle() const
@@ -1626,8 +1695,8 @@ AlmanacState Application::almanacState() const
     state.velocity           = player_.velocity();
     state.location           = scenario_.sky.location;
     state.sky                = sky_.bodies.empty() ? nullptr : &sky_;
-    state.partner            = scenario_.habitat.partner.enabled;
-    state.partnerSeparationM = scenario_.habitat.partner.separationM;
+    state.partner            = geometry_->spec().partner.enabled;
+    state.partnerSeparationM = geometry_->spec().partner.separationM;
     if (settlements_)
     {
         state.towns     = settlements_->townCount();

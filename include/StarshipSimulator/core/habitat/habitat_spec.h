@@ -179,7 +179,8 @@ struct HabitatSpec
 /// Sun shines on it from the side and lights its end caps all the time.
 [[nodiscard]] bool axisPointsAtSun(HabitatKind kind);
 
-/// The habitat with the fields its kind fixes filled in: a Kalpana cylinder's ends are flat glass.
+/// The habitat with the fields its kind fixes filled in: a Kalpana cylinder's ends are flat glass,
+/// and only an O'Neill cylinder has a partner.
 [[nodiscard]] HabitatSpec normalizedForKind(const HabitatSpec& spec);
 
 /// How many bands of land the habitat has (the O'Neill cylinder's valleys; one elsewhere).

@@ -27,10 +27,12 @@ enum class JobKind : std::uint8_t
     TERRAIN,
     GLASS,
     DISK,
+    CAP,
 };
 
 /// One chunk to build. Terrain: vertex rows [row0, row1] x segments [seg0, seg1).
 /// Glass: z in [z0, z1] x segments. Disk: a flat disk at z0 with radius z1 facing +-Z.
+/// Cap: a sphere's polar window from the floor's rim to the pole, at the +Z (facing +1) or -Z end.
 struct Job
 {
     JobKind       kind     = JobKind::TERRAIN;
@@ -77,6 +79,15 @@ Job diskJob(std::uint32_t materialId, double z, double radius, double facing)
     job.z0       = z;
     job.z1       = radius;
     job.facing   = facing;
+    return job;
+}
+
+Job capJob(double side)
+{
+    Job job;
+    job.kind     = JobKind::CAP;
+    job.material = material::kGlass;
+    job.facing   = side;
     return job;
 }
 
@@ -307,6 +318,47 @@ MeshChunk buildDiskChunk(const Grid& grid, const Job& job, double cellSize)
     return chunk;
 }
 
+/// A Bernal sphere's polar window: the part of the sphere beyond the floor's rim, all glass.
+MeshChunk buildCapChunk(const Grid& grid, const Job& job, double cellSize)
+{
+    const HabitatGeometry& geometry = *grid.geometry;
+    const MeridianProfile& profile  = geometry.profile();
+    const double           radius   = geometry.radius();
+    const double           side     = job.facing;
+    const double           rimZ     = profile.zMax();
+    const double           rim      = std::atan2(rimZ, profile.radiusAt(rimZ).value_or(0.0));
+    const std::size_t      columns  = grid.segmentCount() + 1;
+    const auto             rings    = std::max<std::size_t>(
+        4, static_cast<std::size_t>(std::ceil(((kPi / 2.0) - rim) * radius / cellSize)));
+
+    MeshChunk chunk;
+    chunk.kind   = ChunkKind::GLASS;
+    chunk.origin = Vec3d(0.0, 0.0, side * rimZ);
+    chunk.mesh.vertices.reserve((rings + 1) * columns);
+    for (std::size_t i = 0; i <= rings; ++i)
+    {
+        const double latitude =
+            std::lerp(rim, kPi / 2.0, static_cast<double>(i) / static_cast<double>(rings));
+        const double r = radius * std::cos(latitude);
+        const double z = side * radius * std::sin(latitude);
+        for (std::size_t k = 0; k < columns; ++k)
+        {
+            const double theta = grid.angle(static_cast<std::ptrdiff_t>(k));
+            const Vec3d  point = (radial(theta) * r) + Vec3d(0.0, 0.0, z);
+            // Panes about square: arc round the axis across, arc toward the pole along.
+            chunk.mesh.vertices.push_back({.position = Vec3f(point - chunk.origin),
+                                           .normal   = Vec3f(-point / radius),
+                                           .uv       = Vec2f(Vec2d(theta * r, radius * latitude)),
+                                           .material = material::kGlass});
+        }
+    }
+    // Rows go toward the pole and columns counter-clockwise about +Z: unflipped, the triangles
+    // face into the sphere at the +Z pole; at the -Z pole rows run the other way along z.
+    appendGridIndices(chunk.mesh, rings + 1, columns, side < 0.0);
+    finish(chunk);
+    return chunk;
+}
+
 /// Splits [first, last] into pieces of about `size`, as (start, end) pairs sharing boundaries.
 std::vector<std::pair<std::size_t, std::size_t>> split(std::size_t first, std::size_t last,
                                                        std::size_t size)
@@ -416,7 +468,16 @@ std::vector<Job> planJobs(const HabitatGeometry& geometry, const Grid& grid,
             }
         }
     }
-    addEndDisks(geometry, jobs);
+    if (geometry.kind() == HabitatKind::BERNAL_SPHERE)
+    {
+        // The polar windows, beyond the rims where the floor's profile ends.
+        jobs.push_back(capJob(-1.0));
+        jobs.push_back(capJob(1.0));
+    }
+    else
+    {
+        addEndDisks(geometry, jobs);
+    }
     return jobs;
 }
 
@@ -491,6 +552,9 @@ HabitatMeshes buildHabitatMeshes(const HabitatGeometry& geometry, const MeshingS
                     break;
                 case JobKind::DISK:
                     chunks[i] = buildDiskChunk(grid, job, settings.cellSizeM);
+                    break;
+                case JobKind::CAP:
+                    chunks[i] = buildCapChunk(grid, job, settings.cellSizeM);
                     break;
             }
         }

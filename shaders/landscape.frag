@@ -73,7 +73,7 @@ void main()
         town   = townGround(profile.x, theta, uv.y, planDx, planDy);
         albedo = townAlbedo(albedo, uv, town, metres);
     }
-    albedo = shoreAlbedo(albedo, uv, landscape.heights.z - h);
+    albedo = shoreAlbedo(albedo, uv, waterLevel(profile) - h);
 
     // Sunlight, shadowed by hills and mountains. The march starts from the height field's own
     // surface (the patch mesh can differ from it by metres far away).

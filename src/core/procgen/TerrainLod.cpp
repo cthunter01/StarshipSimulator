@@ -9,7 +9,6 @@
 
 #include "StarshipSimulator/core/Frustum.h"
 #include "StarshipSimulator/core/habitat/HabitatGeometry.h"
-#include "StarshipSimulator/core/habitat/Landscape.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/procgen/terrain_grid.h"
@@ -65,9 +64,11 @@ LeafBounds leafBounds(const TerrainGrid& grid, const HabitatGeometry& geometry, 
     double                   hMax   = std::numeric_limits<double>::lowest();
     Vec2d                    zRange(hMin, hMax);
     Vec2d                    rRange(hMin, hMax);
+    double                   level = std::numeric_limits<double>::lowest();  // highest water
     for (std::uint32_t row = y * quads; row <= (y + 1) * quads; ++row)
     {
         const Vec4d profile(grid.profile[row]);
+        level  = std::max(level, grid.waterLevelAtRow(row));
         zRange = Vec2d(std::min(zRange.x, profile.x), std::max(zRange.y, profile.x));
         rRange = Vec2d(std::min(rRange.x, profile.y), std::max(rRange.y, profile.y));
         for (std::uint32_t column = x * quads; column <= (x + 1) * quads; ++column)
@@ -86,7 +87,7 @@ LeafBounds leafBounds(const TerrainGrid& grid, const HabitatGeometry& geometry, 
     addArc(leaf.boxMin, leaf.boxMax, std::max(0.0, rRange.y - hMin), a0, a1);
     leaf.boxMin.z = zRange.x;
     leaf.boxMax.z = zRange.y;
-    leaf.water    = hMin < kWaterLevelM;
+    leaf.water    = hMin < level;
     // Entirely window glass: within the floor, and both edges inside one window strip.
     const double strip   = geometry.stripAngle();
     const double nearest = std::round(0.5 * (a0 + a1) / strip) * strip;

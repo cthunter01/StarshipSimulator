@@ -83,8 +83,16 @@ public:
     /// grows beyond the ends of the level floor. `radius` is the floor's radius there.
     [[nodiscard]] double distanceToWindow(double z, double theta, double radius) const;
     /// Height of the water's surface above the floor datum at z, measured like terrain height. The
-    /// surface is level under spin gravity: a cylinder around the axis.
+    /// surface is level under spin gravity: a cylinder around the axis. On a cylinder's level floor
+    /// that is kWaterLevelM everywhere; on a sphere the floor rises away from the equator and the
+    /// water lies deeper under it.
     [[nodiscard]] double waterLevelAt(double z) const;
+    /// How far the floor may rise above the band's middle line where there is still water (0 on a
+    /// level floor): the water's surface can lie that far below the floor datum.
+    [[nodiscard]] double maxWaterRiseM() const;
+    /// How far across the band (arc metres from its middle line) water can lie, where the floor
+    /// rises away from it; nullopt where it is level.
+    [[nodiscard]] std::optional<double> waterReachAcrossM() const;
     /// Range of z a person can occupy (inside the end walls, away from the domes' poles).
     [[nodiscard]] double walkableZMin() const { return walkableZMin_; }
     [[nodiscard]] double walkableZMax() const { return walkableZMax_; }
@@ -126,6 +134,12 @@ public:
     [[nodiscard]] static double angularDistance(double a, double b);
 
 private:
+    [[nodiscard]] bool isSphere() const { return spec_.kind == HabitatKind::BERNAL_SPHERE; }
+    /// Arc length along the floor from the land's edge, 0 on the land (the polar slopes).
+    [[nodiscard]] double arcBeyondLand(double z) const;
+    /// Arc length of one polar slope, from the land's edge to the window's rim.
+    [[nodiscard]] double slopeArcM() const;
+
     HabitatSpec                            spec_;
     std::shared_ptr<const MeridianProfile> profile_;
     SimplexNoise                           hills_;

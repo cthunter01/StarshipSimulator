@@ -18,7 +18,7 @@ public:
     Enclosure(const HabitatSpec& spec, std::shared_ptr<const MeridianProfile> floor);
 
     /// Whether a point is inside the air: above the floor (its datum, before any terrain) and
-    /// within the habitat's length.
+    /// within the habitat's length; in a sphere, anywhere inside its hull, the polar caps included.
     [[nodiscard]] bool contains(const Vec3d& point) const;
 
     /// How high the air goes above the floor before it meets the far side or the ceiling.
@@ -26,6 +26,8 @@ public:
 
 private:
     std::shared_ptr<const MeridianProfile> floor_;
+    HabitatKind                            kind_      = HabitatKind::ONEILL_CYLINDER;
+    double                                 radiusM_   = 0.0;
     double                                 headroomM_ = 0.0;
 };
 

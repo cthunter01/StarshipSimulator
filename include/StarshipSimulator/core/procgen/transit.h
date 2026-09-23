@@ -42,7 +42,8 @@ struct TrackPoint
 enum class LineKind : std::uint8_t
 {
     VALLEY,  // a tramway down the valley floor, calling at the towns
-    ENDCAP,  // a funicular up the endcap's ramp to the hub, where there is no gravity left
+    ENDCAP,  // a funicular up the endcap's ramp to the hub, where there is no gravity left (on a
+             // sphere, up the polar slope to the window's rim)
     LOOP,    // a tramway once round a band of land that runs around the axis, always one way
 };
 
@@ -60,6 +61,9 @@ struct TramLine
     double                  topSpeed = 16.0;  // m/s between stops
     int                     trams    = 3;     // sharing the line, spread over the timetable
     double                  journeyS = 0.0;   // one end to the other, stops included
+    // A funicular's stations: at the foot, and at the top.
+    std::string footName   = "the valley";
+    std::string summitName = "the hub";
 };
 
 /// Where a tram is now.

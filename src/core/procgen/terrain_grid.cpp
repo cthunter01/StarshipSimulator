@@ -149,6 +149,15 @@ Vec2d TerrainGrid::cellAt(double z, double theta) const
     return {wrapped / (2.0 * kPi) * layout.columns, u / layout.cellU};
 }
 
+double TerrainGrid::waterLevelAtRow(std::uint32_t row) const
+{
+    if (waterDatumRadius <= 0.0)
+    {
+        return kWaterLevelM;
+    }
+    return kWaterLevelM + (static_cast<double>(profile[row].y) - waterDatumRadius);
+}
+
 double TerrainGrid::groundHeight(double z, double theta) const
 {
     const Vec2d cell = cellAt(z, theta);
@@ -164,8 +173,14 @@ TerrainGrid sampleTerrain(const HabitatGeometry& geometry, double targetCellM, u
     layout                         = makeTerrainLayout(geometry, targetCellM);
     const std::uint32_t rows       = layout.rows();
 
-    // Heights are quantized over the range the terrain model can reach.
-    grid.heightMin   = static_cast<float>(kWaterLevelM - kWaterDepthM - 0.5);
+    // Heights are quantized over the range the terrain model can reach: down to a river's bed where
+    // the water lies deepest under the floor (on a sphere, away from the equator).
+    grid.heightMin =
+        static_cast<float>(kWaterLevelM - kWaterDepthM - 0.5 - geometry.maxWaterRiseM());
+    if (geometry.maxWaterRiseM() > 0.0)
+    {
+        grid.waterDatumRadius = geometry.radius();
+    }
     grid.heightRange = static_cast<float>(terrain.hillHeightM + terrain.mountainHeightM + 1.0 -
                                           static_cast<double>(grid.heightMin));
     grid.profile.resize(rows);
@@ -228,7 +243,8 @@ TerrainGrid sampleTerrain(const HabitatGeometry& geometry, double targetCellM, u
                     0.0, catmullRom(rowValues[0], rowValues[1], rowValues[2], rowValues[3], fr));
             }
             const double theta = layout.theta(column);
-            h           = landscape.shape(h, landscape.shoreDistance(z, theta, kShapingReachM));
+            h           = landscape.shape(h, landscape.shoreDistance(z, theta, kShapingReachM),
+                                          geometry.waterLevelAt(z));
             out[column] = static_cast<std::uint16_t>(
                 std::lround(std::clamp((h - low) / range, 0.0, 1.0) * 65535.0));
         }

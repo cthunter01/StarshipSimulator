@@ -244,7 +244,7 @@ std::optional<Growth> growthAt(const HabitatGeometry& geometry, const TerrainGri
 
     // Dry, not too steep ground.
     const double h = grid.heightAt(column, row);
-    if (h < kWaterLevelM + 0.3)
+    if (h < grid.waterLevelAtRow(static_cast<std::uint32_t>(row)) + 0.3)
     {
         return std::nullopt;
     }

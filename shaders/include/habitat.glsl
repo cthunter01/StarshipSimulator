@@ -16,8 +16,10 @@ layout(std140, set = UNIFORM_SET, binding = 1) uniform Habitat
     vec4 cloud;    // x: radius of the cloud deck's top, y: its base, z: cover, w: light let through
     vec4 weather;  // x: rain, y: mist, z: wetness of the ground, w: cloud drift along the axis (m)
     vec4 season;   // x: fresh green, y: autumn gold, z: blossom, w: how far the clouds have turned
-    vec4 light;    // x: 1 when the sun images are points (beams' xyz), 0 directions; y: how many
-    vec4 band;     // x: 1 when the land runs round the axis, y: the round's length (m)
+    vec4 light;    // x: 1 when the sun images are points (beams' xyz), 0 directions; y: how many;
+                   // z: radius of the glass's rim (points); w: the hull's radius if a sphere, else 0
+    vec4 band;     // x: 1 when the land runs round the axis, y: the round's length (m), z: how far
+                   // the cloud deck fades in from the ends of the land (m)
 }
 habitat;
 
@@ -29,8 +31,12 @@ int stripCount() { return int(habitat.strips.y + 0.5); }
 // drawn on it have to wrap too.
 bool landRunsRound() { return habitat.band.x > 0.5; }
 
-// Sun images at points: the light through a windowless cylinder's glass end caps.
+// Sun images at points: the light through a windowless cylinder's glass end caps, or a sphere's
+// polar windows.
 bool pointImages() { return habitat.light.x > 0.5; }
+
+// A spherical hull (a Bernal sphere), whose light comes in only through the windows at its poles.
+bool sphericalHull() { return habitat.light.w > 0.0; }
 
 // How many sun images light the habitat: one per window strip, or one per glass end cap.
 int beamCount() { return pointImages() ? int(habitat.light.y + 0.5) : stripCount(); }
@@ -175,6 +181,23 @@ float beamAperture(vec3 p, vec3 towardSun, int i)
 {
     if (pointImages())
     {
+        if (sphericalHull())
+        {
+            // The sphere is convex and its walls opaque: the ray toward the image leaves it once,
+            // and the light gets in if that is through the polar window on the image's side.
+            float R    = habitat.light.w;
+            float b    = dot(p, towardSun);
+            float c    = dot(p, p) - R * R;
+            float disc = b * b - c;
+            if (disc < 0.0)
+            {
+                return 0.0;
+            }
+            vec3  exitPoint = p + towardSun * max(-b + sqrt(disc), 0.0);
+            float rimZ      = habitat.strips.w;
+            float toward    = habitat.beams[i].z > 0.0 ? exitPoint.z : -exitPoint.z;
+            return smoothstep(rimZ - 2.0, rimZ + 2.0, toward);
+        }
         return 1.0;  // an image on the axis beyond the glass shines through it from anywhere inside
     }
     float R = habitat.shape.x;
