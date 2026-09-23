@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 #include "StarshipSimulator/core/habitat/Enclosure.h"
@@ -134,6 +135,57 @@ std::vector<std::array<double, 2>> pieces(double from, double to, double size)
              std::lerp(from, to, static_cast<double>(i + 1) / static_cast<double>(count))});
     }
     return out;
+}
+
+/// Adds a chunk's vertices and triangles to another, measured from that one's origin.
+void appendChunk(MeshChunk& into, const MeshChunk& part)
+{
+    if (into.mesh.vertices.empty())
+    {
+        into.origin = part.origin;
+    }
+    const auto  base  = static_cast<std::uint32_t>(into.mesh.vertices.size());
+    const Vec3d shift = part.origin - into.origin;
+    for (Vertex vertex : part.mesh.vertices)
+    {
+        vertex.position = Vec3f(Vec3d(vertex.position) + shift);
+        into.mesh.vertices.push_back(vertex);
+    }
+    for (const std::uint32_t index : part.mesh.indices)
+    {
+        into.mesh.indices.push_back(base + index);
+    }
+}
+
+/// The torus's surfaces in a few big chunks: the solid parts and the glass of each stretch of the
+/// ring round a spoke (the spoke with it), and the hub. Each chunk is a draw with uniforms of its
+/// own, and a few dozen draws are better than hundreds.
+std::vector<MeshChunk> gatherBySector(const TorusShape& shape, const std::vector<MeshChunk>& parts)
+{
+    const int              sectors = std::max(shape.spokes, 6);
+    const double           arc     = 2.0 * kPi / static_cast<double>(sectors);
+    std::vector<MeshChunk> gathered(static_cast<std::size_t>((2 * sectors) + 1));
+    for (std::size_t i = 0; i < gathered.size(); ++i)
+    {
+        gathered[i].kind = i % 2 == 1 ? ChunkKind::GLASS : ChunkKind::TERRAIN;
+    }
+    for (const MeshChunk& part : parts)
+    {
+        const Vec3d  middle = part.origin + (Vec3d(part.boundsMin + part.boundsMax) * 0.5);
+        const bool   hub    = std::hypot(middle.x, middle.y) < shape.hubRadiusM + 2.0;
+        const double theta  = std::atan2(middle.y, middle.x);
+        const auto   sector = static_cast<std::size_t>(
+            (static_cast<long long>(std::floor((theta / arc) + 0.5)) + sectors) % sectors);
+        const std::size_t slot =
+            hub ? gathered.size() - 1 : (2 * sector) + (part.kind == ChunkKind::GLASS ? 1 : 0);
+        appendChunk(gathered[slot], part);
+    }
+    std::erase_if(gathered, [](const MeshChunk& chunk) { return chunk.mesh.indices.empty(); });
+    for (MeshChunk& chunk : gathered)
+    {
+        setBounds(chunk);
+    }
+    return gathered;
 }
 
 /// Builds the torus's surfaces into `chunks`.
@@ -410,30 +462,42 @@ StaticColliders enclosureColliders(const HabitatGeometry&        geometry,
     }
     for (const MeshChunk& chunk : chunks)
     {
-        if (chunk.mesh.vertices.empty() || chunk.mesh.vertices.front().material == material::kHull)
+        // Everything but the hull, outside it all.
+        StaticMesh mesh;
+        mesh.origin = chunk.origin;
+        for (std::size_t i = 0; i + 2 < chunk.mesh.indices.size(); i += 3)
+        {
+            if (chunk.mesh.vertices[chunk.mesh.indices[i]].material != material::kHull)
+            {
+                mesh.indices.insert(
+                    mesh.indices.end(),
+                    {chunk.mesh.indices[i], chunk.mesh.indices[i + 1], chunk.mesh.indices[i + 2]});
+            }
+        }
+        if (mesh.indices.empty())
         {
             continue;
         }
-        StaticMesh& mesh = colliders.meshes.emplace_back();
-        mesh.origin      = chunk.origin;
         mesh.vertices.reserve(chunk.mesh.vertices.size());
         for (const Vertex& vertex : chunk.mesh.vertices)
         {
             mesh.vertices.push_back(vertex.position);
         }
-        mesh.indices = chunk.mesh.indices;
+        colliders.meshes.push_back(std::move(mesh));
     }
     return colliders;
 }
 
 std::vector<MeshChunk> buildEnclosureMeshes(const HabitatGeometry& geometry, double cellSizeM)
 {
-    std::vector<MeshChunk> chunks;
-    if (const auto& torus = geometry.enclosure().torus())
+    std::vector<MeshChunk> parts;
+    const auto&            torus = geometry.enclosure().torus();
+    if (!torus)
     {
-        EnclosureMesher(*torus, cellSizeM, chunks).build();
+        return parts;
     }
-    return chunks;
+    EnclosureMesher(*torus, cellSizeM, parts).build();
+    return gatherBySector(*torus, parts);
 }
 
 }  // namespace StarshipSimulator

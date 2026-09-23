@@ -270,8 +270,11 @@ AlmanacPage theHabitat(const AlmanacState& state)
     {
         page.facts.push_back({.label = "Settled",
                               .value = std::format("{} towns, {} farms", state.towns, state.farms),
-                              .note  = std::format("{} buildings and {:.1f} million trees",
-                                                   state.buildings, state.treeMillions)});
+                              .note  = state.treeMillions < 0.1
+                                           ? std::format("{} buildings and {:.0f} trees",
+                                                         state.buildings, state.treeMillions * 1e6)
+                                           : std::format("{} buildings and {:.1f} million trees",
+                                                         state.buildings, state.treeMillions)});
     }
     if (state.tramLines > 0)
     {

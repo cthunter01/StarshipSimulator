@@ -210,9 +210,12 @@ TEST(Torus, TheCeilingHasItsWindowsAndTheHullFacesOut)
                 EXPECT_GT(glm::dot(Vec3d(vertex.normal), glm::normalize(towardMiddle)), 0.99);
             }
         }
-        glass += chunk.kind == ChunkKind::GLASS ? 1U : 0U;
-        hull += chunk.mesh.vertices.front().material == material::kHull ? 1U : 0U;
-        metal += chunk.mesh.vertices.front().material == material::kMetal ? 1U : 0U;
+        for (const Vertex& vertex : chunk.mesh.vertices)
+        {
+            glass += vertex.material == material::kGlass ? 1U : 0U;
+            hull += vertex.material == material::kHull ? 1U : 0U;
+            metal += vertex.material == material::kMetal ? 1U : 0U;
+        }
         // Counter-clockwise seen from the side the normals face.
         const auto& vertices = chunk.mesh.vertices;
         for (std::size_t i = 0; i + 2 < chunk.mesh.indices.size(); i += 3)
@@ -228,9 +231,13 @@ TEST(Torus, TheCeilingHasItsWindowsAndTheHullFacesOut)
             }
         }
     }
-    EXPECT_GT(glass, 20U);
-    EXPECT_GT(hull, 20U);
-    EXPECT_GT(metal, 20U);
+    EXPECT_GT(glass, 1000U);
+    EXPECT_GT(hull, 1000U);
+    EXPECT_GT(metal, 1000U);
+    // In a few big chunks, a solid one and a glass one round each spoke, and the hub: every chunk
+    // is a draw with uniforms of its own, and hundreds of them in one pass go wrong on some
+    // drivers (Metal on the macOS runners).
+    EXPECT_LE(meshes.chunks.size(), 13U);
 }
 
 }  // namespace

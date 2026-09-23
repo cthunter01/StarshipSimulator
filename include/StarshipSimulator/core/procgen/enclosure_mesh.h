@@ -12,7 +12,8 @@ namespace StarshipSimulator
 /// A Stanford torus's ceiling, spokes and hub: everything inside it that is not floor, with the
 /// ceiling's windows as glass, and its hull as seen from outside (through the windows, the rest of
 /// the wheel). Chunks as buildHabitatMeshes makes them, the inside's metal and glass facing into
-/// the air and the hull facing out; none for the other kinds.
+/// the air and the hull facing out, gathered into a few big ones (the solid parts and the glass
+/// round each spoke, and the hub) so the whole of it takes a dozen draws; none for the other kinds.
 [[nodiscard]] std::vector<MeshChunk> buildEnclosureMeshes(const HabitatGeometry& geometry,
                                                           double                 cellSizeM);
 
