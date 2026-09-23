@@ -289,7 +289,16 @@ void Landscape::planAround(const TerrainSpec& terrain)
     {
         const double segment = length / lakes;
         const double spot    = random.uniform(0.2, 0.8);
-        const double along   = band.alongMinM + (segment * (i + spot));
+        double       along   = band.alongMinM + (segment * (i + spot));
+        if (frame_.sections > 0)
+        {
+            const double arc     = length / frame_.sections;
+            const int    section = ((2 * i) + 1) % frame_.sections;
+            const double away    = (spot < 0.5 ? -1.0 : 1.0) * (0.15 + std::abs(spot - 0.5)) * arc;
+            // The section's middle is at plan y = section * arc, wrapped into the band's range.
+            const double middle = band.alongMinM + (0.5 * length);
+            along               = std::remainder((section * arc) + away - middle, length) + middle;
+        }
         const double swing   = random.uniform(-0.3, 0.3);
         const double across  = hasRivers() ? riverAcross(along).x : swing * meanderM_;
         const double room    = halfWidth - margin - std::abs(across);

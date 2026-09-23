@@ -43,6 +43,10 @@ float terrainShadow(sampler2D heightMap, sampler2D profileMap, sampler2D arcMap,
         {
             break;  // out through an end of the habitat
         }
+        if (torusTube() && !inTube(q))
+        {
+            break;  // up through a torus's ceiling (which shades it or not: beamAperture)
+        }
         float u       = textureLod(arcMap, vec2((q.z - landscape.extent.x) /
                                                     (landscape.extent.y - landscape.extent.x),
                                                 0.5), 0.0).r;

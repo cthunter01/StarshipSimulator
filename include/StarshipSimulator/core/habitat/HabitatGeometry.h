@@ -84,8 +84,8 @@ public:
     [[nodiscard]] double distanceToWindow(double z, double theta, double radius) const;
     /// Height of the water's surface above the floor datum at z, measured like terrain height. The
     /// surface is level under spin gravity: a cylinder around the axis. On a cylinder's level floor
-    /// that is kWaterLevelM everywhere; on a sphere the floor rises away from the equator and the
-    /// water lies deeper under it.
+    /// that is kWaterLevelM everywhere; on a sphere (or in a torus's tube) the floor rises away
+    /// from the land's middle line and the water lies deeper under it.
     [[nodiscard]] double waterLevelAt(double z) const;
     /// How far the floor may rise above the band's middle line where there is still water (0 on a
     /// level floor): the water's surface can lie that far below the floor datum.
@@ -108,8 +108,12 @@ public:
     /// Soil height above the profile surface (toward the axis), metres; zero on windows, below
     /// zero in rivers and lakes (see Landscape).
     [[nodiscard]] double terrainHeight(double z, double theta) const;
-    /// The hills and mountains alone, before water shapes them (smooth, non-negative).
+    /// The hills and mountains alone, before water shapes them (non-negative; smooth but for a
+    /// torus's terraces).
     [[nodiscard]] double naturalHeight(double z, double theta) const;
+    /// The terraces up a torus's walls, part of naturalHeight: a staircase of level shelves (0
+    /// elsewhere). They have sharp edges, so the terrain grid takes them at its full resolution.
+    [[nodiscard]] double terraceHeight(double z) const;
     /// How wooded the ground is, 0..1: the landscape's woods, kept off water, walkways and cliffs.
     [[nodiscard]] double forestDensity(double z, double theta) const;
     /// Whether (z, theta) is under water, and how deep (m, 0 on land).
@@ -135,9 +139,15 @@ public:
 
 private:
     [[nodiscard]] bool isSphere() const { return spec_.kind == HabitatKind::BERNAL_SPHERE; }
+    /// Whether the floor curves up away from the land's middle line, to the polar windows of a
+    /// sphere or up the walls of a torus's tube to its ceiling.
+    [[nodiscard]] bool floorCurves() const
+    {
+        return isSphere() || spec_.kind == HabitatKind::STANFORD_TORUS;
+    }
     /// Arc length along the floor from the land's edge, 0 on the land (the polar slopes).
     [[nodiscard]] double arcBeyondLand(double z) const;
-    /// Arc length of one polar slope, from the land's edge to the window's rim.
+    /// Arc length of one polar slope (or tube wall), from the land's edge to the profile's end.
     [[nodiscard]] double slopeArcM() const;
 
     HabitatSpec                            spec_;

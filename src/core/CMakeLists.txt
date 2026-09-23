@@ -36,6 +36,7 @@ add_library(StarshipSimulator_core STATIC
     procgen/birds.cpp
     procgen/buildings.cpp
     procgen/clouds.cpp
+    procgen/enclosure_mesh.cpp
     procgen/habitat_mesher.cpp
     procgen/hull_mesh.cpp
     procgen/mesh.cpp

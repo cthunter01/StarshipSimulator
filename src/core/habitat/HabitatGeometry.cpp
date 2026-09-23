@@ -39,8 +39,13 @@ constexpr double kNormalStepM      = 0.5;
 constexpr int    kHillOctaves      = 5;
 constexpr int    kRidgeOctaves     = 5;
 constexpr double kFloodplainReachM = 250.0;  // water shapes the land out to this distance
-// A sphere's floor rises away from the equator, and water lies level (at one radius): it keeps to
-// where the floor has risen no more than this above the equator.
+// A torus's walls are terraced from the land's edge (fading in over this much arc) up to where they
+// stand this steep (fading out over the last few degrees).
+constexpr double kTerraceBlendM = 6.0;
+constexpr double kTerracesEnd   = degreesToRadians(72.0);
+constexpr double kTerraceFade   = degreesToRadians(10.0);
+// A sphere's floor rises away from the equator (a torus's from the tube's lowest line), and water
+// lies level (at one radius): it keeps to where the floor has risen no more than this above it.
 constexpr double kMaxWaterRiseM = 2.5;
 
 HabitatSpec validated(const HabitatSpec& spec)
@@ -62,13 +67,19 @@ HabitatSpec validated(const HabitatSpec& spec)
     return normalizedForKind(spec);
 }
 
-/// The z range of the land: an O'Neill or Kalpana cylinder's floor between its endcaps, or a
-/// sphere's band round the equator.
+/// The z range of the land: an O'Neill or Kalpana cylinder's floor between its endcaps, a
+/// sphere's band round the equator, or the bottom of a torus's tube.
 std::pair<double, double> floorZRange(const HabitatSpec& spec)
 {
     if (spec.kind == HabitatKind::BERNAL_SPHERE)
     {
         const double reach = spec.radiusM * std::sin(degreesToRadians(spec.sphere.landLatitudeDeg));
+        return {-reach, reach};
+    }
+    if (spec.kind == HabitatKind::STANFORD_TORUS)
+    {
+        const double reach =
+            spec.torus.tubeRadiusM * std::sin(degreesToRadians(spec.torus.landHalfAngleDeg));
         return {-reach, reach};
     }
     return {(-spec.lengthM / 2.0) + endcapDepthInside(spec.antisunwardEndcap, spec.radiusM),
@@ -155,7 +166,10 @@ HabitatGeometry::HabitatGeometry(const HabitatSpec& spec)
                                              .stripAngle      = stripAngle(),
                                              .windowHalfAngle = windowHalfAngle(),
                                              .around          = aroundBand(bands_),
-                                             .waterReachM     = waterReachAcrossM()})
+                                             .waterReachM     = waterReachAcrossM(),
+                                             .sections = spec_.kind == HabitatKind::STANFORD_TORUS
+                                                             ? spec_.torus.sections
+                                                             : 0})
 {
     walkableZMin_ = std::max(profile_->zMin() + kEndMarginM,
                              zWhereRadiusReaches(*profile_, kPoleRadiusM, false));
@@ -214,9 +228,10 @@ Region HabitatGeometry::regionAt(double z, double theta) const
     {
         return {.kind = RegionKind::OUTSIDE, .index = -1};
     }
-    if (isSphere())
+    if (floorCurves())
     {
-        // The band of land round the equator, and the polar slopes above it up to the windows.
+        // The band of land round the equator, and the polar slopes above it up to the windows (a
+        // torus: the bottom of the tube, and its walls up to the ceiling).
         if (z < floorZMin_ || z > floorZMax_)
         {
             return {.kind = RegionKind::ENDCAP, .index = -1};
@@ -250,9 +265,9 @@ double HabitatGeometry::distanceToWindow(double z, double theta, double radius) 
         // The glass end walls.
         return std::max(0.0, std::min(z - profile_->zMin(), profile_->zMax() - z));
     }
-    if (isSphere())
+    if (floorCurves())
     {
-        // Along the floor to the rim of the nearer polar window.
+        // Along the floor to the rim of the nearer polar window (or where the ceiling begins).
         const double u = profile_->arcAt(z);
         return std::max(0.0, std::min(u, profile_->length() - u));
     }
@@ -282,21 +297,26 @@ double HabitatGeometry::slopeArcM() const
 
 double HabitatGeometry::maxWaterRiseM() const
 {
-    return isSphere() ? kMaxWaterRiseM : 0.0;
+    return floorCurves() ? kMaxWaterRiseM : 0.0;
 }
 
 std::optional<double> HabitatGeometry::waterReachAcrossM() const
 {
-    if (!isSphere())
+    if (!floorCurves())
     {
         return std::nullopt;
     }
-    const double radius = spec_.radiusM;
+    // The floor curves across the band like a circle of this radius: the sphere's, or the tube's.
+    const double radius = isSphere() ? spec_.radiusM : spec_.torus.tubeRadiusM;
     return radius * std::acos((radius - kMaxWaterRiseM) / radius);
 }
 
 double HabitatGeometry::spanAcrossM() const
 {
+    if (spec_.kind == HabitatKind::STANFORD_TORUS)
+    {
+        return 2.0 * spec_.torus.tubeRadiusM;  // up to the ceiling
+    }
     return 2.0 * spec_.radiusM;
 }
 
@@ -314,8 +334,8 @@ double HabitatGeometry::waterLevelAt(double z) const
 {
     // A level surface under spin gravity is a cylinder round the axis: kWaterLevelM below the floor
     // at the land's middle line, and deeper under the floor wherever the floor rises toward the
-    // axis (on a sphere; a cylinder's floor is level).
-    if (!isSphere())
+    // axis (on a sphere or in a torus's tube; a cylinder's floor is level).
+    if (!floorCurves())
     {
         return kWaterLevelM;
     }
@@ -343,9 +363,9 @@ double HabitatGeometry::naturalHeight(double z, double theta) const
         glm::smoothstep(margin, margin + blend, distanceToWindow(z, theta, radius));
     const double hubRadius =
         std::min(spec_.antisunwardEndcap.hubRadiusM, spec_.sunwardEndcap.hubRadiusM);
-    // A sphere has no hub: its floor ends at the polar windows' rims.
+    // A sphere has no hub: its floor ends at the polar windows' rims (a torus's at the ceiling).
     const double hubMask =
-        isSphere() ? 1.0 : glm::smoothstep(hubRadius, hubRadius + kHubBlendM, radius);
+        floorCurves() ? 1.0 : glm::smoothstep(hubRadius, hubRadius + kHubBlendM, radius);
     const double mask = windowMask * hubMask;
     if (mask <= 0.0)
     {
@@ -359,9 +379,15 @@ double HabitatGeometry::naturalHeight(double z, double theta) const
     const double base  = 0.5 + (0.5 * hills_.fbm(q, kHillOctaves));
     const double hills = terrain.hillHeightM * base * base;
 
+    if (spec_.kind == HabitatKind::STANFORD_TORUS)
+    {
+        return (mask * hills) + terraceHeight(z);
+    }
+
     const double beyondFloor = std::max({0.0, floorZMin_ - z, z - floorZMax_});
-    // On a sphere the polar slopes are short: the relief grows over the first half of them.
-    const double mountainWeight = isSphere()
+    // On a sphere the polar slopes are short: the relief grows over the first half of them (and
+    // likewise up the walls of a torus's tube).
+    const double mountainWeight = floorCurves()
                                       ? glm::smoothstep(0.0, 0.5 * slopeArcM(), arcBeyondLand(z))
                                       : glm::smoothstep(0.0, kMountainBlendM, beyondFloor);
     double       mountains      = 0.0;
@@ -371,6 +397,27 @@ double HabitatGeometry::naturalHeight(double z, double theta) const
             terrain.mountainHeightM * mountainWeight * ridges_.ridged(q * 1.3, kRidgeOctaves);
     }
     return mask * (hills + mountains);
+}
+
+double HabitatGeometry::terraceHeight(double z) const
+{
+    // A torus's walls are terraced: shelves at one radius, level under spin gravity, each a riser
+    // of the mountain height above the last, up to where the wall stands upright.
+    const double step = spec_.terrain.mountainHeightM;
+    if (spec_.kind != HabitatKind::STANFORD_TORUS || step < 0.5)
+    {
+        return 0.0;
+    }
+    const std::optional<double> radius = profile_->radiusAt(z);
+    if (!radius)
+    {
+        return 0.0;
+    }
+    const double across = std::asin(std::clamp(std::abs(z) / spec_.torus.tubeRadiusM, 0.0, 1.0));
+    const double weight =
+        glm::smoothstep(0.0, kTerraceBlendM, arcBeyondLand(z)) *
+        (1.0 - glm::smoothstep(kTerracesEnd - kTerraceFade, kTerracesEnd, across));
+    return weight * (*radius - (step * std::floor(*radius / step)));
 }
 
 double HabitatGeometry::forestDensity(double z, double theta) const
@@ -391,7 +438,7 @@ double HabitatGeometry::forestDensity(double z, double theta) const
     const double water   = glm::smoothstep(15.0, 90.0, shore);
     // Woods thin out up the endcap mountains and stop near the hub.
     const double beyondFloor = std::max({0.0, floorZMin_ - z, z - floorZMax_});
-    const double treeLine    = isSphere()
+    const double treeLine    = floorCurves()
                                    ? 1.0 - glm::smoothstep(0.3, 0.7, arcBeyondLand(z) / slopeArcM())
                                    : 1.0 - glm::smoothstep(0.35, 0.6, beyondFloor / spec_.radiusM);
     return landscape_.woodland(z, theta) * walkway * water * treeLine;

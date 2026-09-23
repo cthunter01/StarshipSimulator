@@ -38,6 +38,9 @@ struct LandscapeFrame
     // Where the floor rises away from the band's middle line (a sphere), water lies level and
     // stays within this far of it (arc metres); unset where the floor is level.
     std::optional<double> waterReachM;
+    // A torus divided into sections of town and farmland keeps its lakes in the farmland (the odd
+    // sections), clear of their middles, where the spokes come down.
+    int sections = 0;
 };
 
 /// A lake: an ellipse on the land, longer along its band than across.

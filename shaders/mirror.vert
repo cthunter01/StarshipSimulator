@@ -77,6 +77,64 @@ void endCapPetal(int index, vec2 uv)
     gl_Position = frame.viewProjection * vec4(outCameraRelative, 1.0);
 }
 
+// A Stanford torus's mirrors. Over the hub, not turning with the wheel, a round mirror at 45
+// degrees faces the Sun (square to the axis) and sends its light down the axis; round the hub a
+// ring of mirrors at 45 degrees throws it out along every radius, through the windows in the
+// tube's ceiling. Leaning further, they tilt the light across the tube; at night they fold flat.
+const int PRIMARY_SLICES    = 8;
+const int FACETS_PER_SECTOR = 4;  // round the hub between two spokes
+
+void torusMirror(int index, vec2 uv)
+{
+    float centre = habitat.light.z;  // the axis to the tube's middle
+    float hub    = habitat.mirror.z;
+    int   spokes = max(int(habitat.mirror.w + 0.5), 1);
+    vec3  world;
+    vec3  face;
+    if (index < PRIMARY_SLICES)
+    {
+        // A slice of the round mirror, from its middle to its rim (two corners at the middle).
+        vec3  sun    = normalize(vec3(habitat.sun.xy, 0.0) + vec3(1e-6, 0.0, 0.0));
+        vec3  normal = normalize(sun - vec3(0.0, 0.0, 1.0));  // turns the sunlight down the axis
+        vec3  across = normalize(cross(vec3(0.0, 0.0, 1.0), sun));
+        vec3  up     = cross(normal, across);
+        float angle  = (float(index) + uv.x) * (2.0 * PI / float(PRIMARY_SLICES));
+        world = vec3(0.0, 0.0, 0.85 * centre) + uv.y * 0.3 * centre * (cos(angle) * across + sin(angle) * up);
+        face  = normal;
+    }
+    else
+    {
+        int facet = index - PRIMARY_SLICES;
+        if (facet >= spokes * FACETS_PER_SECTOR)
+        {
+            gl_Position = vec4(0.0);
+            return;
+        }
+        // Between the spokes, leaving room for them.
+        float sector = 2.0 * PI / float(spokes);
+        float step   = sector / float(FACETS_PER_SECTOR + 1);
+        float angle  = float(facet / FACETS_PER_SECTOR) * sector + step * float(facet % FACETS_PER_SECTOR + 1);
+        float theta  = angle + (uv.x * 2.0 - 1.0) * 0.45 * step;
+        // Leaning 45 degrees plus half the light's tilt, from face-up: the light coming down the
+        // axis goes out along the radius, tilted as much down the other way.
+        float alpha    = habitat.mirror.x;
+        float twilight = radians(4.0);
+        float daylight = smoothstep(0.0, twilight, alpha) * (1.0 - smoothstep(PI / 2.0 - twilight, PI / 2.0, alpha));
+        float lean     = mix(0.0, PI / 4.0 + 0.5 * habitat.mirror.y, daylight);
+        float span     = 2.0 * habitat.band.w;
+        float middle   = hub + 15.0 + 0.5 * span * cos(PI / 4.0);
+        vec3  outward  = vec3(cos(theta), sin(theta), 0.0);
+        float along    = (uv.y - 0.5) * span;
+        world = outward * (middle + along * cos(lean)) - vec3(0.0, 0.0, along * sin(lean));
+        face  = outward * sin(lean) + vec3(0.0, 0.0, cos(lean));
+        uv.y += 2.0;  // mirror.frag: these see the Sun in the mirror over the hub, up the axis
+    }
+    outCameraRelative = (placement.model * vec4(world, 1.0)).xyz;
+    outNormal         = mat3(placement.model) * face;
+    outUv             = uv;
+    gl_Position       = frame.viewProjection * vec4(outCameraRelative, 1.0);
+}
+
 void main()
 {
     int  mirrorIndex = gl_VertexIndex / 6;
@@ -86,6 +144,11 @@ void main()
     if (pointImages())
     {
         endCapPetal(mirrorIndex, uv);
+        return;
+    }
+    if (hubLight())
+    {
+        torusMirror(mirrorIndex, uv);
         return;
     }
     if (mirrorIndex >= stripCount())

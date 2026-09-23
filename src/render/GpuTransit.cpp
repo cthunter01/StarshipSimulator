@@ -59,6 +59,7 @@ GpuTransit::GpuTransit(SDL_GPUDevice* device, const std::vector<TrackChunk>& tra
         chunks_.push_back(chunk);
     }
     tram_ = append(buildTramMesh());
+    lift_ = append(buildLiftMesh());
     if (!vertices.empty())
     {
         vertices_ = createBufferWithData(device, SDL_GPU_BUFFERUSAGE_VERTEX,
@@ -94,27 +95,32 @@ void GpuTransit::prepare(SDL_GPUCopyPass* copy, const Vec3d& camera, const Frust
         staging_.push_back({.position = Vec3f(chunk.origin - camera)});
     }
 
-    const auto    firstTram = static_cast<std::uint32_t>(staging_.size());
-    std::uint32_t drawn     = 0;
-    for (const Tram& tram : trams)
+    // The trams, then a torus's lifts: one instanced draw of each car's mesh.
+    for (const bool lifts : {false, true})
     {
-        if (staging_.size() >= kMaxTransitInstances ||
-            glm::distance(tram.position, camera) > range + 40.0)
+        const auto    first = static_cast<std::uint32_t>(staging_.size());
+        std::uint32_t drawn = 0;
+        for (const Tram& tram : trams)
         {
-            continue;
+            if (tram.lift != lifts || staging_.size() >= kMaxTransitInstances ||
+                glm::distance(tram.position, camera) > range + 40.0)
+            {
+                continue;
+            }
+            staging_.push_back({.position = Vec3f(tram.position - camera),
+                                .tint     = static_cast<std::uint32_t>(tram.line % 4),
+                                .rotation = facing(tram.position, tram.forward)});
+            ++drawn;
         }
-        staging_.push_back({.position = Vec3f(tram.position - camera),
-                            .tint     = static_cast<std::uint32_t>(tram.line % 4),
-                            .rotation = facing(tram.position, tram.forward)});
-        ++drawn;
-    }
-    if (drawn > 0)
-    {
-        draws_.push_back({.firstInstance = firstTram,
-                          .instanceCount = drawn,
-                          .firstIndex    = tram_.firstIndex,
-                          .indexCount    = tram_.indexCount,
-                          .vertexOffset  = tram_.vertexOffset});
+        const Chunk& car = lifts ? lift_ : tram_;
+        if (drawn > 0)
+        {
+            draws_.push_back({.firstInstance = first,
+                              .instanceCount = drawn,
+                              .firstIndex    = car.firstIndex,
+                              .indexCount    = car.indexCount,
+                              .vertexOffset  = car.vertexOffset});
+        }
     }
     if (!staging_.empty())
     {

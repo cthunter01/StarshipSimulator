@@ -151,6 +151,8 @@ private:
     [[nodiscard]] double bandYaw(double headingDeg) const;
     /// The views that differ in a sphere; false for the others.
     bool applySphereView(std::string_view name);
+    /// The views that differ in a torus; false for the others.
+    bool applyTorusView(std::string_view name);
     /// The views that differ on a band running round the axis; false for the others.
     bool applyRoundView(std::string_view name);
     /// The nearest angle from `theta` (going spinward) where the ground at z is open: no town, no
@@ -175,7 +177,9 @@ private:
     void                          lookAtBody(astro::Body body);
     void                          lookAtPartner();
     /// Looks out through a glass end cap, for a habitat whose axis does not point at the Sun.
-    void                       lookThroughEnd(Vec3d directionEqj, std::string_view name);
+    void lookThroughEnd(Vec3d directionEqj, std::string_view name);
+    /// Looks out through a torus's ceiling, across the wheel.
+    void                       lookThroughCeiling(Vec3d directionEqj, std::string_view name);
     void                       lookAtName(std::string_view name);
     void                       lookOut(Vec3d directionEqj, std::string_view name);
     [[nodiscard]] double       mirrorAngle() const;  // radians

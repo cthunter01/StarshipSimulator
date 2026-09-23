@@ -12,8 +12,8 @@
 
 // The tramway: one line down each valley, calling at the towns, on a track that follows the ground
 // and crosses the river on a low viaduct; where the land runs around the axis instead, one line
-// once round it. Where the trams are follows from the clock, like the weather and the birds, so
-// nothing has to be simulated or saved.
+// once round it; and in a torus a lift up each spoke to the hub. Where the trams are follows from
+// the clock, like the weather and the birds, so nothing has to be simulated or saved.
 namespace StarshipSimulator
 {
 
@@ -45,6 +45,7 @@ enum class LineKind : std::uint8_t
     ENDCAP,  // a funicular up the endcap's ramp to the hub, where there is no gravity left (on a
              // sphere, up the polar slope to the window's rim)
     LOOP,    // a tramway once round a band of land that runs around the axis, always one way
+    SPOKE,   // a lift in a torus, from the floor up through the tube and a spoke to the hub
 };
 
 /// One line, running the length of a valley (or up an endcap) and back, or round a loop.
@@ -75,7 +76,8 @@ struct Tram
     double      speedMS = 0.0;
     double      alongM  = 0.0;
     bool        atStop  = false;
-    std::size_t stop    = 0;  // which one, when stopped
+    std::size_t stop    = 0;      // which one, when stopped
+    bool        lift    = false;  // a lift's cabin, going up and down: forward is round the axis
 };
 
 /// Plans where the habitat's lines run: a tramway down each valley, and a funicular from the foot
@@ -126,6 +128,14 @@ inline constexpr double kTramBodyWidthM  = 2.5;
 
 /// One tram car, 12 m long, facing +z with its floor at y = 0 and its middle at x = 0.
 [[nodiscard]] CpuMesh buildTramMesh();
+
+/// How big a lift's cabin is: its floor square, and its height inside.
+inline constexpr double kLiftCabinM       = 4.0;
+inline constexpr double kLiftCabinHeightM = 3.0;
+
+/// A lift's cabin: a floor, glass sides at +-x and a roof, open at both ends (+-z) where you walk
+/// in; its floor at y = 0.
+[[nodiscard]] CpuMesh buildLiftMesh();
 
 /// Vertex materials of the transit meshes.
 namespace transit_material

@@ -22,6 +22,13 @@
 // A Bernal sphere is lit the same way through its polar windows, but its walls between the land
 // and the glass are opaque: an image beyond one pole lights only the places from which the ray
 // toward it leaves through that pole's window, mostly the far half of the band.
+//
+// A Stanford torus's axis points at the ecliptic's pole, square to the sunlight. A mirror over the
+// hub, fixed at 45 degrees and turned once a year to face the Sun, sends the light down the axis
+// onto a ring of mirrors round the hub, which throw it straight out along every radius, through
+// the windows in the ceiling of the tube. So everywhere in the tube the light comes from straight
+// up, the direction of the hub, leaning a little across the tube in the morning and evening; the
+// ceiling's metal shades whatever cannot see the hub through its glass.
 namespace StarshipSimulator
 {
 
@@ -49,6 +56,10 @@ namespace StarshipSimulator
 /// would reach the equator, and at most 45 degrees.
 [[nodiscard]] double polarWindowElevation(double openingAngle, double windowLatitudeDeg);
 
+/// How far the light thrown out from a torus's hub leans from straight up, toward +Z (radians):
+/// none at noon, a little across the tube as the day's mirror angle goes toward dawn or dusk.
+[[nodiscard]] double hubLightTilt(double openingAngle);
+
 /// 1 in full daylight, fading to 0 as the mirrors open toward 90 degrees or close toward 0.
 [[nodiscard]] double daylightFactor(double openingAngle);
 
@@ -60,9 +71,12 @@ struct SunBeam
     // A sun image at a point (habitat frame): the light comes from there, a different direction
     // at every point.
     std::optional<Vec3d> image = std::nullopt;
+    // Light thrown out from a torus's hub: from straight up at every point, leaning toward +Z by
+    // this angle (radians). towardSun is its direction at angle 0 round the axis.
+    std::optional<double> hubTilt = std::nullopt;
 };
 
-/// One beam per window (or per glass end cap, or per polar window).
+/// One beam per window (or per glass end cap, or per polar window; one from a torus's hub).
 [[nodiscard]] std::vector<SunBeam> sunBeams(const HabitatGeometry& geometry, double openingAngle);
 
 /// The direction toward a beam's sun image from p.

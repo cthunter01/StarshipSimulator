@@ -9,6 +9,7 @@ add_executable(StarshipSimulator_tests
     camera_tests.cpp
     clouds_tests.cpp
     determinism_tests.cpp
+    EnclosureTests.cpp
     habitat_mesher_tests.cpp
     habitat_tests.cpp
     kalpana_tests.cpp
@@ -28,6 +29,7 @@ add_executable(StarshipSimulator_tests
     spirv_reflect_tests.cpp
     star_catalog_tests.cpp
     terrain_tests.cpp
+    torus_tests.cpp
     tour_tests.cpp
     transit_tests.cpp
     uniforms_tests.cpp

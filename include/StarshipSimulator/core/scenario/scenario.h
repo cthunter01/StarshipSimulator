@@ -43,9 +43,10 @@ struct Scenario
     static constexpr int kFormatVersion = 1;  // file layout
     // World generation: 2 added rivers, lakes and woods; 3 towns and farms; 4 the tramway's
     // earthworks, and fixing draws that came out in a different order under another compiler;
-    // 5 Kalpana One, whose land runs round the axis; 6 Island One, a sphere. (M8's habitat kinds
-    // leave the O'Neill cylinder's world exactly as version 4 made it, and Kalpana One's as 5.)
-    static constexpr int kGeneratorVersion = 6;
+    // 5 Kalpana One, whose land runs round the axis; 6 Island One, a sphere; 7 the Stanford torus.
+    // (M8's habitat kinds leave the O'Neill cylinder's world exactly as version 4 made it, Kalpana
+    // One's as 5 and Island One's as 6.)
+    static constexpr int kGeneratorVersion = 7;
 
     int             formatVersion    = kFormatVersion;
     int             generatorVersion = kGeneratorVersion;

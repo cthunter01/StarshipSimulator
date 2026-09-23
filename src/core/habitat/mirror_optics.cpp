@@ -6,6 +6,7 @@
 #include <optional>
 #include <vector>
 
+#include "StarshipSimulator/core/habitat/Enclosure.h"
 #include "StarshipSimulator/core/habitat/HabitatGeometry.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
 #include "StarshipSimulator/core/math.h"
@@ -26,6 +27,11 @@ constexpr double kEndCapLowest  = degreesToRadians(15.0);
 // light is held a little above that, and at most this high.
 constexpr double kPolarHighest = degreesToRadians(45.0);
 constexpr double kPolarMargin  = degreesToRadians(3.0);
+// A torus's hub throws its light straight out at noon; the ring of mirrors round it tilts it up to
+// this far across the tube toward dawn and dusk, by this share of how low the day's sun would be.
+constexpr double kHubTiltMost  = degreesToRadians(12.0);
+constexpr double kHubTiltShare = 0.3;
+constexpr double kWindowEdgeM  = 1.0;  // the light fades in over this much of the ceiling's glass
 
 Vec3d outward(double angle)
 {
@@ -76,6 +82,11 @@ double polarWindowElevation(double openingAngle, double windowLatitudeDeg)
     return std::clamp(sunElevation(openingAngle), lowest, highest);
 }
 
+double hubLightTilt(double openingAngle)
+{
+    return std::min(kHubTiltMost, kHubTiltShare * ((kPi / 2.0) - sunElevation(openingAngle)));
+}
+
 double daylightFactor(double openingAngle)
 {
     return glm::smoothstep(0.0, kTwilight, openingAngle) *
@@ -120,6 +131,14 @@ std::vector<SunBeam> sunBeams(const HabitatGeometry& geometry, double openingAng
     {
         return endCapBeams(geometry, openingAngle);
     }
+    if (daylight == DaylightKind::OVERHEAD_MIRROR)
+    {
+        const double tilt = hubLightTilt(openingAngle);
+        return {{.window    = 0,
+                 .towardSun = Vec3d(-std::cos(tilt), 0.0, std::sin(tilt)),
+                 .intensity = daylightFactor(openingAngle) * geometry.spec().mirrors.reflectivity,
+                 .hubTilt   = tilt}};
+    }
     std::vector<SunBeam> beams;
     beams.reserve(static_cast<std::size_t>(geometry.stripCount()));
     const double intensity = daylightFactor(openingAngle) * geometry.spec().mirrors.reflectivity;
@@ -134,11 +153,37 @@ std::vector<SunBeam> sunBeams(const HabitatGeometry& geometry, double openingAng
 
 Vec3d towardSunFrom(const SunBeam& beam, const Vec3d& p)
 {
+    if (beam.hubTilt)
+    {
+        return (HabitatGeometry::localUp(p) * std::cos(*beam.hubTilt)) +
+               Vec3d(0.0, 0.0, std::sin(*beam.hubTilt));
+    }
     return beam.image ? glm::normalize(*beam.image - p) : beam.towardSun;
 }
 
 double beamReach(const HabitatGeometry& geometry, const Vec3d& p, const SunBeam& beam)
 {
+    if (beam.hubTilt && geometry.enclosure().torus())
+    {
+        // The light from the hub runs along a radius, in the plane through the axis: it reaches p
+        // if the line back toward the hub leaves the tube through the ceiling's glass. In that
+        // plane the tube is a circle round its middle line (t = r - centre across, z along).
+        const TorusShape& torus = *geometry.enclosure().torus();
+        const double      a     = torus.tubeRadiusM;
+        const double      t     = std::hypot(p.x, p.y) - torus.centreRadiusM;
+        const double      dt    = -std::cos(*beam.hubTilt);
+        const double      dz    = std::sin(*beam.hubTilt);
+        const double      b     = (t * dt) + (p.z * dz);
+        const double      c     = (t * t) + (p.z * p.z) - (a * a);
+        const double      disc  = (b * b) - c;
+        if (c > 0.0 || disc < 0.0)
+        {
+            return 0.0;  // outside the tube: in a spoke, the hub or beyond
+        }
+        const double out  = t + (dt * (-b + std::sqrt(disc)));
+        const double edge = -a * std::cos(torus.windowHalfAngle);  // the glass is nearer the hub
+        return 1.0 - glm::smoothstep(edge - kWindowEdgeM, edge + kWindowEdgeM, out);
+    }
     if (beam.image && geometry.kind() == HabitatKind::BERNAL_SPHERE)
     {
         // The sphere is convex and its walls opaque: the ray toward the image leaves it once, and

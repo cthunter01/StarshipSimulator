@@ -21,7 +21,8 @@ constexpr double kAxisZoneRadius = 30.0;  // m: inside this, "up" is held steady
 constexpr double kUpResponseTime = 0.4;   // s: how fast the view re-aligns after leaving the axis
 // With a mover the body stands on the collision terrain, which can differ from the analytic ground
 // by a few centimetres: the analytic ground only catches a fall through the world.
-constexpr double kFallThroughM = 1.0;
+constexpr double kFallThroughM   = 1.0;
+constexpr double kCeilingMarginM = 0.6;  // the eye keeps this far from a ceiling or a wall
 
 /// Limits a direction built from stick inputs to unit length, so diagonals are not faster.
 Vec3d clampLength(const Vec3d& v)
@@ -315,6 +316,14 @@ bool PlayerController::constrain(const HabitatGeometry& geometry)
     {
         eye_.z      = std::clamp(eye_.z, geometry.walkableZMin(), geometry.walkableZMax());
         velocity_.z = 0.0;
+    }
+    // Under a torus's ceiling, and inside its spokes and hub: back in, and no further out.
+    if (const Vec3d inside = geometry.enclosure().clampInside(eye_, kCeilingMarginM);
+        inside != eye_)
+    {
+        const Vec3d back = glm::normalize(inside - eye_);
+        eye_             = inside;
+        velocity_ -= std::min(0.0, glm::dot(velocity_, back)) * back;
     }
     const GroundSample ground = geometry.ground(eye_);
     const double       slack  = mover_ != nullptr ? kFallThroughM : 0.0;

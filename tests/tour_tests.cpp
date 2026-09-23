@@ -1,6 +1,7 @@
 #include "StarshipSimulator/core/tour.h"
 
 #include <algorithm>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -60,6 +61,19 @@ const HabitatGeometry& islandOne()
     return kGeometry;
 }
 
+/// A Stanford torus, and a small one: the tours fit both.
+const HabitatGeometry& torus(double radius, double tube)
+{
+    static std::vector<std::unique_ptr<const HabitatGeometry>> s_made;
+    HabitatSpec                                                spec;
+    spec.kind              = HabitatKind::STANFORD_TORUS;
+    spec.radiusM           = radius;
+    spec.torus.tubeRadiusM = tube;
+    spec.torus.hubRadiusM  = std::min(65.0, 0.2 * radius);
+    s_made.push_back(std::make_unique<const HabitatGeometry>(spec));
+    return *s_made.back();
+}
+
 void checkStop(const TourStop& stop, const HabitatGeometry& geometry, const std::string& tour)
 {
     EXPECT_GT(stop.caption.size(), 40U) << "a stop with nothing to read";
@@ -94,6 +108,32 @@ TEST(Tour, EveryTourIsWorthTakingAndFitsTheHabitat)
     checkTours(playground());
     checkTours(kalpana());
     checkTours(islandOne());
+    checkTours(torus(895.0, 65.0));
+    checkTours(torus(300.0, 30.0));
+}
+
+TEST(Tour, TellsOfTheTubeAndTheSpokesInAStanfordTorus)
+{
+    const std::vector<Tour> tours   = habitatTours(torus(895.0, 65.0), "Stanford Torus");
+    const std::string&      opening = tours.front().stops.front().caption;
+    EXPECT_NE(opening.find("tube 130 metres across"), std::string::npos) << opening;
+    EXPECT_NE(opening.find("once every 60 seconds"), std::string::npos) << opening;
+    bool spoke = false;
+    bool hub   = false;
+    for (const Tour& tour : tours)
+    {
+        for (const TourStop& stop : tour.stops)
+        {
+            spoke = spoke || stop.caption.contains("spoke");
+            hub   = hub || stop.caption.contains("hub");
+            for (const char* wrong : {"cylinder", "valley", "window strip", "polar", "endcap"})
+            {
+                EXPECT_EQ(stop.caption.find(wrong), std::string::npos) << stop.caption;
+            }
+        }
+    }
+    EXPECT_TRUE(spoke);
+    EXPECT_TRUE(hub);
 }
 
 TEST(Tour, TellsOfThePolarWindowsInIslandOne)

@@ -4,22 +4,26 @@
 
 layout(std140, set = UNIFORM_SET, binding = 1) uniform Habitat
 {
-    vec4 shape;     // x: hull radius, y: floor z min, z: floor z max, w: window half-angle
+    vec4 shape;     // x: hull radius, y: floor z min, z: floor z max, w: window half-angle (a
+                    // torus: its ceiling's windows, as a tube angle either side of the innermost)
     vec4 strips;    // x: strip angle, y: strip count, z: habitat z min, w: habitat z max
     vec4 beams[6];  // xyz: toward the sun image seen through window i, w: intensity
     vec4 sunColor;  // rgb: full sunlight
     vec4 ambientUp;
     vec4 ambientDown;
     vec4 atmosphere;  // x: density falloff k (1/m^2), y: pressure / 1 atm, z: haze, w: daylight
-    vec4 mirror;      // x: opening angle, y: mirror length, z: half width, w: hinge z
+    vec4 mirror;      // x: opening angle, y: mirror length, z: half width, w: hinge z (a torus:
+                      // y the hub light's lean, z the hub's radius, w how many spokes)
     vec4 sun;         // xyz: direction to the Sun, w: angular radius
     vec4 cloud;    // x: radius of the cloud deck's top, y: its base, z: cover, w: light let through
     vec4 weather;  // x: rain, y: mist, z: wetness of the ground, w: cloud drift along the axis (m)
     vec4 season;   // x: fresh green, y: autumn gold, z: blossom, w: how far the clouds have turned
-    vec4 light;    // x: 1 when the sun images are points (beams' xyz), 0 directions; y: how many;
-                   // z: radius of the glass's rim (points); w: the hull's radius if a sphere, else 0
+    vec4 light;    // x: 1 when the sun images are points (beams' xyz), 0 directions, 2 light from
+                   // a torus's hub (beams' x: how much from up, z: from along the axis); y: how
+                   // many; z: radius of the glass's rim (points) or of the tube's middle (a torus);
+                   // w: the hull's radius if a sphere, else 0
     vec4 band;     // x: 1 when the land runs round the axis, y: the round's length (m), z: how far
-                   // the cloud deck fades in from the ends of the land (m)
+                   // the cloud deck fades in from the ends of the land (m), w: a torus's tube radius
 }
 habitat;
 
@@ -33,17 +37,43 @@ bool landRunsRound() { return habitat.band.x > 0.5; }
 
 // Sun images at points: the light through a windowless cylinder's glass end caps, or a sphere's
 // polar windows.
-bool pointImages() { return habitat.light.x > 0.5; }
+bool pointImages() { return habitat.light.x > 0.5 && habitat.light.x < 1.5; }
+
+// Light thrown out from a torus's hub: from straight up (toward the axis) everywhere, leaning a
+// little along it.
+bool hubLight() { return habitat.light.x > 1.5; }
+
+// A torus: its air is a tube round the axis (and the spokes and hub, which the light and the air's
+// glow leave out).
+bool torusTube() { return habitat.band.w > 0.0; }
+
+// Whether p is inside a torus's tube.
+bool inTube(vec3 p)
+{
+    float t = length(p.xy) - habitat.light.z;
+    return t * t + p.z * p.z < habitat.band.w * habitat.band.w;
+}
 
 // A spherical hull (a Bernal sphere), whose light comes in only through the windows at its poles.
 bool sphericalHull() { return habitat.light.w > 0.0; }
 
 // How many sun images light the habitat: one per window strip, or one per glass end cap.
-int beamCount() { return pointImages() ? int(habitat.light.y + 0.5) : stripCount(); }
+int beamCount() { return pointImages() || hubLight() ? int(habitat.light.y + 0.5) : stripCount(); }
+
+// Up (toward the spin axis) at a position.
+vec3 localUp(vec3 p)
+{
+    float r = length(p.xy);
+    return r > 1e-3 ? vec3(-p.xy / r, 0.0) : vec3(1.0, 0.0, 0.0);
+}
 
 // The direction toward sun image i, seen from p.
 vec3 beamDirection(vec3 p, int i)
 {
+    if (hubLight())
+    {
+        return localUp(p) * habitat.beams[i].x + vec3(0.0, 0.0, habitat.beams[i].z);
+    }
     return pointImages() ? normalize(habitat.beams[i].xyz - p) : habitat.beams[i].xyz;
 }
 
@@ -62,13 +92,6 @@ float distanceToWindow(vec3 p)
     return max(edge, 0.0) * habitat.shape.x;
 }
 
-// Up (toward the spin axis) at a position.
-vec3 localUp(vec3 p)
-{
-    float r = length(p.xy);
-    return r > 1e-3 ? vec3(-p.xy / r, 0.0) : vec3(1.0, 0.0, 0.0);
-}
-
 // ---- Air ---------------------------------------------------------------------------------------
 // Isothermal air in spin gravity thins toward the axis: density ~ exp(-k (R^2 - r^2)).
 // Rayleigh scattering (blue) plus a little Mie haze (white), per metre at floor density.
@@ -77,6 +100,10 @@ const vec3 MIE      = vec3(3.0e-6);
 
 float airDensity(vec3 p)
 {
+    if (torusTube() && !inTube(p))
+    {
+        return 0.0;  // a torus's windows look out through space at the rest of the wheel
+    }
     float R = habitat.shape.x;
     return exp(-habitat.atmosphere.x * (R * R - dot(p.xy, p.xy)));
 }
@@ -101,6 +128,10 @@ const vec3 WATER_HAZE = vec3(2.6e-3);  // per metre at full mist
 
 float mistDensity(vec3 p)
 {
+    if (torusTube() && !inTube(p))
+    {
+        return 0.0;
+    }
     float radius  = length(p.xy);
     float above   = max(habitat.shape.x - radius, 0.0);  // roughly metres above the floor
     float lying   = habitat.weather.y * exp(-above / 40.0);
@@ -175,10 +206,47 @@ Haze aerialPerspective(vec3 camera, vec3 point)
 }
 
 // ---- Sunlight through the windows --------------------------------------------------------------
+// The light from a torus's hub reaching p along towardSun: whether p is in the tube, and if so how
+// far the light has come through it and where it came in, as t across the tube from its middle
+// line (outward positive: the glass is where t is most negative, nearest the hub). The light runs
+// along a radius, so in the plane through the axis the tube is a circle and this is exact.
+bool hubLightEntry(vec3 p, vec3 towardSun, out float travelled, out float entry)
+{
+    float a    = habitat.band.w;
+    float r    = max(length(p.xy), 1e-3);
+    float t    = r - habitat.light.z;
+    float dt   = dot(towardSun.xy, p.xy) / r;
+    float dz   = towardSun.z;
+    float b    = t * dt + p.z * dz;
+    float c    = t * t + p.z * p.z - a * a;
+    float disc = b * b - c;
+    travelled  = 0.0;
+    entry      = 0.0;
+    if (c > 0.0 || disc < 0.0)
+    {
+        return false;
+    }
+    travelled = -b + sqrt(disc);
+    entry     = t + dt * travelled;
+    return true;
+}
+
 // Fraction of beam i reaching point p: the ray toward the sun image must leave through window i,
 // between the mirror's hinge and the end of the window. (Terrain and tree shadows are separate.)
 float beamAperture(vec3 p, vec3 towardSun, int i)
 {
+    if (hubLight())
+    {
+        // In through the ceiling's glass, round its innermost line; its metal shades the rest.
+        float travelled;
+        float entry;
+        if (!hubLightEntry(p, towardSun, travelled, entry))
+        {
+            return 0.0;
+        }
+        float edge = -habitat.band.w * cos(habitat.shape.w);
+        return 1.0 - smoothstep(edge - 1.0, edge + 1.0, entry);
+    }
     if (pointImages())
     {
         if (sphericalHull())
@@ -225,6 +293,12 @@ float beamAperture(vec3 p, vec3 towardSun, int i)
 // glass end cap it came in through.
 float beamPathLength(vec3 p, vec3 towardSun)
 {
+    if (hubLight())
+    {
+        float travelled;
+        float entry;
+        return hubLightEntry(p, towardSun, travelled, entry) ? travelled : 0.0;
+    }
     if (pointImages())
     {
         float glass = towardSun.z > 0.0 ? habitat.strips.w : habitat.strips.z;

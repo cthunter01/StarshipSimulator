@@ -20,6 +20,7 @@ namespace
 
 constexpr int kHemisphereSegments = 60;   // 1.5 degrees each
 constexpr int kSphereSegments     = 120;  // rim to rim; even, so one point is the equator exactly
+constexpr int kTorusSegments      = 120;  // round the tube's outer half; even, as the sphere's
 
 /// Index of the segment [i, i+1] containing key, found with a projection onto the point member.
 template <typename Projection>
@@ -174,6 +175,23 @@ MeridianProfile buildSphereProfile(const HabitatSpec& spec)
     return MeridianProfile(points);
 }
 
+/// A torus's floor: the outer half of its tube, from where it meets the ceiling on one side, down
+/// through its lowest line (the floor's radius from the axis) and up to the ceiling on the other.
+/// The ceiling, the half facing the hub, is drawn separately.
+MeridianProfile buildTorusProfile(const HabitatSpec& spec)
+{
+    const double       tube   = spec.torus.tubeRadiusM;
+    const double       centre = spec.radiusM - tube;
+    std::vector<Vec2d> points;
+    points.reserve(kTorusSegments + 1);
+    for (int i = 0; i <= kTorusSegments; ++i)
+    {
+        const double angle = (kPi / 2.0) * ((2 * i) - kTorusSegments) / kTorusSegments;
+        points.emplace_back(tube * std::sin(angle), centre + (tube * std::cos(angle)));
+    }
+    return MeridianProfile(points);
+}
+
 }  // namespace
 
 MeridianProfile buildFloorProfile(const HabitatSpec& spec)
@@ -188,6 +206,7 @@ MeridianProfile buildFloorProfile(const HabitatSpec& spec)
         case HabitatKind::BERNAL_SPHERE:
             return buildSphereProfile(spec);
         case HabitatKind::STANFORD_TORUS:
+            return buildTorusProfile(spec);
         case HabitatKind::BISHOP_RING:
             break;
     }

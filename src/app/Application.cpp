@@ -47,6 +47,7 @@
 #include "StarshipSimulator/core/audio/Soundscape.h"
 #include "StarshipSimulator/core/camera.h"
 #include "StarshipSimulator/core/gpu_abi/uniforms.h"
+#include "StarshipSimulator/core/habitat/Enclosure.h"
 #include "StarshipSimulator/core/habitat/HabitatGeometry.h"
 #include "StarshipSimulator/core/habitat/Landscape.h"
 #include "StarshipSimulator/core/habitat/day_schedule.h"
@@ -63,6 +64,7 @@
 #include "StarshipSimulator/core/procgen/birds.h"
 #include "StarshipSimulator/core/procgen/buildings.h"
 #include "StarshipSimulator/core/procgen/clouds.h"
+#include "StarshipSimulator/core/procgen/enclosure_mesh.h"
 #include "StarshipSimulator/core/procgen/habitat_mesher.h"
 #include "StarshipSimulator/core/procgen/hull_mesh.h"
 #include "StarshipSimulator/core/procgen/people.h"
@@ -297,6 +299,8 @@ GeneratedWorld generateWorld(const HabitatSpec& spec, const StartSpec& visitStar
         // The physics: what the towns built, and everything lying about in them.
         world.physics = std::make_unique<PhysicsWorld>(world.geometry, world.terrain);
         world.physics->addColliders(settlementColliders(world.settlements));
+        // A torus's ceiling, spokes and hub.
+        world.physics->addColliders(enclosureColliders(*world.geometry, world.meshes.chunks));
         world.physics->setTrees(world.trees);
         for (const PropPlacement& prop : world.settlements.props)
         {
@@ -1006,8 +1010,78 @@ bool Application::applySphereView(std::string_view name)
     return true;
 }
 
+bool Application::applyTorusView(std::string_view name)
+{
+    // A Stanford torus: the land runs round the bottom of a tube, under a ceiling whose windows
+    // face the hub; a lift climbs each spoke to the hub. Yaw 0 faces +z, across the tube.
+    const HabitatGeometry& geometry = *geometry_;
+    if (!geometry.enclosure().torus())
+    {
+        return false;
+    }
+    const TorusShape  torus = *geometry.enclosure().torus();
+    const SurfaceSpot start = startSpot(0.0, 0.0);
+    // Between two spokes, clear of them; and spoke 0's foot and its lift.
+    const double between =
+        torus.spokeAngle(0) + (0.5 * (torus.spokeAngle(1) - torus.spokeAngle(0)));
+    if (name == "window")
+    {
+        // Just under the ceiling's glass, looking up at it and along the ring.
+        flyTo(torus.tubePoint(between, kPi, -12.0), bandYaw(0.0), 55.0);
+    }
+    else if (name == "overview")
+    {
+        // High in the tube under the glass, looking along the ring as it curves up away.
+        flyTo(torus.tubePoint(start.theta, kPi, -25.0), bandYaw(0.0), -18.0);
+    }
+    else if (name == "spoke")
+    {
+        // Half way up spoke 0, looking up it to the hub.
+        const double middle = 0.5 * (torus.hubRadiusM + torus.ceilingRadiusAt(0.0));
+        flyTo(radial(torus.spokeAngle(0)) * middle, bandYaw(0.0), 85.0);
+    }
+    else if (name == "hub" || name == "axis")
+    {
+        // Standing on the hub's floor, where you weigh next to nothing, looking round it; or
+        // floating by the axis.
+        if (name == "axis")
+        {
+            flyTo(radial(between) * 8.0, bandYaw(0.0), 0.0);
+            return true;
+        }
+        player_.setLocomotion(Locomotion::WALK);
+        player_.teleport(radial(between) * (torus.hubRadiusM - player_.settings.eyeHeight - 0.2));
+        look_.setFrame(player_.viewUp(), kNorth);
+        look_.setAngles(degreesToRadians(bandYaw(0.0)), degreesToRadians(8.0));
+    }
+    else if (name == "lift")
+    {
+        // On the station platform at the foot of spoke 0, looking along it at the lift.
+        const double foot  = torus.spokeAngle(0);
+        const double r     = geometry.floorRadiusAt(0.0);
+        const double theta = foot + (11.0 / r);
+        walkTo(0.0, theta, bandYaw(180.0), 25.0);
+    }
+    else if (name == "endcap" || name == "ramp" || name == "sunward")
+    {
+        // At the land's edge, facing the tube's wall as it climbs to the ceiling.
+        const bool   plus = name == "sunward";
+        const double z    = plus ? geometry.floorZMax() - 4.0 : geometry.floorZMin() + 4.0;
+        walkTo(z, openAround(z, start.theta), plus ? 0.0 : 180.0, name == "ramp" ? 35.0 : 20.0);
+    }
+    else
+    {
+        return false;
+    }
+    return true;
+}
+
 bool Application::applyRoundView(std::string_view name)
 {
+    if (geometry_->kind() == HabitatKind::STANFORD_TORUS && applyTorusView(name))
+    {
+        return true;
+    }
     // Kalpana One: the land runs round the axis between two glass end walls. The views that
     // stand somewhere on the band (the river, the towns, the tram) work as in a valley; these are
     // the ones that differ. A sphere's band shares most of them (applySphereView has the rest).
@@ -1490,6 +1564,11 @@ void Application::lookOut(Vec3d directionEqj, std::string_view name)
         lookThroughEnd(directionEqj, name);
         return;
     }
+    if (geometry_->enclosure().torus())
+    {
+        lookThroughCeiling(directionEqj, name);
+        return;
+    }
     // Turn the habitat so the direction lies straight out from window 0 (angle 0) ...
     const Vec3d atRest = astro::habitatFromEqj(sky_.sunDirection, 0.0, spinAxis()) * directionEqj;
     spinPhase_         = std::fmod(std::atan2(atRest.y, atRest.x) + (2.0 * kPi), 2.0 * kPi);
@@ -1522,6 +1601,47 @@ void Application::lookOut(Vec3d directionEqj, std::string_view name)
                         "{:.0f} s",
                         name, 2.0 * kPi / geometry.omega())
                   : std::format("{} is nearly along the spin axis: the endcaps hide it", name);
+}
+
+void Application::lookThroughCeiling(Vec3d directionEqj, std::string_view name)
+{
+    // A torus's windows are in its ceiling, facing the hub: float just under the glass between
+    // two spokes and look up across the wheel, turned so the line of sight passes well clear of the
+    // hub and its ring of mirrors. The rest of the ring stands all round the wheel's plane, so
+    // whatever lies within a few degrees of that plane is hidden behind its far side.
+    const TorusShape torus = geometry_->enclosure().torus().value_or(TorusShape{});
+    const double     theta = 0.5 * (torus.spokeAngle(0) + torus.spokeAngle(1));
+    const double     eyeR  = torus.ceilingRadiusAt(0.0) + 8.0;
+    const double     pass  = std::min(250.0, 0.4 * eyeR);  // from the axis
+    const double     gamma = std::asin(pass / eyeR);
+    const Vec3d  atRest = astro::habitatFromEqj(sky_.sunDirection, 0.0, spinAxis()) * directionEqj;
+    const double want   = theta + kPi - gamma;  // seen from above: across the wheel, beside the hub
+    spinPhase_          = std::fmod(std::atan2(atRest.y, atRest.x) - want + (4.0 * kPi), 2.0 * kPi);
+    updateSky();
+    const Vec3d d = habitatFromSky_ * directionEqj;
+    player_.setLocomotion(Locomotion::FLY);
+    player_.teleport(radial(theta) * eyeR);
+    look_.setFrame(player_.viewUp(), kNorth);
+    const Vec3d  up         = look_.up();
+    const Vec3d  horizontal = d - (glm::dot(d, up) * up);
+    const double yaw =
+        std::atan2(glm::dot(horizontal, glm::cross(up, kNorth)), glm::dot(horizontal, kNorth));
+    look_.setAngles(yaw, std::asin(std::clamp(glm::dot(d, up), -1.0, 1.0)));
+    // Across the wheel to the far side of the ring: how far off the wheel's plane the line is
+    // there.
+    const double inner  = torus.ceilingRadiusAt(0.0);
+    const double across = std::sqrt((eyeR * eyeR) - (pass * pass)) +
+                          std::sqrt(std::max((inner * inner) - (pass * pass), 0.0));
+    const double level  = std::hypot(d.x, d.y);
+    const double off    = level > 1e-6 ? across * std::abs(d.z) / level : 1e9;
+    status_ =
+        off > torus.tubeRadiusM + 5.0
+            ? std::format(
+                  "Looking at {} through the windows in the ceiling; the spin carries it "
+                  "past every {:.0f} s",
+                  name, 2.0 * kPi / geometry_->omega())
+            : std::format("{} lies in the plane of the wheel: the far side of the ring hides it",
+                          name);
 }
 
 void Application::lookThroughEnd(Vec3d directionEqj, std::string_view name)

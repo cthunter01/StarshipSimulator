@@ -160,6 +160,18 @@ TEST(Determinism, IslandOneAlwaysMakesTheSameWorld)
     EXPECT_EQ(worldHash(islandOne->habitat), kSphereHash);
 }
 
+TEST(Determinism, TheStanfordTorusAlwaysMakesTheSameWorld)
+{
+    // A torus, pinned the same way: its land runs round the bottom of a tube and is terraced up its
+    // walls, its towns stand in their sections beside the feet of the spokes, and a lift climbs
+    // each spoke.
+    const auto torus =
+        loadScenario(pathFromUtf8(STARSHIPSIMULATOR_DATA_DIR) / "presets" / "stanford_torus.toml");
+    ASSERT_TRUE(torus.has_value()) << torus.error().describe();
+    constexpr std::uint64_t kTorusHash = 0x323F6EF4CC126331ULL;
+    EXPECT_EQ(worldHash(torus->habitat), kTorusHash);
+}
+
 TEST(Determinism, TheThreadCountDoesNotChangeTheTerrain)
 {
     const HabitatGeometry geometry{sample()};

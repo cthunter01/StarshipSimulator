@@ -29,9 +29,14 @@ double drift(const SimplexNoise& noise, double at, double period, double lane, i
     return std::clamp(0.5 + (0.75 * noise.fbm(Vec3d(at / period, lane, 0.5), octaves)), 0.0, 1.0);
 }
 
-/// Cloud cover from the slow drift, around a climate's average.
+/// Cloud cover from the slow drift, around a climate's average (none at all in a climate without
+/// cloud).
 double coverFrom(double drifted, double average)
 {
+    if (average <= 0.0)
+    {
+        return 0.0;
+    }
     return std::clamp(((drifted - 0.5) * 1.8) + average, 0.0, 1.0);
 }
 

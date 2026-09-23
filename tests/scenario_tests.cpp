@@ -197,6 +197,14 @@ TEST(Scenario, PresetsLoad)
     EXPECT_EQ(islandOne->habitat.sphere.landLatitudeDeg, 35.0);
     EXPECT_EQ(islandOne->habitat.sphere.windowLatitudeDeg, 55.0);
 
+    const auto torus = loadScenario(presets() / "stanford_torus.toml");
+    ASSERT_TRUE(torus.has_value()) << torus.error().describe();
+    EXPECT_EQ(torus->title, "Stanford Torus");
+    EXPECT_EQ(torus->habitat.kind, HabitatKind::STANFORD_TORUS);
+    EXPECT_EQ(torus->habitat.torus.tubeRadiusM, 65.0);
+    EXPECT_EQ(torus->habitat.torus.spokes, 6);
+    EXPECT_EQ(torus->climate.cloudiness, 0.0);
+
     // The presets are written the way serializeScenario writes them.
     EXPECT_EQ(serializeScenario(island.value()),
               serializeScenario(parseScenario(serializeScenario(island.value())).value()));
@@ -299,13 +307,12 @@ TEST(Scenario, DescribesAHabitatInOneLine)
 
 TEST(Scenario, SaysWhichKindsCannotBeBuiltYet)
 {
-    Scenario torus;
-    torus.habitat.kind       = HabitatKind::STANFORD_TORUS;
-    torus.habitat.radiusM    = 895.0;
-    torus.climate.cloudBaseM = 50.0;
-    torus.climate.cloudTopM  = 102.0;  // inside the 130 m tube
-    torus.start.band         = 0;
-    const auto problems      = validateScenario(torus);
+    Scenario ring;
+    ring.habitat.kind    = HabitatKind::BISHOP_RING;
+    ring.habitat.radiusM = 1.0e6;  // 1000 km
+    ring.habitat.lengthM = 500000.0;
+    ring.start.band      = 0;
+    const auto problems  = validateScenario(ring);
     ASSERT_EQ(problems.size(), 1U) << problems.front();
     EXPECT_NE(problems.front().find("cannot be built yet"), std::string::npos);
 }
@@ -331,8 +338,8 @@ TEST(Scenario, ValidateNamesEverythingWrongAtOnce)
 
 TEST(Scenario, EveryPresetIsReadyToOpen)
 {
-    for (const char* name :
-         {"island_three.toml", "coriolis_playground.toml", "kalpana_one.toml", "island_one.toml"})
+    for (const char* name : {"island_three.toml", "coriolis_playground.toml", "kalpana_one.toml",
+                             "island_one.toml", "stanford_torus.toml"})
     {
         const auto loaded = loadScenario(presets() / name);
         ASSERT_TRUE(loaded.has_value()) << loaded.error().describe();

@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "StarshipSimulator/core/habitat/Enclosure.h"
 #include "StarshipSimulator/core/habitat/HabitatGeometry.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
 #include "StarshipSimulator/core/habitat/mirror_optics.h"
@@ -389,6 +390,121 @@ std::vector<Tour> sphereTours(const HabitatGeometry& geometry, std::string_view 
     return {std::move(first), std::move(day), std::move(sky)};
 }
 
+/// A Stanford torus's tours: the land round the bottom of a tube, the ceiling and its windows, a
+/// lift up a spoke to the hub; the light thrown out from the hub; the sky through the ceiling.
+std::vector<Tour> torusTours(const HabitatGeometry& geometry, const TorusShape& torus,
+                             std::string_view name)
+{
+    const HabitatSpec& spec    = geometry.spec();
+    const double       radius  = geometry.radius();
+    const double       wheel   = 2.0 * radius;
+    const double       tube    = 2.0 * torus.tubeRadiusM;
+    const double       round   = 2.0 * kPi * radius;
+    const double       period  = 2.0 * kPi / geometry.omega();
+    const double       edge    = geometry.floorZMax();
+    const double       climb   = radius - geometry.floorRadiusAt(edge);
+    const double       weight  = geometry.floorRadiusAt(edge) / radius;
+    const double       ceiling = torus.ceilingRadiusAt(0.0);
+    const double       lift    = radius - torus.hubRadiusM;
+    const double       middle  = 0.5 * (ceiling + torus.hubRadiusM);
+    const int          towns   = spec.settlements.townsPerValley;
+    const double       spoke   = torus.spokeAngle(0);
+    // Half way between the first two spokes (or round from the start, with none).
+    const double between =
+        torus.spokes > 0 ? 0.5 * (torus.spokeAngle(0) + torus.spokeAngle(1)) : 0.5;
+    const double     step   = 60.0 / radius;  // radians round, between stops on the floor
+    constexpr double kAlong = 90.0;           // yaw along the land: spinward, round the axis
+    const Vec3d      glass  = torus.tubePoint(between, kPi, -10.0);  // just under the windows
+
+    Tour first;
+    first.name  = std::format("{} in five minutes", name);
+    first.blurb = "The whole place, from the floor of the tube to the hub.";
+    first.stops = {
+        under(lit(at(std::format("You are standing at the bottom of a tube {} across, bent round "
+                                 "into a wheel {} across that turns once every {}. The land runs "
+                                 "{} round it: you could walk it in about {:.0f} minutes.",
+                                 spanText(tube), spanText(wheel), periodText(period),
+                                 spanText(round), round / 1.4 / 60.0),
+                     place(geometry, 0.0, between, 1.7), kAlong, 4.0, 0.5, 10.0, 2.0),
+                  50.0),
+              "fair"),
+        at("Look along the ring: the floor curves up ahead of you until the ceiling hides it. "
+           "Wherever you stand, you are at the bottom.",
+           place(geometry, 0.0, between + step, 12.0), kAlong, 6.0, 5.0, 9.0),
+        at(std::format("Over you is the ceiling, {} up. The part facing the hub is glass, and "
+                       "the daylight comes in through it, thrown out from mirrors round the hub.",
+                       spanText(tube)),
+           place(geometry, 0.0, between + (1.5 * step), 20.0), kAlong, 70.0, 5.0, 9.0),
+        at(std::format("The land climbs the tube's sides on either hand, {} to the edge of the "
+                       "fields, and terraces go on up to the ceiling. Up there you weigh {:.2f} of "
+                       "what you do at the bottom.",
+                       spanText(climb), weight),
+           place(geometry, 0.8 * edge, between + (2.0 * step), 1.7), 0.0, 18.0, 6.0, 10.0),
+        at(std::format("People live here: {} beside the feet of the spokes, a tram round the "
+                       "ring down their main streets, and farms in the sections between.",
+                       counted(towns, "village", "villages")),
+           place(geometry, 0.0, spoke + (150.0 / radius), 40.0), kAlong, -22.0, 8.0, 9.0, 4.0),
+        at(std::format("Each spoke has a lift, {} from the floor up through the ceiling to the "
+                       "hub. It slows gently at the top, where you weigh next to nothing.",
+                       spanText(lift)),
+           onAxis(0.0, spoke + (5.0 / radius), radius - 40.0), kAlong + 180.0, 60.0, 8.0, 9.0),
+        at(std::format("Half way up the spoke the gravity is half gone, {:.2f} g: it is made by "
+                       "the spin, and the spin reaches you through the floor.",
+                       middle / radius * spec.surfaceGravityG),
+           onAxis(0.0, spoke, middle), kAlong, 80.0, 10.0, 8.0),
+        at(std::format("In the hub, {:.2f} g. Ring upon ring of mirrors stand round it outside, "
+                       "and above hangs the great mirror that feeds them the sunlight.",
+                       0.6 * torus.hubRadiusM / radius * spec.surfaceGravityG),
+           onAxis(0.0, spoke, 0.6 * torus.hubRadiusM), kAlong, 0.0, 10.0, 10.0, 9.0),
+    };
+
+    Tour day;
+    day.name  = "How the hub's mirrors make a day";
+    day.blurb = "Sunrise to nightfall from one spot.";
+    TourStop morning =
+        lit(at("Morning. The wheel's axis points at the ecliptic's pole, so the Sun is off to "
+               "the side. A mirror over the hub, fixed at 45 degrees and turned once a year, sends "
+               "its light down the axis to a ring of mirrors round the hub, which throw it out to "
+               "every part of the ring.",
+               place(geometry, 0.0, between, 24.0), kAlong, 30.0, 0.5, 11.0),
+            80.0);
+    morning.weather = std::string("fair");
+    day.stops       = {
+        std::move(morning),
+        lit(at("Noon. The light comes straight down from the hub, through the windows in the "
+               "ceiling, and every shadow stands under what casts it.",
+               place(geometry, 0.0, between, 24.0), kAlong, 55.0, 4.0, 8.0),
+            45.0),
+        lit(at("Evening. The ring's mirrors lean the light across the tube, and the ceiling's "
+               "metal "
+               "shades the high terraces on one side first.",
+               place(geometry, 0.0, between, 24.0), 0.0, 20.0, 4.0, 8.0),
+            88.0),
+        lit(at(std::format("Past ninety degrees the louvres close, and the windows show the real "
+                           "stars streaming past, a full turn every {}.",
+                           periodText(period)),
+               glass, kAlong, 60.0, 8.0, 12.0),
+            110.0),
+    };
+
+    Tour sky;
+    sky.name  = "The sky outside";
+    sky.blurb = "What you see through the ceiling, and why it streams past.";
+    sky.stops = {
+        under(lit(at(std::format("The windows face the hub. Through them the stars stream past "
+                                 "once every {}, round the ecliptic's pole; across the view runs "
+                                 "the far side of the ring, {} away.",
+                                 periodText(period), spanText(2.0 * ceiling)),
+                     glass, kAlong, 70.0, 0.5, 14.0),
+                  115.0),
+              "clear"),
+        at("Earth and the Moon lie close to the plane of the wheel, so the far side of the ring "
+           "hides them most of the time. Look for them just above or below it.",
+           glass, kAlong, 45.0, 5.0, 14.0, 4.0),
+    };
+    return {std::move(first), std::move(day), std::move(sky)};
+}
+
 }  // namespace
 
 std::vector<Tour> habitatTours(const HabitatGeometry& geometry, std::string_view name)
@@ -396,6 +512,10 @@ std::vector<Tour> habitatTours(const HabitatGeometry& geometry, std::string_view
     if (geometry.kind() == HabitatKind::KALPANA_CYLINDER)
     {
         return kalpanaTours(geometry, name);
+    }
+    if (const auto& torus = geometry.enclosure().torus())
+    {
+        return torusTours(geometry, *torus, name);
     }
     if (geometry.kind() == HabitatKind::BERNAL_SPHERE)
     {

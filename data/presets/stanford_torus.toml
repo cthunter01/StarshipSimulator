@@ -1,0 +1,86 @@
+# StarshipSimulator habitat scenario
+format_version = 1
+generator_version = 7
+title = "Stanford Torus"
+description = "A wheel 1.8 km across turning once a minute, the NASA-Stanford design for ten thousand people (1975). The land runs 5.6 km round the bottom of a tube 130 m across and climbs its sides on either hand; the windows are in the ceiling, facing the hub, and six spokes lead up to it."
+
+# The axis points at the ecliptic's pole, so the wheel never has to be turned to follow the Sun: a
+# mirror over the hub, turned once a year, sends the light down the axis onto a ring of mirrors round
+# the hub, which throws it out through the ceiling's windows. Louvres close them at night.
+[habitat]
+type = "stanford_torus"
+radius_m = 895.0
+surface_gravity_g = 1.0
+population_density_per_km2 = 19700.0
+
+# The tube round the wheel, and what connects it to the hub.
+[habitat.torus]
+tube_radius_m = 65.0
+hub_radius_m = 65.0
+spokes = 6
+spoke_radius_m = 7.5
+land_half_angle_deg = 40.0
+ceiling_window_share = 0.333
+sections = 6
+shield_m = 1.7
+
+# The day schedule sets how far the louvres open: 45 degrees is full day, 90 dusk.
+[habitat.mirrors]
+opening_angle_deg = 50.0
+reflectivity = 0.9
+
+# Half an atmosphere, as the study chose: oxygen at nearly its sea-level pressure, less nitrogen,
+# so a lighter hull holds it in.
+[habitat.atmosphere]
+surface_pressure_kpa = 51.5
+temperature_k = 293.0
+
+[habitat.terrain]
+seed = 1975
+hill_height_m = 2.0
+mountain_height_m = 4.5
+feature_size_m = 60.0
+river_width_m = 0.0
+lakes_per_valley = 2
+lake_radius_m = 12.0
+forest_cover = 0.25
+
+# Villages beside the feet of the spokes, and farms between them, all the way round. No river:
+# the spokes come down on the bottom of the tube, the only place water could lie.
+[habitat.settlements]
+towns_per_valley = 3
+town_radius_m = 90.0
+farms_per_valley = 6
+
+# Where the visit begins: on the land, along it (round the axis) and across it.
+[start]
+band = 0
+along_m = 0.0
+across_m = 10.0
+heading_deg = 0.0
+
+# Where the habitat is and when the visit begins (UTC).
+[sky]
+location = "earth_moon_l5"
+start = "2045-06-15T09:00:00Z"
+utc_offset_hours = 0.0
+
+# The louvres' daily swing (local time): 90 degrees at sunrise and sunset.
+[day]
+enabled = true
+day_length_hours = 14.0
+sunrise_hour = 6.0
+noon_angle_deg = 45.0
+night_angle_deg = 105.0
+
+# Weather: no cloud forms under a ceiling 130 m up; only a morning mist over the water.
+[climate]
+cloud_base_m = 50.0
+cloud_top_m = 102.0
+cloudiness = 0.0
+raininess = 0.0
+wind_speed_ms = 1.0
+mistiness = 0.4
+year_days = 40.0
+season_swing_hours = 1.5
+season_at_epoch = 0.153

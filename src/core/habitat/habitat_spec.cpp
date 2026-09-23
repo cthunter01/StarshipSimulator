@@ -292,13 +292,12 @@ std::vector<std::string> validate(const HabitatSpec& spec)
 bool habitatKindBuilt(HabitatKind kind)
 {
     // Every kind can be described and saved; the worlds inside them arrive one M8 step at a time.
-    return kind == HabitatKind::ONEILL_CYLINDER || kind == HabitatKind::KALPANA_CYLINDER ||
-           kind == HabitatKind::BERNAL_SPHERE;
+    return kind != HabitatKind::BISHOP_RING;
 }
 
 bool axisPointsAtSun(HabitatKind kind)
 {
-    return kind != HabitatKind::KALPANA_CYLINDER;
+    return kind != HabitatKind::KALPANA_CYLINDER && kind != HabitatKind::STANFORD_TORUS;
 }
 
 HabitatSpec normalizedForKind(const HabitatSpec& spec)
@@ -409,6 +408,30 @@ double headroomM(const HabitatSpec& spec)
             break;
     }
     return spec.radiusM;
+}
+
+int torusSectionAt(const TorusSpec& torus, double theta)
+{
+    if (torus.sections <= 0)
+    {
+        return -1;
+    }
+    const double arc   = 2.0 * kPi / static_cast<double>(torus.sections);
+    const double turns = (theta / arc) + 0.5;
+    const auto   index = static_cast<long long>(std::floor(turns));
+    const auto   count = static_cast<long long>(torus.sections);
+    return static_cast<int>(((index % count) + count) % count);
+}
+
+bool torusKeepsOut(const TorusSpec& torus, double theta, bool towns)
+{
+    const int section = torusSectionAt(torus, theta);
+    if (section < 0)
+    {
+        return false;
+    }
+    const bool townSection = section % 2 == 0;
+    return towns ? !townSection : townSection;
 }
 
 }  // namespace StarshipSimulator

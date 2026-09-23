@@ -61,7 +61,8 @@ void main()
 
     vec4  cover = texture(coverMap, heightUv(inCell));
     vec2  uv    = vec2(theta * landscape.heights.w, inCell.y * cellU);  // metres: around, along
-    vec3  albedo = onFloor ? valleyAlbedo(uv, p, cover.r, cover.g) : endcapAlbedo(p, n, cover.r);
+    vec3  albedo = onFloor ? valleyAlbedo(uv, p, cover.r, cover.g)
+                           : (torusTube() ? tubeWallAlbedo(p, n, cover.r) : endcapAlbedo(p, n, cover.r));
     // Towns: streets, squares and gardens (only looked up where the cover map marks a town).
     vec3 plan      = vec3(theta * landscape.heights.w, profile.x, uv.y);  // around, z, arc
     vec3 planDx    = dFdx(plan);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <vector>
 
 #include "StarshipSimulator/core/math.h"
@@ -25,10 +26,20 @@ struct StaticHull
     std::vector<Vec3f> points;
 };
 
+/// Triangles, as a surface to collide with (a torus's ceiling, spokes and hub): vertices relative
+/// to `origin`, three indices to a triangle.
+struct StaticMesh
+{
+    Vec3d                      origin{0.0};
+    std::vector<Vec3f>         vertices;
+    std::vector<std::uint32_t> indices;
+};
+
 struct StaticColliders
 {
     std::vector<StaticBox>  boxes;
     std::vector<StaticHull> hulls;
+    std::vector<StaticMesh> meshes;
 };
 
 /// The rotation that takes local axes (x across, y up, z along) to the habitat frame at a point on

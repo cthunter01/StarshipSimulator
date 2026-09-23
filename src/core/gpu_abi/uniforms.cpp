@@ -93,7 +93,15 @@ HabitatUniforms makeHabitatUniforms(const HabitatGeometry& geometry, double open
     std::size_t index = 0;
     for (const SunBeam& beam : sunBeams(geometry, openingAngle))
     {
-        if (index < kMaxSunBeams)
+        if (index < kMaxSunBeams && beam.hubTilt)
+        {
+            // Light from a torus's hub: its lean, as (how much up, 0, how much along the axis).
+            habitat.beams.at(index) =
+                Vec4f(Vec4d(std::cos(*beam.hubTilt), 0.0, std::sin(*beam.hubTilt), beam.intensity));
+            habitat.light.x = 2.0F;
+            ++index;
+        }
+        else if (index < kMaxSunBeams)
         {
             habitat.beams.at(index) =
                 Vec4f(Vec4d(beam.image.value_or(beam.towardSun), beam.intensity));
@@ -102,7 +110,15 @@ HabitatUniforms makeHabitatUniforms(const HabitatGeometry& geometry, double open
         }
     }
     habitat.light.y = static_cast<float>(index);
-    if (habitat.light.x > 0.5F)
+    if (const auto& torus = geometry.enclosure().torus())
+    {
+        // The tube the light has to reach through its ceiling's windows, and the hub it comes
+        // from with the ring of mirrors round it.
+        habitat.light.z = static_cast<float>(torus->centreRadiusM);
+        habitat.band.w  = static_cast<float>(torus->tubeRadiusM);
+        habitat.shape.w = static_cast<float>(torus->windowHalfAngle);
+    }
+    else if (habitat.light.x > 0.5F)
     {
         // The glass the images shine through: a cylinder's end, or a sphere's polar window.
         const bool sphere = geometry.kind() == HabitatKind::BERNAL_SPHERE;
@@ -112,7 +128,8 @@ HabitatUniforms makeHabitatUniforms(const HabitatGeometry& geometry, double open
     }
     if (geometry.band(0).axis == BandAxis::AROUND)
     {
-        habitat.band = Vec4f(Vec4d(1.0, 2.0 * kPi * geometry.radius(), 0.0, 0.0));
+        habitat.band.x = 1.0F;
+        habitat.band.y = static_cast<float>(2.0 * kPi * geometry.radius());
     }
     // How far the cloud deck fades in from the land's ends (it thins toward the endcaps): 400 m in
     // a cylinder kilometres long, less where the land is only a few hundred metres across.
@@ -138,6 +155,13 @@ HabitatUniforms makeHabitatUniforms(const HabitatGeometry& geometry, double open
                                         geometry.radius() * std::sin(geometry.windowHalfAngle()),
                                         geometry.floorZMin()));
     habitat.sun           = Vec4f(0.0F, 0.0F, 1.0F, static_cast<float>(kSunAngularRadius));
+    if (const auto& torus = geometry.enclosure().torus())
+    {
+        // A torus has no mirrors along its hull: the ring of mirrors round its hub, how far they
+        // lean the light, and between how many spokes.
+        habitat.mirror = Vec4f(
+            Vec4d(openingAngle, hubLightTilt(openingAngle), torus->hubRadiusM, torus->spokes));
+    }
 
     // The cloud deck, as radii from the axis; how much sunlight it lets through when overcast.
     const double base = geometry.radius() - clouds.baseM;

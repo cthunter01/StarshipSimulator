@@ -14,6 +14,7 @@
 #include "StarshipSimulator/core/habitat/MeridianProfile.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
 #include "StarshipSimulator/core/math.h"
+#include "StarshipSimulator/core/procgen/enclosure_mesh.h"
 #include "StarshipSimulator/core/procgen/mesh.h"
 
 namespace StarshipSimulator
@@ -474,7 +475,7 @@ std::vector<Job> planJobs(const HabitatGeometry& geometry, const Grid& grid,
         jobs.push_back(capJob(-1.0));
         jobs.push_back(capJob(1.0));
     }
-    else
+    else if (geometry.kind() != HabitatKind::STANFORD_TORUS)  // its ceiling is built separately
     {
         addEndDisks(geometry, jobs);
     }
@@ -572,6 +573,11 @@ HabitatMeshes buildHabitatMeshes(const HabitatGeometry& geometry, const MeshingS
 
     HabitatMeshes meshes;
     meshes.chunks = std::move(chunks);
+    // A torus's ceiling, spokes and hub, and its hull.
+    for (MeshChunk& chunk : buildEnclosureMeshes(geometry, settings.cellSizeM))
+    {
+        meshes.chunks.push_back(std::move(chunk));
+    }
     for (const MeshChunk& chunk : meshes.chunks)
     {
         meshes.vertexCount += chunk.mesh.vertices.size();

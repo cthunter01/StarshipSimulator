@@ -26,17 +26,19 @@ Each builds into `build/<preset>/`; never edit anything under `build/`. A preset
 platforms it supports (`gcc-*`: Linux; `clang-*`: Linux and macOS; `msvc-*`: Windows); `cmake --list-presets`
 shows this machine's. CI (`.github/workflows/ci.yml`) runs `ci-gcc`, `ci-clang`, `asan` and `tidy` on Linux,
 `ci-clang` on macOS and `ci-msvc` on Windows, and checks formatting. The macOS runners have a Metal GPU, so that
-job also runs the app: it renders Island Three's town and valley, Kalpana One's valley and Island One's lookup and
-pole views with Metal's API validation on (any misuse fails the job) and keeps the pictures with the run.
+job also runs the app: it renders Island Three's town and valley, Kalpana One's valley, Island One's lookup and
+pole views and the Stanford torus's valley and spoke with Metal's API validation on (any misuse fails the job)
+and keeps the pictures with the run.
 
 ## Checking visuals yourself
 The app can render and save a screenshot without interaction, then exit:
 `build/clang-debug/bin/StarshipSimulator --size 1280x720 --view lookup [--mirror 30] --capture out.png [--capture-ui]`
 Views: valley, river, lake, town, street, rooftops, tram, lift, hub, lookup, window, endcap, ramp, sunward,
-axis, overview, pole (a sphere's polar window) (or `--camera x,y,z,yaw,pitch` in the
-habitat frame; `--scenario data/presets/coriolis_playground.toml` for the small habitat,
-`data/presets/kalpana_one.toml` for one whose land runs round the axis, `data/presets/island_one.toml` for the
-Bernal sphere). Write captures to the
+axis, overview, pole (a sphere's polar window), spoke (half way up a torus's spoke) (or
+`--camera x,y,z,yaw,pitch` in the habitat frame; `--scenario data/presets/coriolis_playground.toml` for the
+small habitat, `data/presets/kalpana_one.toml` for one whose land runs round the axis,
+`data/presets/island_one.toml` for the Bernal sphere, `data/presets/stanford_torus.toml` for the torus: its
+`hub`, `lift` and `window` views ride and look up the spokes). Write captures to the
 scratchpad and inspect them with the Read tool before reporting visual work as done. The window opens briefly
 on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs. There is no Mac here: to see what Metal
 draws, push and fetch the pictures of the macOS CI job, `gh run download <run id> -n metal-pictures`
@@ -84,9 +86,15 @@ draws, push and fetch the pictures of the macOS CI job, `gh run download <run id
   - `habitat/`: `HabitatSpec` (the shareable description of any kind of habitat: `HabitatKind` is an O'Neill
     cylinder, a Kalpana cylinder, a Stanford torus, a Bernal sphere or a Bishop ring, with the fields a kind
     does not use ignored; `habitatKindBuilt` says which kinds the M8 steps have made buildable so far:
-    the O'Neill and Kalpana cylinders and the Bernal sphere; `axisPointsAtSun` is false for Kalpana One,
-    whose axis points at the ecliptic's pole, `astro::SpinAxis::ECLIPTIC_NORTH`; `normalizedForKind` gives
-    only an O'Neill cylinder a partner). A Bernal sphere's floor profile runs from the rim of one polar
+    all but the Bishop ring; `axisPointsAtSun` is false for Kalpana One and the Stanford torus, whose axes
+    point at the ecliptic's pole, `astro::SpinAxis::ECLIPTIC_NORTH`; `normalizedForKind` gives
+    only an O'Neill cylinder a partner). A Stanford torus's floor profile is the outer half of its tube; the
+    ceiling, the spokes and the hub are `Enclosure`'s `TorusShape` (`contains`, and `clampInside`, which keeps
+    the player under the ceiling) and `procgen/enclosure_mesh`; its land is the bottom of the tube, its walls
+    are terraced (`terraceHeight`: level shelves at one radius, which the terrain grid takes at full
+    resolution), its sections alternate towns (beside the spokes' feet) and farmland (`torusSectionAt`), and
+    it has no river: the spokes come down on the tube's lowest line, where water would lie. It shares the
+    sphere's rules for a floor that curves up away from the land (`floorCurves`). A Bernal sphere's floor profile runs from the rim of one polar
     window to the other, so its glass caps are separate meshes like Kalpana One's glass ends; its land is
     the band within `SphereSpec::landLatitudeDeg` of the equator, its water lies level at one radius
     (`HabitatGeometry::waterLevelAt`, deeper under the floor away from the equator, and only where the
@@ -98,14 +106,17 @@ draws, push and fetch the pictures of the macOS CI job, `gh run download <run id
     out on a band's plan, x across and y along, left-handed like a valley's so one layout works on both),
     `Enclosure` (the air inside: where people and cameras can be), `Landscape` (rivers, lakes, shore shaping,
     woodland), `mirror_optics` (where the sun
-    appears, day/night, which beam lights a point; in Kalpana One and the Bernal sphere two sun images at
+    appears, day/night, which beam lights a point; in a torus one beam thrown out from the hub, from straight
+    up everywhere and leaning `hubLightTilt` across the tube (`SunBeam::hubTilt`), which `beamReach` lets in
+    only through the ceiling's glass; in Kalpana One and the Bernal sphere two sun images at
     points on the axis beyond the glass ends or polar windows, `SunBeam::image`, so the light comes from a
     different direction at every point: `towardSunFrom`; a sphere's walls are opaque, so `beamReach`
     checks where the ray toward an image leaves it, and `polarWindowElevation` never lets the images
     sink below half the window's latitude, or no light would reach the equator), `day_schedule` (mirror angle by local time),
     `weather` (`ClimateSpec`, `weatherAt`: cloud, rain, wetness, mist, wind and the season as a smooth function
     of time, never simulated or remembered, so two people at the same moment see the same sky; `seasonalDay`
-    stretches the day schedule over the year)
+    stretches the day schedule over the year; a cloudiness of 0 means no cloud ever, as under a torus's
+    ceiling)
   - `tour.h`: guided tours (`habitatTours(geometry, name)` builds them for the habitat you are in,
     `tourAt` gives the eye, the angles and the caption at a moment). Stops hold a viewpoint, a
     caption, how long the move to it takes and how long it is held, and may set the mirror angle,
@@ -130,7 +141,9 @@ draws, push and fetch the pictures of the macOS CI job, `gh run download <run id
   - `procgen/`: deterministic noise, `terrain_grid` (the valley floor and endcaps sampled into a height field
     and land-cover map, the GPU's source), `TerrainLod` (CDLOD quadtree: patches and morph ranges),
     `trees` (procedural species meshes, planting in tiles), `habitat_mesher` (chunked meshes; the app
-    meshes only the glass and end walls, the landscape pass draws the land), `hull_mesh` (the outside, for the
+    meshes only the glass and end walls, the landscape pass draws the land), `enclosure_mesh` (a torus's
+    ceiling with its windows, its spokes and hub inside and out, and its hull: `material::kHull`, lit by the
+    real Sun; `enclosureColliders` makes the inside solid), `hull_mesh` (the outside, for the
     partner cylinder, and `partnerTransform`), placeholder star field, mesh primitives,
     `settlements` (towns and farms planned on the unrolled floor: streets that follow the river, lots,
     houses, square, bridge, river front, props, town trees, 1 m ground maps; `stampSettlements` marks them
@@ -144,7 +157,9 @@ draws, push and fetch the pictures of the macOS CI job, `gh run download <run id
     `transit` (a tramway down each valley calling at its towns, a funicular up each endcap's ramp to the
     hub, or up a sphere's polar slope to the window's rim, the track's mesh in chunks, and where every car is at a moment; where the land runs round the
     axis a `LineKind::LOOP` at one z instead, graded column by column, its trams always going the same
-    way round). A line's alignment is
+    way round; in a torus also a `LineKind::SPOKE` lift up each spoke from a station on the floor to the
+    hub, a cabin (`Tram::lift`, `buildLiftMesh`) that eases in near the hub, where a hard stop would throw
+    you off its floor). A line's alignment is
     smoothed into something buildable -- as straight as it can be inside a band around the ground,
     then rounded into vertical curves -- and `gradeForTrack` cuts and fills the terrain grid to it,
     with side slopes at a constant angle and the woods cleared. Where the ground falls more than a
@@ -176,7 +191,9 @@ draws, push and fetch the pictures of the macOS CI job, `gh run download <run id
   trunks per tree tile near the player; the player is a `CharacterVirtual` stood along the local up
   every step, and inherits the velocity of whatever it is standing on, so a tram carries you. `setPeople`
   and `setTrams` keep pools of kinematic bodies where the nearest people and cars are, so you bump into
-  them and can ride on them. No SDL or render includes (layering test). Include Jolt only through
+  them and can ride on them (a lift's cabin is its own pool, floor, sides and roof). `StaticColliders::meshes`
+  are triangle surfaces (a torus's ceiling, spokes and hub); props are swept (`LinearCast`) so a fast throw
+  cannot pass through them. No SDL or render includes (layering test). Include Jolt only through
   `src/physics/jolt.h`
   (Jolt.h must come first). Jolt is built with `-O2` even in Debug. Unit tests link core and physics
 - `audio` (`StarshipSimulator_audio`): `AudioDevice`, SDL's audio device pulling frames from `core/audio`'s
@@ -217,6 +234,8 @@ draws, push and fetch the pictures of the macOS CI job, `gh run download <run id
   `include/habitat.glsl` holds the shared air (aerial perspective) and sunlight (mirror beams) models
   (loop over `beamCount()` and light along `beamDirection(p, i)`, never `habitat.beams[i].xyz`: in
   Kalpana One and the sphere the beams are points; `sphericalHull()` adds the sphere's aperture;
+  `hubLight()` is a torus's light from the hub and `torusTube()` / `inTube(p)` its tube, outside which the
+  air is empty space (the view across the wheel through the windows);
   `landRunsRound()` says the land's arc coordinate wraps, so its patterns must too, see `landNoise`); new
   habitat uniforms are appended, never inserted, or use a lane that is still free;
   `include/landscape.glsl`'s `waterLevel(profile)` is the water's surface on a row (level at one radius on a
@@ -278,7 +297,8 @@ draws, push and fetch the pictures of the macOS CI job, `gh run download <run id
   `+`) is worked out first, so `f(rng.uniform(), rng.uniform())` hands the two values over in
   whichever order the compiler chose, and the same habitat file then grows a different town under a
   different compiler. Put each draw in its own named variable first. `determinism_tests` hashes whole
-  generated worlds (a small Island Three, the Coriolis Playground, Kalpana One and Island One presets) against one
+  generated worlds (a small Island Three, the Coriolis Playground, Kalpana One, Island One and Stanford torus
+  presets) against one
   value each for
   every compiler and standard library CI runs (GCC and Clang with libstdc++, Apple Clang with libc++,
   MSVC); when generation changes on purpose, bump `Scenario::kGeneratorVersion` and record the new hashes.

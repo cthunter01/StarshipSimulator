@@ -16,9 +16,11 @@ layout(location = 0) out vec4 outColor;
 const float REFLECTIVITY = 0.9;
 
 // What the mirror reflects: the Sun (with a little glare from dust and imperfections) and space.
+// The ring of mirrors round a torus's hub sees it up the axis, in the mirror over the hub.
 vec3 skyRadiance(vec3 direction)
 {
-    float cosAngle = dot(direction, habitat.sun.xyz);
+    vec3  sun      = hubLight() && inUv.y > 1.5 ? vec3(0.0, 0.0, 1.0) : habitat.sun.xyz;
+    float cosAngle = dot(direction, sun);
     float disk     = smoothstep(cos(habitat.sun.w * 1.05), cos(habitat.sun.w * 0.95), cosAngle);
     float glare    = pow(max(cosAngle, 0.0), 3000.0) * 3.0 + pow(max(cosAngle, 0.0), 200.0) * 0.15;
     return habitat.sunColor.rgb * (disk * 120.0 + glare);
@@ -35,7 +37,8 @@ void main()
     if (dot(view, normal) < 0.0)
     {
         // Dust and panel imperfections scatter a little sunlight, so the mirror reads as a surface.
-        vec3 scatter = habitat.sunColor.rgb * 0.004 * max(dot(normal, habitat.sun.xyz), 0.0) *
+        vec3 sun     = hubLight() && inUv.y > 1.5 ? vec3(0.0, 0.0, 1.0) : habitat.sun.xyz;
+        vec3 scatter = habitat.sunColor.rgb * 0.004 * max(dot(normal, sun), 0.0) *
                        (0.8 + 0.4 * valueNoise(inUv * vec2(24.0, 120.0)));
         color = mix(REFLECTIVITY * skyRadiance(reflect(view, normal)) + scatter, vec3(0.02), seams);
     }

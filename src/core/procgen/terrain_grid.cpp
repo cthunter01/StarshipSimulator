@@ -198,11 +198,12 @@ TerrainGrid sampleTerrain(const HabitatGeometry& geometry, double targetCellM, u
     const std::uint32_t coarseRows    = (layout.cells / 2) + 1;
     std::vector<float>  natural(static_cast<std::size_t>(coarseRows) * coarseColumns);
     parallelFor(coarseRows, threads, [&](std::uint32_t row) {
-        const double z = profile.pointAt(layout.arc(2.0 * row)).x;
+        const double z       = profile.pointAt(layout.arc(2.0 * row)).x;
+        const double terrace = geometry.terraceHeight(z);  // added back below, at full resolution
         for (std::uint32_t column = 0; column < coarseColumns; ++column)
         {
             natural[(static_cast<std::size_t>(row) * coarseColumns) + column] =
-                static_cast<float>(geometry.naturalHeight(z, layout.theta(2.0 * column)));
+                static_cast<float>(geometry.naturalHeight(z, layout.theta(2.0 * column)) - terrace);
         }
     });
     const auto coarse = [&](std::int64_t column, std::int64_t row) {
@@ -219,8 +220,9 @@ TerrainGrid sampleTerrain(const HabitatGeometry& geometry, double targetCellM, u
         const auto                     z = static_cast<double>(grid.profile[row].x);
         const std::span<std::uint16_t> out(
             &grid.heights[static_cast<std::size_t>(row) * layout.columns], layout.columns);
-        const auto   r0 = static_cast<std::int64_t>(row / 2);
-        const double fr = (row % 2) * 0.5;
+        const auto   r0      = static_cast<std::int64_t>(row / 2);
+        const double fr      = (row % 2) * 0.5;
+        const double terrace = geometry.terraceHeight(z);
         for (std::uint32_t column = 0; column < layout.columns; ++column)
         {
             const auto   c0 = static_cast<std::int64_t>(column / 2);
@@ -243,8 +245,8 @@ TerrainGrid sampleTerrain(const HabitatGeometry& geometry, double targetCellM, u
                     0.0, catmullRom(rowValues[0], rowValues[1], rowValues[2], rowValues[3], fr));
             }
             const double theta = layout.theta(column);
-            h           = landscape.shape(h, landscape.shoreDistance(z, theta, kShapingReachM),
-                                          geometry.waterLevelAt(z));
+            h = landscape.shape(h + terrace, landscape.shoreDistance(z, theta, kShapingReachM),
+                                geometry.waterLevelAt(z));
             out[column] = static_cast<std::uint16_t>(
                 std::lround(std::clamp((h - low) / range, 0.0, 1.0) * 65535.0));
         }

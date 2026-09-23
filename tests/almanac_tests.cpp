@@ -200,3 +200,46 @@ TEST(Almanac, WorksWithoutASkyOrAHabitatToDescribe)
 }
 
 }  // namespace
+
+namespace
+{
+
+TEST(Almanac, TellsTheStanfordTorussOwnStory)
+{
+    HabitatSpec spec;
+    spec.kind                         = HabitatKind::STANFORD_TORUS;
+    spec.radiusM                      = 895.0;
+    spec.torus.landHalfAngleDeg       = 40.0;
+    spec.atmosphere.surfacePressurePa = 51500.0;
+    const HabitatGeometry geometry{spec};
+    AlmanacState          state;
+    state.geometry = &geometry;
+    state.metrics  = computeMetrics(spec);
+    // Standing 30 degrees up the tube's side.
+    const double z       = 65.0 * std::sin(degreesToRadians(30.0));
+    state.eye            = Vec3d(geometry.floorRadiusAt(z) - 1.7, 0.0, z);
+    state.mirrorAngleRad = degreesToRadians(50.0);
+    std::string text;
+    for (const AlmanacPage& page : almanacPages(state))
+    {
+        text += page.title + page.story;
+        for (const AlmanacFact& fact : page.facts)
+        {
+            text += fact.label + fact.value + fact.note;
+        }
+    }
+    EXPECT_NE(text.find("a wheel 1.79 km across, its tube 130.0 m"), std::string::npos) << text;
+    EXPECT_NE(text.find("Stanford"), std::string::npos);
+    EXPECT_NE(text.find("1975"), std::string::npos);
+    EXPECT_NE(text.find("spoke"), std::string::npos);
+    EXPECT_NE(text.find("ecliptic"), std::string::npos);
+    EXPECT_NE(text.find("of what it is at the bottom of the tube"), std::string::npos);
+    EXPECT_NE(text.find("lunar soil"), std::string::npos);
+    for (const char* wrong : {"valley", "cylinder", "polar", "eight kilometres", "Eight kilometres",
+                              "km^3", "far side of the land"})
+    {
+        EXPECT_EQ(text.find(wrong), std::string::npos) << wrong;
+    }
+}
+
+}  // namespace

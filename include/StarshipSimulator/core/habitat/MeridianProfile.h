@@ -51,8 +51,8 @@ private:
 [[nodiscard]] MeridianProfile buildOneillProfile(const HabitatSpec& spec);
 
 /// The floor's profile for any kind of habitat (anti-sunward end first): a Bernal sphere's runs
-/// from the rim of one polar window to the other. Throws std::invalid_argument for a kind that
-/// cannot be built yet.
+/// from the rim of one polar window to the other, a Stanford torus's round the outer half of its
+/// tube. Throws std::invalid_argument for a kind that cannot be built yet.
 [[nodiscard]] MeridianProfile buildFloorProfile(const HabitatSpec& spec);
 
 }  // namespace StarshipSimulator

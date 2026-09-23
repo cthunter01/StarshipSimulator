@@ -82,8 +82,10 @@ AlmanacPage standingHere(const AlmanacState& state)
     const double           coriolis = 2.0 * geometry.omega() * speed;
 
     const bool sphere = geometry.kind() == HabitatKind::BERNAL_SPHERE;
-    // On a sphere the floor under you is nearer the axis the farther you are from the equator.
-    const double below = sphere ? geometry.floorRadiusAt(state.eye.z) : geometry.radius();
+    const bool torus  = geometry.kind() == HabitatKind::STANFORD_TORUS;
+    // On a sphere the floor under you is nearer the axis the farther you are from the equator (in
+    // a torus, the farther up the tube's side).
+    const double below = sphere || torus ? geometry.floorRadiusAt(state.eye.z) : geometry.radius();
 
     AlmanacPage page;
     page.title = "Standing where you are";
@@ -91,16 +93,22 @@ AlmanacPage standingHere(const AlmanacState& state)
         "Gravity here is made by the spin, and the spin only reaches you through the floor. Climb "
         "toward the axis and it fades away in proportion to how far out you are: at the axis "
         "there is none at all, and the air is thinner because nothing is holding it down.";
-    page.facts.push_back({.label = "Distance from the axis",
-                          .value = metres(radius),
-                          .note = std::format("{:.0f}% of the way out to the floor{}",
-                                              100.0 * radius / below, sphere ? " under you" : "")});
+    page.facts.push_back(
+        {.label = "Distance from the axis",
+         .value = metres(radius),
+         .note  = std::format("{:.0f}% of the way out to the floor{}", 100.0 * radius / below,
+                              sphere || torus ? " under you" : "")});
     std::string weight;
     if (sphere && floor > 0.0)
     {
         const double latitude = radiansToDegrees(std::atan2(std::abs(state.eye.z), radius));
         weight = std::format("{:.0f}% of what it is at the equator; you are {:.0f} degrees from it",
                              100.0 * gravity / floor, latitude);
+    }
+    else if (torus && floor > 0.0)
+    {
+        weight =
+            std::format("{:.0f}% of what it is at the bottom of the tube", 100.0 * gravity / floor);
     }
     else if (floor > 0.0)
     {
@@ -134,10 +142,39 @@ bool sphere(const AlmanacState& state)
     return state.geometry->kind() == HabitatKind::BERNAL_SPHERE;
 }
 
+/// Whether the habitat is a Stanford torus: land round the bottom of a tube bent into a wheel.
+bool torus(const AlmanacState& state)
+{
+    return state.geometry->kind() == HabitatKind::STANFORD_TORUS;
+}
+
 /// Whether the habitat is small enough to count its land in hectares and its people one by one.
 bool small(const HabitatMetrics& metrics)
 {
     return metrics.landAreaM2 < 1e7;
+}
+
+/// Whether the habitat's air makes weather of its own, and what kind.
+std::string weatherRoom(const AlmanacState& state)
+{
+    if (torus(state))
+    {
+        return "too little for weather of its own: no cloud forms under the ceiling, only a "
+               "morning mist";
+    }
+    return kalpana(state) || sphere(state)
+               ? "enough for weather of its own: a low deck of cloud, rain and mist"
+               : "enough for weather of its own: cloud, rain and mist over the valleys";
+}
+
+/// What kind of hoop the habitat is, for the hull's story.
+const char* hoopName(const AlmanacState& state)
+{
+    if (sphere(state))
+    {
+        return "sphere";
+    }
+    return torus(state) ? "wheel" : "cylinder";
 }
 
 AlmanacPage theHabitat(const AlmanacState& state)
@@ -147,7 +184,28 @@ AlmanacPage theHabitat(const AlmanacState& state)
 
     AlmanacPage page;
     page.title = "This habitat";
-    if (sphere(state))
+    if (torus(state))
+    {
+        const HabitatGeometry& geometry = *state.geometry;
+        const TorusSpec&       tube     = spec.torus;
+        page.story                      = std::format(
+            "A wheel turning once a minute, with the land round the bottom of its rim: a tube "
+            "bent into a ring. This is the Stanford torus, drawn up at a NASA summer study at "
+            "Stanford in 1975 for ten thousand people. The land climbs the tube's sides on "
+            "either hand and is terraced on up to the ceiling; the half of the ceiling facing the "
+            "hub is glass. There is no far side overhead: only the ceiling, {} up, and through "
+            "its windows the rest of the wheel. {} spokes lead up to the hub, where there is next "
+            "to no gravity.",
+            metres(2.0 * tube.tubeRadiusM), tube.spokes);
+        page.facts.push_back(
+            {.label = "Size",
+             .value = std::format("a wheel {} across, its tube {}", metres(2.0 * spec.radiusM),
+                                  metres(2.0 * tube.tubeRadiusM)),
+             .note  = std::format(
+                 "{} round; the land {} wide; a hub {} across", metres(2.0 * kPi * spec.radiusM),
+                 metres(2.0 * geometry.band(0).halfWidthM), metres(2.0 * tube.hubRadiusM))});
+    }
+    else if (sphere(state))
     {
         const HabitatGeometry& geometry = *state.geometry;
         const double           edge     = geometry.floorZMax();
@@ -203,13 +261,11 @@ AlmanacPage theHabitat(const AlmanacState& state)
          .note  = small(metrics) ? std::format("room for about {:.0f} people", metrics.population)
                                  : std::format("room for about {:.1f} million people",
                                                metrics.population / 1e6)});
-    page.facts.push_back(
-        {.label = "Volume of air",
-         .value = metrics.volumeM3 < 1e9 ? std::format("{:.0f} million m^3", metrics.volumeM3 / 1e6)
-                                         : std::format("{:.0f} km^3", metrics.volumeM3 / 1e9),
-         .note  = kalpana(state) || sphere(state)
-                      ? "enough for weather of its own: a low deck of cloud, rain and mist"
-                      : "enough for weather of its own: cloud, rain and mist over the valleys"});
+    page.facts.push_back({.label = "Volume of air",
+                          .value = metrics.volumeM3 < 1e9
+                                       ? std::format("{:.0f} million m^3", metrics.volumeM3 / 1e6)
+                                       : std::format("{:.0f} km^3", metrics.volumeM3 / 1e9),
+                          .note  = weatherRoom(state)});
     if (state.towns > 0)
     {
         page.facts.push_back({.label = "Settled",
@@ -230,6 +286,13 @@ AlmanacPage theHabitat(const AlmanacState& state)
             lines =
                 std::format("a loop round the land and a funicular up to a window, with {} stops",
                             state.tramStops);
+        }
+        else if (torus(state))
+        {
+            lines = std::format(
+                "a tram round the ring and a lift up each spoke to the hub, with "
+                "{} stops",
+                state.tramStops);
         }
         page.facts.push_back({.label = "Transit",
                               .value = std::format("{:.0f} km of track", state.trackKm),
@@ -281,6 +344,17 @@ AlmanacPage spinAndGravity(const AlmanacState& state)
         {.label = "Walking",
          .value = std::format("{:.1f}% of your weight", 100.0 * metrics.coriolisWalkingRatio),
          .note  = "the sideways push at a walking pace; you feel it on stairs"});
+    if (torus(state))
+    {
+        // A spoke's lift climbs at 10 m/s: the push is sideways, round the wheel.
+        const double push = 2.0 * geometry.omega() * 10.0;
+        page.facts.push_back(
+            {.label = "Riding a lift up a spoke",
+             .value = std::format("{:.2f} m/s^2 sideways", push),
+             .note  = std::format("{:.0f}% of your weight at the bottom, and more than all of it "
+                                  "near the hub: the lift's walls hold you",
+                                  100.0 * push / metrics.floorGravity)});
+    }
     return page;
 }
 
@@ -370,6 +444,61 @@ AlmanacPage theShutters(const AlmanacState& state)
     return page;
 }
 
+/// A torus's day: the mirror over the hub, the ring of mirrors round it, the louvres.
+AlmanacPage theHubMirrors(const AlmanacState& state)
+{
+    const HabitatSpec& spec     = state.geometry->spec();
+    const double       angle    = state.mirrorAngleRad;
+    const double       daylight = daylightFactor(angle);
+    const double       lean     = radiansToDegrees(hubLightTilt(angle));
+
+    AlmanacPage page;
+    page.title = "The hub's mirrors and the day";
+    page.story = std::format(
+        "The wheel's axis points at the pole of the ecliptic, so the Sun is always off to the "
+        "side and the wheel never has to be turned to follow it. Over the hub hangs a flat mirror "
+        "at 45 degrees that does not turn with the wheel: it is turned once a year to face the "
+        "Sun, and sends the sunlight down the axis onto a ring of mirrors round the hub, which "
+        "throw it straight out along every radius, through the windows in the tube's ceiling. "
+        "The day schedule sets the ring: at noon the light comes straight down, in the evening "
+        "it leans across the tube, and at night the louvres close. In the 1975 design the "
+        "windows were louvres inside a shield of lunar soil {} thick, which stops cosmic rays "
+        "but lets reflected light round; here you see straight out.",
+        metres(spec.torus.shieldM));
+    page.facts.push_back({.label = "Mirror angle now",
+                          .value = std::format("{:.0f} degrees", radiansToDegrees(angle)),
+                          .note = std::format("45 is noon, 90 sunset; past 90 the louvres close")});
+    std::string light = std::format("leaning {:.0f} degrees across the tube", lean);
+    if (daylight <= 0.0)
+    {
+        light = "none";
+    }
+    else if (lean < 0.5)
+    {
+        light = "straight down from the hub";
+    }
+    page.facts.push_back({.label = "The light",
+                          .value = light,
+                          .note  = daylight > 0.0
+                                       ? "the ceiling's metal shades whatever cannot see the hub"
+                                       : "the louvres are closed and the windows show the stars"});
+    page.facts.push_back(
+        {.label = "Local time",
+         .value = hoursMinutes(state.localHour),
+         .note  = std::format("sunrise {}, sunset {}, a {:.1f} hour day",
+                              hoursMinutes(state.day.sunriseHour),
+                              hoursMinutes(sunsetHour(state.day)), state.weather.dayLengthHours)});
+    page.facts.push_back({.label = "Daylight",
+                          .value = std::format("{:.0f}%", 100.0 * daylight),
+                          .note  = "of what the mirrors can deliver at noon"});
+    page.facts.push_back(
+        {.label = "Windows",
+         .value = std::format("{:.0f} hectares of glass", state.metrics.windowAreaM2 / 1e4),
+         .note  = std::format("{:.0f}% of the tube's ceiling, the part facing the hub",
+                              100.0 * spec.torus.ceilingWindowShare)});
+    return page;
+}
+
 AlmanacPage theMirrors(const AlmanacState& state)
 {
     const double angle    = state.mirrorAngleRad;
@@ -377,6 +506,10 @@ AlmanacPage theMirrors(const AlmanacState& state)
     const double sunUp    = radiansToDegrees(sunElevation(angle));
 
     AlmanacPage page;
+    if (torus(state))
+    {
+        return theHubMirrors(state);
+    }
     if (kalpana(state) || sphere(state))
     {
         return theShutters(state);
@@ -423,7 +556,7 @@ AlmanacPage theHull(const AlmanacState& state)
         "the sum that decides whether it can be built does not care how big it is: only how fast "
         "the rim is moving. That is why a {} at one gravity can be made of steel, and why a "
         "ring the size of a continent cannot be made of anything that exists.",
-        sphere(state) ? "sphere" : "cylinder");
+        hoopName(state));
     page.facts.push_back(
         {.label = "The hull must hold",
          .value = std::format("{:.3f} MJ/kg", metrics.hoopSpecificStrength / 1e6),
@@ -437,7 +570,44 @@ AlmanacPage theHull(const AlmanacState& state)
     page.facts.push_back({.label = "Rim speed",
                           .value = std::format("{:.0f} m/s", metrics.rimSpeed),
                           .note  = "what the hull is holding on to"});
+    if (torus(state))
+    {
+        page.facts.push_back(
+            {.label = "The shield",
+             .value = std::format("{} of lunar soil", metres(state.geometry->spec().torus.shieldM)),
+             .note  = "round the tube, not turning with it, so it adds nothing to what the hull "
+                      "must hold"});
+    }
     return page;
+}
+
+/// How much air there is to see through, and what weather it makes.
+std::string airStory(const AlmanacState& state)
+{
+    const HabitatGeometry& geometry = *state.geometry;
+    if (torus(state))
+    {
+        return std::format(
+            "Only {} of air lies between you and the ceiling, and through its windows you look "
+            "across the wheel through empty space. No cloud forms under a ceiling so low; mist "
+            "lies in the bottom of the tube in the early morning. The study chose half an "
+            "atmosphere: oxygen at nearly the pressure you breathe at sea level, with less "
+            "nitrogen, so the hull has less to hold in.",
+            metres(geometry.spanAcrossM()));
+    }
+    if (kalpana(state) || sphere(state))
+    {
+        return std::format(
+            "{} of air lies between you and the ground overhead: enough to soften the far side a "
+            "little, not to hide it. The inside of the habitat is still its own weather system, "
+            "with a low deck of cloud that can close over the far side altogether.",
+            metres(2.0 * geometry.radius()));
+    }
+    return "Eight kilometres of air lies between you and the ground overhead -- about as much as "
+           "you look through straight up on Earth. That is why the far side is not sharp: it is "
+           "behind a veil of the same blue that makes a distant hill blue, and it is lit by "
+           "sunlight that has come the same distance. The whole inside of the habitat is its own "
+           "weather system.";
 }
 
 AlmanacPage theAir(const AlmanacState& state)
@@ -448,20 +618,7 @@ AlmanacPage theAir(const AlmanacState& state)
 
     AlmanacPage page;
     page.title = "The air and the view";
-    page.story =
-        kalpana(state) || sphere(state)
-            ? std::format(
-                  "{} of air lies between you and the ground overhead: enough to soften the "
-                  "far side a little, not to hide it. The inside of the habitat is still "
-                  "its own weather system, with a low deck of cloud that can close over "
-                  "the far side altogether.",
-                  metres(2.0 * geometry.radius()))
-            : "Eight kilometres of air lies between you and the ground overhead -- about as much "
-              "as "
-              "you look through straight up on Earth. That is why the far side is not sharp: it "
-              "is behind a veil of the same blue that makes a distant hill blue, and it is lit by "
-              "sunlight that has come the same distance. The whole inside of the habitat is its "
-              "own weather system.";
+    page.story = airStory(state);
     page.facts.push_back({.label = "Pressure at the floor",
                           .value = std::format("{:.1f} kPa", atmosphere.surfacePressurePa / 1000.0),
                           .note  = std::format("{:.0f}% of it still there at the axis",
@@ -470,18 +627,19 @@ AlmanacPage theAir(const AlmanacState& state)
         {.label = "Temperature at the axis",
          .value = std::format("{:.0f} K colder", metrics.axisTemperatureDropK),
          .note  = "if the air were left to mix freely, as it is in a tall column on Earth"});
-    page.facts.push_back({.label = "Across the habitat",
-                          .value = metres(2.0 * geometry.radius()),
-                          .note  = "of air between you and the land overhead"});
-    page.facts.push_back(
-        {.label = "The weather now",
-         .value = std::format("{:.0f}% cloud", 100.0 * state.weather.cloudCover),
-         .note =
-             state.weather.rain > 0.05
-                 ? std::format("raining; the ground is {:.0f}% wet", 100.0 * state.weather.wetness)
-                 : std::format(
-                       "wind {:.1f} m/s {}", state.weather.windAlongMS,
-                       kalpana(state) || sphere(state) ? "round the land" : "along the valley")});
+    page.facts.push_back({.label = torus(state) ? "Up to the ceiling" : "Across the habitat",
+                          .value = metres(geometry.spanAcrossM()),
+                          .note  = torus(state) ? "of air between you and the glass"
+                                                : "of air between you and the land overhead"});
+    page.facts.push_back({.label = "The weather now",
+                          .value = std::format("{:.0f}% cloud", 100.0 * state.weather.cloudCover),
+                          .note = state.weather.rain > 0.05
+                                      ? std::format("raining; the ground is {:.0f}% wet",
+                                                    100.0 * state.weather.wetness)
+                                      : std::format("wind {:.1f} m/s {}", state.weather.windAlongMS,
+                                                    kalpana(state) || sphere(state) || torus(state)
+                                                        ? "round the land"
+                                                        : "along the valley")});
     return page;
 }
 
@@ -505,6 +663,17 @@ AlmanacPage theSkyOutside(const AlmanacState& state)
               "minutes, so the whole sky wheels past the windows at a pace you can watch, around "
               "the point the axis is aimed at. Everything else -- the planets, the Earth, the "
               "Moon -- keeps its own time.";
+    if (torus(state))
+    {
+        page.story = std::format(
+            "The stars outside are the real ones, in their real places, for the date on the "
+            "clock. The axis points at the pole of the ecliptic, and the windows face the hub, "
+            "so through them the whole sky streams past once every {:.0f} seconds. The Sun, the "
+            "planets, Earth and the Moon all lie near the ecliptic, which is the plane of the "
+            "wheel: most of the time the far side of the ring hides them. Look just above it or "
+            "below it.",
+            metrics.periodS);
+    }
     if (sphere(state))
     {
         page.story = std::format(

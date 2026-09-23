@@ -60,7 +60,12 @@ jobs:
             --capture metal-island-one-lookup.png 2>&1 | tee metal-island-one-lookup.log
           $app --size 960x540 --view pole --scenario $presets/island_one.toml \
             --capture metal-island-one-pole.png 2>&1 | tee metal-island-one-pole.log
-          for picture in town valley kalpana island-one-lookup island-one-pole; do
+          $app --size 960x540 --view valley --scenario $presets/stanford_torus.toml \
+            --capture metal-torus-valley.png 2>&1 | tee metal-torus-valley.log
+          $app --size 960x540 --view spoke --scenario $presets/stanford_torus.toml \
+            --capture metal-torus-spoke.png 2>&1 | tee metal-torus-spoke.log
+          for picture in town valley kalpana island-one-lookup island-one-pole torus-valley \
+            torus-spoke; do
             test -s metal-$picture.png
           done
       - uses: actions/upload-artifact@v7

@@ -118,6 +118,26 @@ vec3 endcapAlbedo(vec3 p, vec3 n, float woods)
     return weathered(mix(color, ROCK * (0.8 + 0.4 * grain), rockMask));
 }
 
+// The walls of a torus's tube, climbing from the land to the ceiling: terraced gardens held up by
+// stone walls, as in the study's paintings, going over to bare stone where the wall stands
+// upright under the ceiling.
+vec3 tubeWallAlbedo(vec3 p, vec3 n, float woods)
+{
+    // Each stretch of terrace its own garden: grass, crops or flowers, with woods where the cover
+    // map says; the risers between them are stone.
+    float pick   = hash12(floor(vec2(atan(p.y, p.x) * habitat.shape.x / 23.0, length(p.xy) / 3.0)));
+    vec3  garden = pick < 0.6 ? mix(MEADOW, SPROUTS, valueNoise3(p / 30.0))
+                              : (pick < 0.85 ? mix(cropColor(pick), MEADOW, 0.4) : mix(LUSH, BLOSSOM, 0.3));
+    garden *= 0.8 + 0.25 * valueNoise3(p / 6.0);
+    garden        = mix(garden, FOREST * (0.8 + 0.4 * valueNoise3(p / 9.0)), smoothstep(0.3, 0.7, woods));
+    // The retaining walls, mostly hidden under what hangs down over them from the terrace above.
+    float riser   = smoothstep(0.35, 0.6, 1.0 - dot(n, localUp(p)));
+    float hanging = smoothstep(0.35, 0.55, valueNoise3(p / vec3(4.0, 4.0, 1.5)) + 0.25 * valueNoise3(p / 0.7));
+    vec3  stone   = mix(STONE * (0.75 + 0.25 * valueNoise3(p / 1.5)),
+                        mix(HEDGE, LUSH, valueNoise3(p / 3.0)) * 1.3, hanging);
+    return weathered(mix(garden, stone, riser));
+}
+
 // Shores and river beds: sand at the waterline, silt deeper down. depth: below the water level (m).
 vec3 shoreAlbedo(vec3 land, vec2 uv, float depth)
 {

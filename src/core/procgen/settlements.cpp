@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "StarshipSimulator/core/SplitMix64.h"
+#include "StarshipSimulator/core/habitat/Enclosure.h"
 #include "StarshipSimulator/core/habitat/HabitatGeometry.h"
 #include "StarshipSimulator/core/habitat/Landscape.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
@@ -35,6 +36,8 @@ constexpr double kCrossStreetHalfWidth = 3.0;
 constexpr double kWaterMarginM         = 8.5;   // buildings keep off the river front path
 constexpr double kWalkwayMarginM       = 60.0;  // and from the windows
 constexpr double kBandEdgeMarginM      = 25.0;  // or from the end walls of a band running round
+constexpr double kTubeEdgeMarginM      = 10.0;  // or the steep walls of a torus's tube
+constexpr double kStationClearM        = 30.0;  // a torus's lift station, beyond its town's end
 constexpr double kMaxFootprintRiseM    = 3.0;   // most height difference under a building
 constexpr double kPromenadeNearM       = 2.0;   // the river front path: this far from the water
 constexpr double kPromenadeFarM        = 7.0;   // ... to this far
@@ -169,7 +172,8 @@ struct TownFrame
     double     halfWidth  = 120.0;
     double     wobble1    = 0.0;  // phases of the outline's irregularity
     double     wobble2    = 0.0;
-    double     riverSide  = 1.0;  // +1: the town lies at larger x than the river (on the plan)
+    double     riverSide  = 1.0;    // +1: the town lies at larger x than the river (on the plan)
+    bool       narrow     = false;  // on a tighter grid of streets, to fit a torus's tube
 
     [[nodiscard]] Vec2d  toPlan(double u, double w) const { return (along * u) + (across * w); }
     [[nodiscard]] double u(const Vec2d& p) const { return glm::dot(p, along); }
@@ -225,6 +229,10 @@ struct GroundCheck
     /// The walkway kept clear along the band's edges.
     [[nodiscard]] double walkwayMargin() const
     {
+        if (site.geometry->kind() == HabitatKind::STANFORD_TORUS)
+        {
+            return kTubeEdgeMarginM;
+        }
         return plane.axis == BandAxis::AROUND ? kBandEdgeMarginM : kWalkwayMarginM;
     }
 
@@ -314,15 +322,73 @@ double riverX(const Site& site, const TownFrame& town, double y)
            town.plane.radius;
 }
 
+/// Where a town goes in a torus: in its own section of the ring (the even ones), just along from
+/// the foot of the spoke there, so that the lift from the hub comes down at the end of the town.
+/// The tube's floor is narrow: the town spans it, on a tighter grid of streets.
+std::optional<TownFrame> placeTownInTube(const Site& site, const LandBand& band, int index,
+                                         int count, SplitMix64& random)
+{
+    const HabitatGeometry& geometry = *site.geometry;
+    const TorusSpec&       torus    = geometry.spec().torus;
+    const SettlementSpec&  spec     = geometry.spec().settlements;
+    const int              sections = torus.sections > 0 ? torus.sections : 2 * count;
+    const int              section  = 2 * index;
+    if (section >= sections)
+    {
+        return std::nullopt;  // no town section left for it
+    }
+    const double arc      = 2.0 * kPi / static_cast<double>(sections);
+    const double sectionM = arc * band.radiusM;
+
+    TownFrame town;
+    town.valley     = band.index;
+    town.narrow     = true;
+    town.halfLength = spec.townRadiusM * random.uniform(0.75, 1.25);
+    town.halfWidth  = std::min(0.6 * town.halfLength, 0.55 * band.halfWidthM);
+    town.halfLength = std::min({town.halfLength, 3.0 * town.halfWidth, 0.3 * sectionM});
+    town.wobble1    = random.uniform(0.0, 2.0 * kPi);
+    town.wobble2    = random.uniform(0.0, 2.0 * kPi);
+    if (town.halfWidth < 14.0)
+    {
+        return std::nullopt;
+    }
+    // The foot of the spoke nearest the section's middle, where its lift comes down.
+    const double middle = arc * section;
+    double       foot   = middle;
+    if (torus.spokes > 0)
+    {
+        const double spokeArc = 2.0 * kPi / static_cast<double>(torus.spokes);
+        foot                  = std::round(middle / spokeArc) * spokeArc;
+    }
+    const double      side      = index % 2 == 0 ? 1.0 : -1.0;
+    const double      footAlong = std::remainder(foot - band.centreTheta, 2.0 * kPi) * band.radiusM;
+    const double      along     = footAlong + (side * (town.halfLength + kStationClearM));
+    const double      across    = random.uniform(-0.1, 0.1) * band.halfWidthM;
+    const SurfaceSpot spot      = band.toSurface(Vec2d(across, along));
+    town.plane                  = FloorPlane::onBand(band, spot.z, spot.theta);
+    town.along                  = Vec2d(0.0, 1.0);  // round the ring
+    town.across                 = rotate90(town.along);
+    const GroundCheck check{.site = site, .plane = town.plane, .valley = band.index};
+    if (!check.dry(Vec2d(0.0), 10.0))
+    {
+        return std::nullopt;
+    }
+    return town;
+}
+
 /// Where a town goes on a band running round the axis: spread evenly round it, beside the river
 /// on whichever bank has the room.
 std::optional<TownFrame> placeTownAround(const Site& site, const LandBand& band, int index,
                                          int count, SplitMix64& random)
 {
     const HabitatGeometry& geometry = *site.geometry;
-    const SettlementSpec&  spec     = geometry.spec().settlements;
-    const double           landHalf = band.halfWidthM - kBandEdgeMarginM;
-    const double           segment  = band.alongLengthM() / count;
+    if (geometry.kind() == HabitatKind::STANFORD_TORUS)
+    {
+        return placeTownInTube(site, band, index, count, random);
+    }
+    const SettlementSpec& spec     = geometry.spec().settlements;
+    const double          landHalf = band.halfWidthM - kBandEdgeMarginM;
+    const double          segment  = band.alongLengthM() / count;
 
     TownFrame town;
     town.valley     = band.index;
@@ -590,7 +656,8 @@ private:
             }
             return;
         }
-        const double amplitude  = random_->uniform(-12.0, 12.0);
+        // A narrow town's long streets hardly swing: they would leave the floor of the tube.
+        const double amplitude  = random_->uniform(-12.0, 12.0) * (town_.narrow ? 0.25 : 1.0);
         const double wavelength = random_->uniform(120.0, 220.0);
         const int    samples    = stepsBelow(-span, span + 1e-9, 5.0);
         for (int i = 0; i < samples; ++i)
@@ -605,20 +672,29 @@ private:
         layBend();
         // Long streets (along the main street) at ws_, cross streets at us_; the square sits
         // between uAt(jSquare) and uAt(jSquare + 1), on the far side of the main street.
-        const int           across = static_cast<int>(std::ceil(town_.halfWidth / 46.0)) + 1;
-        const int           along  = static_cast<int>(std::ceil(town_.halfLength / 62.0)) + 1;
+        // A narrow town has one row of blocks either side of its main street, and they are
+        // shorter.
+        const bool   narrow = town_.narrow;
+        const double deep0  = narrow ? 36.0 : 42.0;
+        const double deep1  = narrow ? 42.0 : 54.0;
+        const double long0  = narrow ? 40.0 : 55.0;
+        const double long1  = narrow ? 56.0 : 78.0;
+        const int    across =
+            static_cast<int>(std::ceil(town_.halfWidth / (narrow ? 39.0 : 46.0))) + 1;
+        const int along =
+            static_cast<int>(std::ceil(town_.halfLength / (narrow ? 48.0 : 62.0))) + 1;
         std::vector<double> below;
         std::vector<double> above;
         double              w = 0.0;
         for (int k = 0; k < across; ++k)
         {
-            w += random_->uniform(42.0, 54.0);
+            w += random_->uniform(deep0, deep1);
             above.push_back(w);
         }
         w = 0.0;
         for (int k = 0; k < across; ++k)
         {
-            w -= random_->uniform(42.0, 54.0);
+            w -= random_->uniform(deep0, deep1);
             below.push_back(w);
         }
         ws_.assign(below.rbegin(), below.rend());
@@ -626,21 +702,21 @@ private:
         ws_.push_back(0.0);
         ws_.insert(ws_.end(), above.begin(), above.end());
 
-        const double        squareHalf = random_->uniform(22.0, 30.0);
+        const double squareHalf = random_->uniform(narrow ? 12.0 : 22.0, narrow ? 16.0 : 30.0);
         std::vector<double> left;
         std::vector<double> right;
         double              u = squareHalf;
         right.push_back(u);
         for (int j = 0; j < along; ++j)
         {
-            u += random_->uniform(55.0, 78.0);
+            u += random_->uniform(long0, long1);
             right.push_back(u);
         }
         u = -squareHalf;
         left.push_back(u);
         for (int j = 0; j < along; ++j)
         {
-            u -= random_->uniform(55.0, 78.0);
+            u -= random_->uniform(long0, long1);
             left.push_back(u);
         }
         us_.assign(left.rbegin(), left.rend());
@@ -1545,6 +1621,28 @@ private:
 
 // ---- Farms ------------------------------------------------------------------------------------
 
+/// Whether a spot on a torus's floor is within `clearM` of the foot of a spoke, where its lift
+/// comes down (at the bottom of the tube, under the spoke).
+bool nearLiftFoot(const HabitatGeometry& geometry, const SurfaceSpot& spot, double clearM)
+{
+    const auto& torus = geometry.enclosure().torus();
+    if (!torus)
+    {
+        return false;
+    }
+    const double radius = geometry.radius();
+    for (int k = 0; k < torus->spokes; ++k)
+    {
+        const double round =
+            HabitatGeometry::angularDistance(spot.theta, torus->spokeAngle(k)) * radius;
+        if (std::hypot(round, spot.z) < clearM)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 /// Where to try a farmstead next: anywhere on a band running round the axis, or along a valley
 /// away from its ends.
 SurfaceSpot farmSpot(const HabitatGeometry& geometry, const LandBand& band, SplitMix64& random)
@@ -1562,6 +1660,14 @@ SurfaceSpot farmSpot(const HabitatGeometry& geometry, const LandBand& band, Spli
     const double theta =
         geometry.landCenter(band.index) + (random.uniform(-0.8, 0.8) * landHalf / radius);
     return {.z = z, .theta = theta};
+}
+
+/// Whether a torus keeps farms off a spot: they keep to the farmland, clear of the lifts' feet.
+bool keepsFarmsOut(const HabitatGeometry& geometry, const SurfaceSpot& spot)
+{
+    return geometry.kind() == HabitatKind::STANFORD_TORUS &&
+           (torusKeepsOut(geometry.spec().torus, spot.theta, false) ||
+            nearLiftFoot(geometry, spot, kFarmRadiusM));
 }
 
 std::optional<Settlement> planFarm(const Site& site, int valley, std::size_t index,
@@ -1592,7 +1698,7 @@ std::optional<Settlement> planFarm(const Site& site, int valley, std::size_t ind
                 other.kind == SettlementKind::TOWN ? other.radiusM + townRoomM : farmRoomM;
             return glm::distance(other.plane.point(Vec2d(0.0), 0.0), here) < room;
         });
-        if (crowded || !check.dry(Vec2d(0.0), dryM) ||
+        if (keepsFarmsOut(geometry, spot) || crowded || !check.dry(Vec2d(0.0), dryM) ||
             check.distanceToWindow(Vec2d(0.0)) < clearance ||
             site.landscape->woodland(z, theta) > 0.35)
         {

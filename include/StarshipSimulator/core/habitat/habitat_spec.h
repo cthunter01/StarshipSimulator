@@ -176,7 +176,9 @@ struct HabitatSpec
 
 /// Whether the habitat's spin axis points at the Sun (to catch its light along the axis). Kalpana
 /// One's points out of the plane of the solar system instead, to the ecliptic's north pole, so the
-/// Sun shines on it from the side and lights its end caps all the time.
+/// Sun shines on it from the side and lights its end caps all the time; so does a Stanford torus's,
+/// which never has to be turned to follow the Sun: a mirror over its hub, turned once a year, sends
+/// the light down the axis.
 [[nodiscard]] bool axisPointsAtSun(HabitatKind kind);
 
 /// The habitat with the fields its kind fixes filled in: a Kalpana cylinder's ends are flat glass,
@@ -189,5 +191,14 @@ struct HabitatSpec
 /// How far above the floor the air goes before it meets the far side, the ceiling or the top of the
 /// walls: room for clouds, birds and flight.
 [[nodiscard]] double headroomM(const HabitatSpec& spec);
+
+/// Which of a torus's sections a place at angle theta round the axis lies in: section k is centred
+/// on the angle k * 2 pi / sections, and the even ones are towns, the odd ones farmland. -1 when
+/// the torus is not divided into sections.
+[[nodiscard]] int torusSectionAt(const TorusSpec& torus, double theta);
+
+/// Whether a torus keeps towns (true) or farms (false) out of the section at angle theta; always
+/// false when it has no sections.
+[[nodiscard]] bool torusKeepsOut(const TorusSpec& torus, double theta, bool towns);
 
 }  // namespace StarshipSimulator

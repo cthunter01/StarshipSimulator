@@ -34,8 +34,8 @@ struct TransitDraw
     std::int32_t  vertexOffset  = 0;
 };
 
-/// The tramway: the track's chunks and the tram car's mesh, uploaded once, with the chunks in
-/// view and the trams on the line picked out fresh every frame.
+/// The tramway: the track's chunks and the tram car's (and a lift cabin's) mesh, uploaded once,
+/// with the chunks in view and the trams on the line picked out fresh every frame.
 class GpuTransit
 {
 public:
@@ -66,6 +66,7 @@ private:
     GpuBuffer                    indices_;
     std::vector<Chunk>           chunks_;
     Chunk                        tram_;
+    Chunk                        lift_;
     DynamicBuffer                instances_;
     std::vector<TransitInstance> staging_;
     std::vector<TransitDraw>     draws_;

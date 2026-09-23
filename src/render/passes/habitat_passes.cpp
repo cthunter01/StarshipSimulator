@@ -35,8 +35,9 @@ namespace
 {
 
 constexpr std::uint32_t kVerticesPerQuad = 6;
-// One mirror per window strip, or eight petals round each glass end (mirror.vert).
-constexpr std::uint32_t kMirrorQuads = std::max<std::uint32_t>(gpu::kMaxSunBeams, 16);
+// One mirror per window strip, eight petals round each glass end, or a torus's mirror over the hub
+// (eight slices) and the ring round it (four between each two of up to 12 spokes): mirror.vert.
+constexpr std::uint32_t kMirrorQuads = std::max<std::uint32_t>(gpu::kMaxSunBeams, 8 + (4 * 12));
 
 struct alignas(16) GlassUniforms
 {

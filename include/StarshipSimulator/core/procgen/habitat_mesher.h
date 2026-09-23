@@ -18,6 +18,7 @@ inline constexpr std::uint32_t kValley = 0;  // valley floor land
 inline constexpr std::uint32_t kEndcap = 1;  // endcap slopes and domes
 inline constexpr std::uint32_t kGlass  = 2;  // window strips
 inline constexpr std::uint32_t kMetal  = 3;  // hubs and bare structure
+inline constexpr std::uint32_t kHull   = 4;  // the outside of the hull, lit by the Sun itself
 }  // namespace material
 
 enum class ChunkKind : std::uint8_t

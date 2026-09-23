@@ -56,19 +56,22 @@ std::optional<Flock> flockIn(const HabitatGeometry& geometry, std::int64_t cellZ
     {
         return std::nullopt;  // over a window, or off the end of the floor
     }
-    const double height = rng.uniform(kMinHeightM, kMaxHeightM);
-    flock.radius        = *ground - height;
-    flock.wheelM        = rng.uniform(25.0, 120.0);
+    // Under a torus's ceiling: no higher than half way up the tube.
+    const bool   torus  = geometry.kind() == HabitatKind::STANFORD_TORUS;
+    const double height = rng.uniform(
+        kMinHeightM, torus ? std::min(kMaxHeightM, 0.5 * geometry.spanAcrossM()) : kMaxHeightM);
+    flock.radius = *ground - height;
+    flock.wheelM = rng.uniform(25.0, 120.0);
     // Birds fly at a bird's speed, so a wide ring simply takes longer to go round.
     flock.period = (2.0 * kPi * flock.wheelM) / rng.uniform(7.0, 16.0);
     flock.spanM  = rng.uniform(0.7, 2.1);
     flock.spread = 6.0 + (0.35 * flock.wheelM);
     flock.birds  = 4 + static_cast<int>(26.0 * rng.uniform() * rng.uniform());
     flock.turn   = rng.uniform() < 0.5 ? -1.0 : 1.0;
-    if (geometry.kind() == HabitatKind::BERNAL_SPHERE)
+    if (geometry.kind() == HabitatKind::BERNAL_SPHERE || torus)
     {
-        // The ground rises steeply away from a sphere's band: only rings wholly over the land and
-        // clear of the ground at both ends.
+        // The ground rises steeply away from a sphere's band (or up a torus's tube): only rings
+        // wholly over the land and clear of the ground at both ends.
         for (const double end :
              {flock.z - flock.wheelM - flock.spread, flock.z + flock.wheelM + flock.spread})
         {
@@ -96,7 +99,8 @@ std::vector<Bird> birdsNear(const HabitatGeometry& geometry, const Vec3d& camera
     const double cellArc = (2.0 * kPi) / static_cast<double>(around);
     // The wind carries the flocks along the land: along the axis down a valley, round it on a
     // sphere's band (whose ends climb steeply).
-    const bool   round       = geometry.kind() == HabitatKind::BERNAL_SPHERE;
+    const bool   round       = geometry.kind() == HabitatKind::BERNAL_SPHERE ||
+                               geometry.kind() == HabitatKind::STANFORD_TORUS;
     const double wind        = settings.windMS * seconds;
     const double drift       = round ? 0.0 : wind;
     const double driftAround = round ? wind / radius : 0.0;

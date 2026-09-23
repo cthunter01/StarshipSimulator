@@ -805,6 +805,7 @@ struct PhysicsWorld::Impl
     };
     Movers crowd;
     Movers trams;
+    Movers lifts;
 
     /// Grows a pool to hold what it has been given, and parks the bodies it does not need.
     void fitPool(Movers& pool, const JPH::RefConst<JPH::Shape>& shape, float friction,
@@ -849,8 +850,33 @@ struct PhysicsWorld::Impl
         }
         return tramShapeCache;
     }
+    /// A lift's cabin: its floor, its two glass sides and its roof, open at the ends where you
+    /// walk in; its origin on its floor.
+    JPH::RefConst<JPH::Shape> liftShape()
+    {
+        if (liftShapeCache == nullptr)
+        {
+            const auto                       half   = static_cast<float>(0.5 * kLiftCabinM);
+            const auto                       height = static_cast<float>(kLiftCabinHeightM);
+            JPH::StaticCompoundShapeSettings cabin;
+            cabin.AddShape(JPH::Vec3(0.0F, -0.15F, 0.0F), JPH::Quat::sIdentity(),
+                           createShape(JPH::BoxShapeSettings(JPH::Vec3(half, 0.15F, half), 0.05F)));
+            for (const float side : {-1.0F, 1.0F})
+            {
+                cabin.AddShape(JPH::Vec3(side * (half - 0.05F), 0.5F * height, 0.0F),
+                               JPH::Quat::sIdentity(),
+                               createShape(JPH::BoxShapeSettings(
+                                   JPH::Vec3(0.05F, 0.5F * height, half), 0.02F)));
+            }
+            cabin.AddShape(JPH::Vec3(0.0F, height + 0.1F, 0.0F), JPH::Quat::sIdentity(),
+                           createShape(JPH::BoxShapeSettings(JPH::Vec3(half, 0.1F, half), 0.05F)));
+            liftShapeCache = createShape(cabin);
+        }
+        return liftShapeCache;
+    }
     JPH::RefConst<JPH::Shape>                     personShapeCache;
     JPH::RefConst<JPH::Shape>                     tramShapeCache;
+    JPH::RefConst<JPH::Shape>                     liftShapeCache;
     std::shared_ptr<const TreeLayer>              trees;
     std::unordered_map<std::size_t, TreeTileBody> treeTiles;
     double                                        treesChecked  = -1.0e9;
@@ -885,6 +911,27 @@ void PhysicsWorld::addColliders(const StaticColliders& colliders)
             createShape(JPH::BoxShapeSettings(toJoltF(half),
                                               convexRadius(std::min({half.x, half.y, half.z})))),
             toJolt(box.centre), toJolt(box.orientation), JPH::EMotionType::Static, layers::kStatic);
+        settings.mFriction = kBuiltFriction;
+        create(settings);
+    }
+    for (const StaticMesh& mesh : colliders.meshes)
+    {
+        JPH::VertexList vertices;
+        vertices.reserve(mesh.vertices.size());
+        for (const Vec3f& vertex : mesh.vertices)
+        {
+            vertices.emplace_back(vertex.x, vertex.y, vertex.z);
+        }
+        JPH::IndexedTriangleList triangles;
+        triangles.reserve(mesh.indices.size() / 3);
+        for (std::size_t i = 0; i + 2 < mesh.indices.size(); i += 3)
+        {
+            triangles.emplace_back(mesh.indices[i], mesh.indices[i + 1], mesh.indices[i + 2]);
+        }
+        const JPH::MeshShapeSettings surface(std::move(vertices), std::move(triangles));
+        JPH::BodyCreationSettings    settings(createShape(surface), toJolt(mesh.origin),
+                                              JPH::Quat::sIdentity(), JPH::EMotionType::Static,
+                                              layers::kStatic);
         settings.mFriction = kBuiltFriction;
         create(settings);
     }
@@ -927,8 +974,10 @@ std::size_t PhysicsWorld::addProp(const PropPlacement& placement, const Vec3d& v
     settings.mMassPropertiesOverride.mMass = info.massKg;
     settings.mLinearVelocity               = toJoltF(velocity);
     settings.mUserData                     = impl_->props.size() + 1;
-    const bool        moving               = glm::length(velocity) > 0.0;
-    const JPH::BodyID id                   = impl_->bodies().CreateAndAddBody(
+    // Swept, so a fast throw cannot pass through something thin (a torus's ceiling) between steps.
+    settings.mMotionQuality  = JPH::EMotionQuality::LinearCast;
+    const bool        moving = glm::length(velocity) > 0.0;
+    const JPH::BodyID id     = impl_->bodies().CreateAndAddBody(
         settings, moving || awake ? JPH::EActivation::Activate : JPH::EActivation::DontActivate);
     if (id.IsInvalid())
     {
@@ -1011,27 +1060,30 @@ void PhysicsWorld::setTrams(std::span<const Tram> trams, const Vec3d& focus, dou
 
     Impl&        world   = *impl_;
     const double reachSq = radiusM * radiusM;
-    world.trams.positions.clear();
-    world.trams.orientations.clear();
+    for (Impl::Movers* pool : {&world.trams, &world.lifts})
+    {
+        pool->positions.clear();
+        pool->orientations.clear();
+    }
     for (const Tram& tram : trams)
     {
-        if (world.trams.positions.size() >= kMaxSolidTrams)
-        {
-            break;
-        }
-        const Vec3d offset = tram.position - focus;
-        if (glm::dot(offset, offset) > reachSq)
+        Impl::Movers& pool   = tram.lift ? world.lifts : world.trams;
+        const Vec3d   offset = tram.position - focus;
+        if (pool.positions.size() >= kMaxSolidTrams || glm::dot(offset, offset) > reachSq)
         {
             continue;
         }
-        // The body is the car: its middle is half its height above the rails.
+        // The body is the car: a tram's middle is half its height above the rails; a lift's
+        // cabin stands on its floor.
         const Vec3d up    = HabitatGeometry::localUp(tram.position);
         const Vec3d ahead = glm::normalize(tram.forward - (up * glm::dot(tram.forward, up)));
         const Vec3d side  = glm::cross(up, ahead);
-        world.trams.positions.push_back(tram.position + (up * (0.5 * kTramBodyHeightM)));
-        world.trams.orientations.push_back(glm::normalize(glm::quat_cast(Mat3d(side, up, ahead))));
+        pool.positions.push_back(tram.lift ? tram.position
+                                           : tram.position + (up * (0.5 * kTramBodyHeightM)));
+        pool.orientations.push_back(glm::normalize(glm::quat_cast(Mat3d(side, up, ahead))));
     }
     world.fitPool(world.trams, world.tramShape(), 0.9F, kMaxSolidTrams);
+    world.fitPool(world.lifts, world.liftShape(), 0.9F, kMaxSolidTrams);
 }
 
 void PhysicsWorld::step(double dt, const Vec3d& focus)
@@ -1043,7 +1095,7 @@ void PhysicsWorld::step(double dt, const Vec3d& focus)
     Impl& world = *impl_;
     // Walk the kinematic bodies to where the people and the trams are now.
     JPH::BodyInterface& bodies = world.bodies();
-    for (Impl::Movers* pool : {&world.crowd, &world.trams})
+    for (Impl::Movers* pool : {&world.crowd, &world.trams, &world.lifts})
     {
         for (std::size_t i = 0; i < pool->used; ++i)
         {

@@ -17,6 +17,7 @@
 #include "StarshipSimulator/core/astro/astro_time.h"
 #include "StarshipSimulator/core/astro/ephemeris.h"
 #include "StarshipSimulator/core/astro/sky_objects.h"
+#include "StarshipSimulator/core/habitat/Enclosure.h"
 #include "StarshipSimulator/core/habitat/HabitatGeometry.h"
 #include "StarshipSimulator/core/habitat/Landscape.h"
 #include "StarshipSimulator/core/habitat/day_schedule.h"
@@ -64,6 +65,20 @@ bool sliderDouble(const char* label, double& value, double min, double max, cons
 std::string describeSun(double openingAngleDeg, HabitatKind kind, double windowLatitudeDeg)
 {
     const double alpha = degreesToRadians(openingAngleDeg);
+    if (daylightKindFor(kind) == DaylightKind::OVERHEAD_MIRROR)
+    {
+        // The ring of mirrors round a torus's hub, and the louvres over its windows.
+        if (daylightFactor(alpha) <= 0.0)
+        {
+            return "Night: the louvres are closed over the windows";
+        }
+        const double tilt = radiansToDegrees(hubLightTilt(alpha));
+        return tilt < 0.5 ? std::string("Noon: the light comes straight down from the hub")
+                          : std::format(
+                                "The light comes down from the hub, leaning {:.0f} "
+                                "degrees across the tube",
+                                tilt);
+    }
     if (daylightKindFor(kind) == DaylightKind::POLAR_WINDOWS)
     {
         // The mirrors outside the polar windows, shuttered at night.
@@ -162,6 +177,23 @@ std::string describeWhere(const HabitatGeometry& geometry, const Vec3d& eye,
         const Vec2d     plan = band.toPlan(eye.z, HabitatGeometry::angleOf(eye));
         const double    round =
             std::fmod(plan.y - band.alongMinM + band.alongLengthM(), band.alongLengthM());
+        if (const auto& torus = geometry.enclosure().torus())
+        {
+            // In a torus, how far up the tube's side from its lowest line; or up a spoke, or in
+            // the hub.
+            const double r = std::hypot(eye.x, eye.y);
+            if (r < torus->hubRadiusM)
+            {
+                return std::format("in the hub, {:.0f} m from the axis", r);
+            }
+            if (r < torus->ceilingRadiusAt(eye.z))
+            {
+                return std::format("up a spoke, {:.0f} m from the axis", r);
+            }
+            const double up = torus->tubeAngleOf(eye);
+            return std::format("{:.0f} m round the land, {:.0f} deg up the tube's side", round,
+                               radiansToDegrees(up > kPi ? (2.0 * kPi) - up : up));
+        }
         if (geometry.kind() == HabitatKind::BERNAL_SPHERE)
         {
             // On a sphere, how far north or south of the equator: the gravity goes with it.
@@ -471,6 +503,11 @@ void drawMetrics(const HudModel& model, HudSettings& settings, HudActions& actio
     {
         ui::field("Size", std::format("a sphere {:.0f} m across", 2.0 * spec.radiusM));
     }
+    else if (spec.kind == HabitatKind::STANFORD_TORUS)
+    {
+        ui::field("Size", std::format("a wheel {:.2f} km across, its tube {:.0f} m",
+                                      2.0 * spec.radiusM / 1000.0, 2.0 * spec.torus.tubeRadiusM));
+    }
     else
     {
         ui::field("Size", std::format("{:.1f} km across, {:.1f} km long",
@@ -600,6 +637,29 @@ void drawEditorShape(HabitatSpec& spec)
                                   materialClassName(preview.material)));
         return;
     }
+    if (spec.kind == HabitatKind::STANFORD_TORUS)
+    {
+        // A torus: the wheel, its tube and hub, the spokes, how far the land climbs the tube's
+        // sides, how much of the ceiling is glass, and how the ring is shared out.
+        TorusSpec& torus = spec.torus;
+        sliderDouble("Floor radius (m)", spec.radiusM, 200.0, 5000.0, "%.0f");
+        sliderDouble("Tube radius (m)", torus.tubeRadiusM, 20.0,
+                     std::min(600.0, 0.35 * spec.radiusM), "%.0f");
+        sliderDouble("Hub radius (m)", torus.hubRadiusM, 5.0, 0.25 * spec.radiusM, "%.0f");
+        ImGui::SliderInt("Spokes", &torus.spokes, 0, 12);
+        sliderDouble("Spoke radius (m)", torus.spokeRadiusM, 1.0, torus.tubeRadiusM, "%.1f");
+        sliderDouble("Land up the sides (deg)", torus.landHalfAngleDeg, 5.0, 60.0, "%.0f");
+        sliderDouble("Window share", torus.ceilingWindowShare, 0.0, 0.9, "%.2f");
+        ImGui::SliderInt("Sections", &torus.sections, 0, 24);
+        sliderDouble("Gravity (g)", spec.surfaceGravityG, 0.1, 1.5, "%.2f");
+        sliderDouble("People per km2", spec.populationDensityPerKm2, 0.0, 25000.0, "%.0f");
+        const HabitatMetrics preview = computeMetrics(spec);
+        ui::textMuted(std::format(
+            "Spins at {:.2f} rpm; hull: {}. The ceiling is {:.0f} m up; the sections alternate "
+            "towns and farmland round the ring.",
+            preview.rpm, materialClassName(preview.material), 2.0 * torus.tubeRadiusM));
+        return;
+    }
     if (spec.kind == HabitatKind::BERNAL_SPHERE)
     {
         // A sphere: its size, how far the land reaches from the equator, where the glass begins.
@@ -653,6 +713,15 @@ void drawEditorDay(HabitatSpec& spec, DayScheduleSpec& day)
     if (!day.enabled)
     {
         ui::textWrapped("The mirrors stand still at the angle above: the same hour, for ever.");
+        return;
+    }
+    if (daylightKindFor(spec.kind) == DaylightKind::OVERHEAD_MIRROR)
+    {
+        ui::textWrapped(std::format(
+            "Sunrise {}, sunset {}: {:.1f} hours of daylight and {:.1f} of night. Past ninety "
+            "degrees the louvres close over the ceiling's windows, which then show the stars.",
+            clockHour(day.sunriseHour), clockHour(sunsetHour(day)), day.dayLengthHours,
+            24.0 - day.dayLengthHours));
         return;
     }
     if (daylightKindFor(spec.kind) != DaylightKind::MIRROR_STRIPS)
@@ -736,12 +805,17 @@ void drawEditorPlace(Scenario& draft, const SkyModel& sky)
     {
         // One band of land, all the way round the axis: along it is round, across it toward the
         // ends (or the poles).
-        draft.start.band   = 0;
-        const double round = kPi * habitat.radiusM;
-        const double across =
-            habitat.kind == HabitatKind::BERNAL_SPHERE
-                ? habitat.radiusM * degreesToRadians(habitat.sphere.landLatitudeDeg)
-                : 0.5 * habitat.lengthM;
+        draft.start.band    = 0;
+        const double round  = kPi * habitat.radiusM;
+        double       across = 0.5 * habitat.lengthM;
+        if (habitat.kind == HabitatKind::BERNAL_SPHERE)
+        {
+            across = habitat.radiusM * degreesToRadians(habitat.sphere.landLatitudeDeg);
+        }
+        else if (habitat.kind == HabitatKind::STANFORD_TORUS)
+        {
+            across = habitat.torus.tubeRadiusM * degreesToRadians(habitat.torus.landHalfAngleDeg);
+        }
         sliderDouble("Start round (m)", draft.start.alongM, -round, round, "%.0f");
         sliderDouble("Start across (m)", draft.start.acrossM, -across, across, "%.0f");
         sliderDouble("Facing (deg)", draft.start.headingDeg, 0.0, 360.0, "%.0f");

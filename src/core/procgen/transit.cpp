@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "StarshipSimulator/core/habitat/Enclosure.h"
 #include "StarshipSimulator/core/habitat/HabitatGeometry.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
 #include "StarshipSimulator/core/habitat/land_layout.h"
@@ -52,6 +53,17 @@ constexpr double kHubRadiusM  = 70.0;  // the funicular stops where the ramp rea
 constexpr double kLoopAcross  = 0.55;  // a loop runs this far across its band, off the river
 constexpr double kRimMarginM  = 3.0;   // a sphere's funicular stops this far short of the window
 constexpr double kSphereFootM = 15.0;  // and starts this far inside the land, below the fields
+// A torus: its loop runs down its towns' main streets, beside the middle line, where the lifts come
+// down the spokes to stations on the floor.
+constexpr double kTubeLoopAcrossM = -12.0;
+constexpr double kLiftSpeedMS     = 10.0;
+constexpr double kLiftFloorMS2    = 1.0;   // how hard a lift speeds up or slows down at the floor
+constexpr double kLiftHubMS2      = 0.25;  // and near the hub, where you weigh next to nothing
+constexpr double kLiftPadM        = 6.0;   // the level ground round a lift's foot
+constexpr double kLiftPlatformM   = 0.5;   // its station's platform, above the ground
+constexpr double kLiftDwellS      = 20.0;
+constexpr double kLiftFrameM      = 12.0;  // between the frames of its tower
+constexpr double kLiftColumnM     = 2.6;   // the tower's columns, out from its middle
 
 /// The line runs down the valley, off to one side of the river's meander.
 double lineAngle(const HabitatGeometry& geometry, int valley)
@@ -489,6 +501,29 @@ void callAtTerraces(TramLine& line)
     }
 }
 
+/// A lift's stations: on the floor, named after the town beside it, and at the hub.
+void callAtSpoke(TramLine& line, const Settlements& settlements)
+{
+    const Vec3d foot = line.track.front().position;
+    std::string name = "the fields";
+    for (const Settlement& place : settlements.places)
+    {
+        if (place.kind == SettlementKind::TOWN &&
+            glm::distance(place.plane.point(Vec2d(0.0), 0.0), foot) < place.radiusM + 120.0)
+        {
+            name = place.name + " station";
+            break;
+        }
+    }
+    line.footName = name;
+    line.stops.push_back(
+        {.name = std::move(name), .alongM = 0.0, .position = foot, .dwellS = kLiftDwellS});
+    line.stops.push_back({.name     = line.summitName,
+                          .alongM   = line.lengthM,
+                          .position = line.track.back().position,
+                          .dwellS   = kLiftDwellS});
+}
+
 /// A sphere's funicular: from the land's antisunward edge up the polar slope to the window's rim,
 /// halfway round from where the band's plan starts (the towns keep to the middles of the band's
 /// stretches, so that is always between two of them).
@@ -510,6 +545,40 @@ TramLine sphereFunicular(const HabitatGeometry& geometry, const TerrainGrid& gri
     return line;
 }
 
+/// A torus's lift up spoke k: from a station on the floor at the spoke's foot, straight up the
+/// radius through the tube and the spoke to the hub's floor.
+TramLine spokeLift(const HabitatGeometry& geometry, const TerrainGrid& grid,
+                   const TorusShape& torus, int k)
+{
+    TramLine line;
+    line.kind           = LineKind::SPOKE;
+    line.valley         = 0;
+    line.theta          = torus.spokeAngle(k);
+    line.topSpeed       = kLiftSpeedMS;
+    line.trams          = 1;
+    line.footName       = "the floor";
+    line.summitName     = "the hub";
+    const double floor  = geometry.floorRadiusAt(0.0);
+    const double ground = floor - grid.groundHeight(0.0, line.theta);
+    const double foot   = ground - kLiftPlatformM;
+    const double top    = torus.hubRadiusM;
+    line.radiusM        = foot;
+    const int steps     = std::max(2, static_cast<int>(std::ceil((foot - top) / kStepM)));
+    for (int i = 0; i <= steps; ++i)
+    {
+        const double r = std::lerp(foot, top, static_cast<double>(i) / steps);
+        line.track.push_back(
+            {.position     = Vec3d(r * std::cos(line.theta), r * std::sin(line.theta), 0.0),
+             .alongM       = foot - r,
+             .railHeightM  = floor - r,
+             .aboveGroundM = ground - r,
+             .carried      = true,
+             .planM        = foot - r});
+    }
+    line.lengthM = foot - top;
+    return line;
+}
+
 }  // namespace
 
 std::vector<TramLine> planTramLines(const HabitatGeometry& geometry, const TerrainGrid& grid)
@@ -520,8 +589,11 @@ std::vector<TramLine> planTramLines(const HabitatGeometry& geometry, const Terra
         const LandBand& band = geometry.band(valley);
         if (band.axis == BandAxis::AROUND)
         {
-            // Once round the band, to one side of the river.
-            const SurfaceSpot start = band.toSurface(Vec2d(kLoopAcross * band.halfWidthM, 0.0));
+            // Once round the band, to one side of the river (a torus's: down its main streets).
+            const double      across = geometry.kind() == HabitatKind::STANFORD_TORUS
+                                           ? kTubeLoopAcrossM
+                                           : kLoopAcross * band.halfWidthM;
+            const SurfaceSpot start  = band.toSurface(Vec2d(across, 0.0));
             TramLine          line;
             line.kind    = LineKind::LOOP;
             line.valley  = valley;
@@ -546,6 +618,15 @@ std::vector<TramLine> planTramLines(const HabitatGeometry& geometry, const Terra
         if (line.track.size() >= 2)
         {
             lines.push_back(std::move(line));
+        }
+    }
+
+    // A torus's lifts, one up each spoke to the hub.
+    if (const auto& torus = geometry.enclosure().torus())
+    {
+        for (int k = 0; k < torus->spokes; ++k)
+        {
+            lines.push_back(spokeLift(geometry, grid, *torus, k));
         }
     }
 
@@ -594,6 +675,10 @@ void addTramStops(std::vector<TramLine>& lines, const Settlements& settlements)
         else if (line.kind == LineKind::LOOP)
         {
             callRound(line, settlements);
+        }
+        else if (line.kind == LineKind::SPOKE)
+        {
+            callAtSpoke(line, settlements);
         }
         else
         {
@@ -753,6 +838,50 @@ void gradeLoop(TerrainGrid& grid, const TramLine& line)
     }
 }
 
+/// Levels the ground round a lift's foot for its station, and clears the woods from it.
+void gradePad(TerrainGrid& grid, const TramLine& line)
+{
+    const TerrainGridLayout& layout = grid.layout;
+    const Vec3d              foot   = line.track.front().position;
+    const double             level  = line.track.front().railHeightM - kLiftPlatformM;
+    const Vec2d              middle = grid.cellAt(foot.z, line.theta);
+    const double             reach  = kLiftPadM + kBlendM;
+    const double             arc    = 2.0 * kPi * line.radiusM / layout.columns;
+    const auto               rows   = static_cast<std::int64_t>(reach / layout.cellU) + 1;
+    const auto               cols   = static_cast<std::int64_t>(reach / arc) + 1;
+    const auto               last   = static_cast<std::int64_t>(layout.rows()) - 1;
+    const auto               row0   = static_cast<std::int64_t>(std::llround(middle.y));
+    const auto               col0   = static_cast<std::int64_t>(std::llround(middle.x));
+    for (std::int64_t r = std::max<std::int64_t>(row0 - rows, 0); r <= std::min(row0 + rows, last);
+         ++r)
+    {
+        for (std::int64_t c = col0 - cols; c <= col0 + cols; ++c)
+        {
+            const double away = std::hypot((static_cast<double>(r) - middle.y) * layout.cellU,
+                                           (static_cast<double>(c) - middle.x) * arc);
+            if (away > reach)
+            {
+                continue;
+            }
+            const auto column = static_cast<std::uint32_t>(((c % layout.columns) + layout.columns) %
+                                                           layout.columns);
+            const auto at     = static_cast<std::uint32_t>(r);
+            const double blend = glm::smoothstep(kLiftPadM, reach, away);
+            grid.setHeight(column, at, std::lerp(level, grid.height(column, at), blend));
+        }
+    }
+    for (std::int64_t r = std::max<std::int64_t>((row0 - rows) / 2, 0);
+         r <= std::min<std::int64_t>((row0 + rows) / 2, grid.coverRows - 1); ++r)
+    {
+        for (std::int64_t c = (col0 - cols) / 2; c <= (col0 + cols) / 2; ++c)
+        {
+            const auto column = static_cast<std::uint32_t>(
+                ((c % grid.coverColumns) + grid.coverColumns) % grid.coverColumns);
+            grid.cover[((static_cast<std::size_t>(r) * grid.coverColumns) + column) * 4] = 0;
+        }
+    }
+}
+
 /// Clears the painted woods from a line's corridor, in the cover map's coarser cells.
 void clearWoods(TerrainGrid& grid, const TramLine& line, double from, double to)
 {
@@ -799,6 +928,11 @@ void gradeForTrack(TerrainGrid& grid, const std::vector<TramLine>& lines)
             gradeLoop(grid, line);
             continue;
         }
+        if (line.kind == LineKind::SPOKE)
+        {
+            gradePad(grid, line);  // it stands on the floor only at its foot
+            continue;
+        }
         const double from = std::min(line.track.front().position.z, line.track.back().position.z);
         const double to   = std::max(line.track.front().position.z, line.track.back().position.z);
         for (std::uint32_t row = 0; row < grid.layout.rows(); ++row)
@@ -830,6 +964,13 @@ bool nearTrack(const std::vector<TramLine>& lines, double z, double theta, doubl
         if (line.kind == LineKind::LOOP)
         {
             return std::abs(z - line.z) < clearM;  // it goes all the way round at one z
+        }
+        if (line.kind == LineKind::SPOKE)
+        {
+            // Only its foot stands on the floor, in its station.
+            const double across =
+                std::abs(std::remainder(theta - line.theta, 2.0 * kPi)) * line.radiusM;
+            return std::hypot(across, z - line.z) < clearM + kLiftPadM;
         }
         const double from = std::min(line.track.front().position.z, line.track.back().position.z);
         const double to   = std::max(line.track.front().position.z, line.track.back().position.z);
@@ -894,12 +1035,91 @@ Tram loopTramAt(const TramLine& line, std::size_t index, double seconds, int whi
             .stop     = leg.stop};
 }
 
+/// How far a lift has gone `t` seconds after leaving one end of a leg `length` long: speeding up
+/// at `start` m/s^2, running at `top`, slowing at `end` m/s^2 to stop at the far end.
+double liftTravelled(double t, double length, double top, double start, double end)
+{
+    // Short legs never reach full speed: the peak where the two ramps meet.
+    const double peak = std::min(top, std::sqrt(2.0 * length * start * end / (start + end)));
+    const double t1   = peak / start;
+    const double t3   = peak / end;
+    const double s1   = 0.5 * peak * t1;
+    const double s3   = 0.5 * peak * t3;
+    const double t2   = (length - s1 - s3) / peak;
+    if (t < t1)
+    {
+        return 0.5 * start * t * t;
+    }
+    if (t < t1 + t2)
+    {
+        return s1 + (peak * (t - t1));
+    }
+    const double left = std::max(0.0, t1 + t2 + t3 - t);
+    return length - (0.5 * end * left * left);
+}
+
+/// How long a lift takes over a leg `length` long (see liftTravelled).
+double liftLegSeconds(double length, double top, double start, double end)
+{
+    const double peak = std::min(top, std::sqrt(2.0 * length * start * end / (start + end)));
+    const double s1   = 0.5 * peak * peak / start;
+    const double s3   = 0.5 * peak * peak / end;
+    return (peak / start) + (peak / end) + ((length - s1 - s3) / peak);
+}
+
+/// A lift, at a moment: waiting on the floor, going up, waiting at the hub, coming down. It moves
+/// gently near the hub, where you weigh next to nothing and a hard stop would throw you up off its
+/// floor.
+Tram liftAt(const TramLine& line, std::size_t index, double seconds, int which)
+{
+    const double leg   = liftLegSeconds(line.lengthM, line.topSpeed, kLiftFloorMS2, kLiftHubMS2);
+    const double cycle = (2.0 * leg) + (2.0 * kLiftDwellS);
+    double       t =
+        std::fmod((seconds / cycle) + (static_cast<double>(which) / line.trams), 1.0) * cycle;
+    Tram tram{.line = index, .lift = true};
+    // Waiting at the floor, going up, waiting at the hub, coming down.
+    const double up   = kLiftDwellS;
+    const double hub  = up + leg;
+    const double down = hub + kLiftDwellS;
+    if (t < up)
+    {
+        tram.atStop = true;
+        tram.stop   = 0;
+    }
+    else if (t < hub)
+    {
+        tram.alongM =
+            liftTravelled(t - up, line.lengthM, line.topSpeed, kLiftFloorMS2, kLiftHubMS2);
+        tram.speedMS = line.topSpeed;
+    }
+    else if (t < down)
+    {
+        tram.alongM = line.lengthM;
+        tram.atStop = true;
+        tram.stop   = 1;
+    }
+    else
+    {
+        t -= down;
+        tram.alongM  = line.lengthM -
+                       liftTravelled(t, line.lengthM, line.topSpeed, kLiftHubMS2, kLiftFloorMS2);
+        tram.speedMS = line.topSpeed;
+    }
+    tram.position = pointAlong(line, tram.alongM).position;
+    tram.forward  = Vec3d(-std::sin(line.theta), std::cos(line.theta), 0.0);  // round the ring
+    return tram;
+}
+
 /// One tram of a line, at a moment.
 Tram tramAt(const TramLine& line, std::size_t index, double seconds, int which)
 {
     if (line.kind == LineKind::LOOP)
     {
         return loopTramAt(line, index, seconds, which);
+    }
+    if (line.kind == LineKind::SPOKE)
+    {
+        return liftAt(line, index, seconds, which);
     }
     const double cycle = 2.0 * line.journeyS;  // down the line and back again
     const double phase =
@@ -1037,6 +1257,56 @@ TrackChunk platformAt(const TramLine& line, const TramStop& stop)
     return stand;
 }
 
+/// A lift's tower: four columns at the corners of its shaft, from its station up the spoke to the
+/// hub, framed together every few metres; and the station's platform round its foot.
+void liftTower(std::vector<TrackChunk>& chunks, const TramLine& line)
+{
+    const Vec3d                out = HabitatGeometry::localUp(line.track.front().position) * -1.0;
+    const Vec3d                around = Vec3d(-std::sin(line.theta), std::cos(line.theta), 0.0);
+    const Vec3d                axis(0.0, 0.0, 1.0);
+    const std::array<Vec3d, 4> corners{
+        (around + axis) * kLiftColumnM, (around - axis) * kLiftColumnM,
+        (-around - axis) * kLiftColumnM, (-around + axis) * kLiftColumnM};
+    const double foot   = line.track.front().aboveGroundM + line.radiusM;  // the ground's radius
+    const double top    = std::hypot(line.track.back().position.x, line.track.back().position.y);
+    const auto   pieces = static_cast<int>(std::ceil((foot - top) / kChunkM));
+    for (int piece = 0; piece < pieces; ++piece)
+    {
+        const double from = foot - (kChunkM * piece);
+        const double to   = std::max(from - kChunkM, top);
+        TrackChunk   chunk;
+        chunk.origin = out * (0.5 * (from + to));
+        for (const Vec3d& corner : corners)
+        {
+            addBeam(chunk.mesh, chunk.origin, (out * from) + corner, (out * to) + corner, around,
+                    axis, 0.18, 0.36, transit_material::kPier);
+        }
+        const auto frames = static_cast<int>(std::floor((from - to) / kLiftFrameM));
+        for (int frame = 1; frame <= frames; ++frame)
+        {
+            const double r = from - (kLiftFrameM * frame);
+            for (std::size_t c = 0; c < corners.size(); ++c)
+            {
+                const Vec3d a    = (out * r) + corners.at(c);
+                const Vec3d b    = (out * r) + corners.at((c + 1) % corners.size());
+                const Vec3d side = glm::normalize(glm::cross(out, b - a));
+                addBeam(chunk.mesh, chunk.origin, a, b, side, out, 0.12, 0.3,
+                        transit_material::kDeck);
+            }
+        }
+        closeChunk(chunks, chunk);
+    }
+    // The platform the cabin stops on at the floor, reaching out along the ring either side.
+    TrackChunk   stand;
+    const double deck = line.track.front().aboveGroundM + line.radiusM - kLiftPlatformM;
+    stand.origin      = out * (foot - (0.5 * kLiftPlatformM));
+    const Vec3d half  = around * ((0.5 * kLiftCabinM) + 4.0);
+    addBeam(stand.mesh, stand.origin, (out * (deck + (0.5 * kLiftPlatformM))) - half,
+            (out * (deck + (0.5 * kLiftPlatformM))) + half, axis, -out, kLiftCabinM, kLiftPlatformM,
+            transit_material::kPlatform);
+    closeChunk(chunks, stand);
+}
+
 }  // namespace
 
 std::vector<TrackChunk> buildTrackMeshes(const std::vector<TramLine>& lines)
@@ -1044,6 +1314,11 @@ std::vector<TrackChunk> buildTrackMeshes(const std::vector<TramLine>& lines)
     std::vector<TrackChunk> chunks;
     for (const TramLine& line : lines)
     {
+        if (line.kind == LineKind::SPOKE && !line.track.empty())
+        {
+            liftTower(chunks, line);
+            continue;
+        }
         TrackChunk chunk;
         double     chunkFrom = 0.0;
         for (std::size_t i = 0; i + 1 < line.track.size(); ++i)
@@ -1099,6 +1374,34 @@ CpuMesh buildTramMesh()
             Vec3d(halfWidth - 0.35, 0.95, 0.22));
     }
     return tram;
+}
+
+CpuMesh buildLiftMesh()
+{
+    using namespace transit_material;  // NOLINT(google-build-using-namespace): the names, just here
+    CpuMesh    lift;
+    const auto put = [&lift](const CpuMesh& part, const Vec3d& at, const Vec3d& half) {
+        appendMesh(lift, part, glm::translate(Mat4d(1.0), at) * glm::scale(Mat4d(1.0), half));
+    };
+    const double half   = 0.5 * kLiftCabinM;
+    const double height = kLiftCabinHeightM;
+    // A floor, a post at each corner, glass sides with a rail along them, and a roof.
+    put(makeBox(Vec3f(1.0F), kSkirt), Vec3d(0.0, -0.15, 0.0), Vec3d(half, 0.15, half));
+    for (const double x : {-1.0, 1.0})
+    {
+        for (const double z : {-1.0, 1.0})
+        {
+            put(makeBox(Vec3f(1.0F), kBody),
+                Vec3d(x * (half - 0.08), 0.5 * height, z * (half - 0.08)),
+                Vec3d(0.08, 0.5 * height, 0.08));
+        }
+        put(makeBox(Vec3f(1.0F), kGlass), Vec3d(x * (half - 0.03), 0.5 * height, 0.0),
+            Vec3d(0.03, (0.5 * height) - 0.05, half - 0.16));
+        put(makeBox(Vec3f(1.0F), kBody), Vec3d(x * (half - 0.12), 1.0, 0.0),
+            Vec3d(0.04, 0.04, half - 0.16));
+    }
+    put(makeBox(Vec3f(1.0F), kRoof), Vec3d(0.0, height + 0.1, 0.0), Vec3d(half, 0.1, half));
+    return lift;
 }
 
 }  // namespace StarshipSimulator

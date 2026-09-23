@@ -19,7 +19,7 @@ struct ClimateSpec
 {
     double cloudBaseM       = 420.0;  // the cloud deck, above the floor
     double cloudTopM        = 820.0;
-    double cloudiness       = 0.45;   // average cover, 0..1
+    double cloudiness       = 0.45;   // average cover, 0..1 (0: never a cloud)
     double raininess        = 0.35;   // how much of the time showers pass
     double windSpeedMS      = 3.0;    // typical wind along the valley
     double mistiness        = 0.7;    // how thick the morning mist over the water gets
