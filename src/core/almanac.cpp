@@ -10,6 +10,7 @@
 #include "StarshipSimulator/core/astro/sky_objects.h"
 #include "StarshipSimulator/core/habitat/HabitatGeometry.h"
 #include "StarshipSimulator/core/habitat/day_schedule.h"
+#include "StarshipSimulator/core/habitat/habitat_spec.h"
 #include "StarshipSimulator/core/habitat/metrics.h"
 #include "StarshipSimulator/core/habitat/mirror_optics.h"
 #include "StarshipSimulator/core/math.h"
@@ -108,6 +109,12 @@ AlmanacPage standingHere(const AlmanacState& state)
     return page;
 }
 
+/// Whether the habitat is Kalpana One: a short cylinder lit through its glass ends.
+bool kalpana(const AlmanacState& state)
+{
+    return state.geometry->kind() == HabitatKind::KALPANA_CYLINDER;
+}
+
 AlmanacPage theHabitat(const AlmanacState& state)
 {
     const HabitatSpec&    spec    = state.geometry->spec();
@@ -115,24 +122,46 @@ AlmanacPage theHabitat(const AlmanacState& state)
 
     AlmanacPage page;
     page.title = "This habitat";
-    page.story =
-        "A cylinder turning in sunlight, with the land on the inside of it. Three strips of ground "
-        "alternate with three windows the length of the hull, and outside each window a mirror "
-        "leans in to throw the sun onto the valley opposite. There is no dome over your head: what "
-        "is up there is more of the same ground, eight kilometres away.";
-    page.facts.push_back(
-        {.label = "Size",
-         .value = std::format("{:.1f} km across, {:.1f} km long", 2.0 * spec.radiusM / 1000.0,
-                              spec.lengthM / 1000.0),
-         .note  = std::format("{} valleys and {} windows", spec.stripPairs, spec.stripPairs)});
+    if (kalpana(state))
+    {
+        page.story = std::format(
+            "A short, wide cylinder turning in sunlight, with the land on the inside of it: "
+            "Kalpana "
+            "One, drawn up in 2007 as a first settlement small enough to build. Its sides have no "
+            "windows. The land runs once round the inside, from one glass end to the other, and "
+            "the light comes in through the ends. What is up there is more of the same ground, "
+            "{} away.",
+            metres(2.0 * spec.radiusM));
+        page.facts.push_back(
+            {.label = "Size",
+             .value =
+                 std::format("{:.0f} m across, {:.0f} m long", 2.0 * spec.radiusM, spec.lengthM),
+             .note = std::format("a loop of land {} round", metres(2.0 * kPi * spec.radiusM))});
+    }
+    else
+    {
+        page.story =
+            "A cylinder turning in sunlight, with the land on the inside of it. Three strips of "
+            "ground alternate with three windows the length of the hull, and outside each window a "
+            "mirror leans in to throw the sun onto the valley opposite. There is no dome over your "
+            "head: what is up there is more of the same ground, eight kilometres away.";
+        page.facts.push_back(
+            {.label = "Size",
+             .value = std::format("{:.1f} km across, {:.1f} km long", 2.0 * spec.radiusM / 1000.0,
+                                  spec.lengthM / 1000.0),
+             .note  = std::format("{} valleys and {} windows", spec.stripPairs, spec.stripPairs)});
+    }
     page.facts.push_back(
         {.label = "Land",
          .value = std::format("{:.0f} km^2", metrics.landAreaM2 / 1e6),
          .note  = std::format("room for about {:.1f} million people", metrics.population / 1e6)});
     page.facts.push_back(
         {.label = "Volume of air",
-         .value = std::format("{:.0f} km^3", metrics.volumeM3 / 1e9),
-         .note  = "enough for weather of its own: cloud, rain and mist over the valleys"});
+         .value = metrics.volumeM3 < 1e9 ? std::format("{:.0f} million m^3", metrics.volumeM3 / 1e6)
+                                         : std::format("{:.0f} km^3", metrics.volumeM3 / 1e9),
+         .note  = kalpana(state)
+                      ? "enough for weather of its own: a low deck of cloud, rain and mist"
+                      : "enough for weather of its own: cloud, rain and mist over the valleys"});
     if (state.towns > 0)
     {
         page.facts.push_back({.label = "Settled",
@@ -145,8 +174,10 @@ AlmanacPage theHabitat(const AlmanacState& state)
         page.facts.push_back(
             {.label = "Transit",
              .value = std::format("{:.0f} km of track", state.trackKm),
-             .note  = std::format("{} lines and {} stops, counting the lifts up to the hub",
-                                  state.tramLines, state.tramStops)});
+             .note  = kalpana(state)
+                          ? std::format("a loop round the land, with {} stops", state.tramStops)
+                          : std::format("{} lines and {} stops, counting the lifts up to the hub",
+                                        state.tramLines, state.tramStops)});
     }
     return page;
 }
@@ -194,6 +225,51 @@ AlmanacPage spinAndGravity(const AlmanacState& state)
     return page;
 }
 
+/// Kalpana One's day: mirrors outside the glass ends, shuttered at night.
+AlmanacPage theShutters(const AlmanacState& state)
+{
+    const HabitatGeometry& geometry = *state.geometry;
+    const double           angle    = state.mirrorAngleRad;
+    const double           daylight = daylightFactor(angle);
+    const auto             beams    = sunBeams(geometry, angle);
+    const double           beyond   = beams.empty() || !beams.front().image
+                                          ? 0.0
+                                          : beams.front().image->z - geometry.profile().zMax();
+    const double sunUp = radiansToDegrees(std::atan2(geometry.radius(), std::max(beyond, 1e-3)));
+
+    AlmanacPage page;
+    page.title = "The shutters and the day";
+    page.story =
+        "The axis points at the pole of the ecliptic, square to the sunlight, so no sunlight "
+        "falls along it. Mirrors outside each glass end catch the Sun and fold its light in "
+        "through the glass, and the day schedule sets them as it sets the mirrors of a bigger "
+        "cylinder: the steeper they stand, the higher the light comes in. At night shutters close "
+        "over them, and the ends show the stars.";
+    page.facts.push_back(
+        {.label = "Mirror angle now",
+         .value = std::format("{:.0f} degrees", radiansToDegrees(angle)),
+         .note  = std::format("45 is noon, 90 sunset; past 90 the shutters close")});
+    page.facts.push_back(
+        {.label = "The light",
+         .value = daylight > 0.0 ? std::format("{:.0f} degrees up", sunUp) : std::string("none"),
+         .note  = daylight > 0.0 ? "at the ends, coming in from both at once"
+                                 : "the shutters are closed and the ends show the stars"});
+    page.facts.push_back(
+        {.label = "Local time",
+         .value = hoursMinutes(state.localHour),
+         .note  = std::format("sunrise {}, sunset {}, a {:.1f} hour day",
+                              hoursMinutes(state.day.sunriseHour),
+                              hoursMinutes(sunsetHour(state.day)), state.weather.dayLengthHours)});
+    page.facts.push_back({.label = "Daylight",
+                          .value = std::format("{:.0f}%", 100.0 * daylight),
+                          .note  = "of what the mirrors can deliver at noon"});
+    page.facts.push_back(
+        {.label = "Windows",
+         .value = std::format("{:.0f} hectares of glass", state.metrics.windowAreaM2 / 1e4),
+         .note  = std::format("the two ends, each {} across", metres(2.0 * geometry.radius()))});
+    return page;
+}
+
 AlmanacPage theMirrors(const AlmanacState& state)
 {
     const double angle    = state.mirrorAngleRad;
@@ -201,6 +277,10 @@ AlmanacPage theMirrors(const AlmanacState& state)
     const double sunUp    = radiansToDegrees(sunElevation(angle));
 
     AlmanacPage page;
+    if (kalpana(state))
+    {
+        return theShutters(state);
+    }
     page.title = "The mirrors and the day";
     page.story =
         "The axis points at the sun, so sunlight arrives along it, end on. Outside each window a "
@@ -268,10 +348,19 @@ AlmanacPage theAir(const AlmanacState& state)
     AlmanacPage page;
     page.title = "The air and the view";
     page.story =
-        "Eight kilometres of air lies between you and the ground overhead -- about as much as you "
-        "look through straight up on Earth. That is why the far side is not sharp: it is behind a "
-        "veil of the same blue that makes a distant hill blue, and it is lit by sunlight that has "
-        "come the same distance. The whole inside of the habitat is its own weather system.";
+        kalpana(state)
+            ? std::format(
+                  "{} of air lies between you and the ground overhead: enough to soften the "
+                  "far side a little, not to hide it. The inside of the habitat is still "
+                  "its own weather system, with a low deck of cloud that can close over "
+                  "the far side altogether.",
+                  metres(2.0 * geometry.radius()))
+            : "Eight kilometres of air lies between you and the ground overhead -- about as much "
+              "as "
+              "you look through straight up on Earth. That is why the far side is not sharp: it "
+              "is behind a veil of the same blue that makes a distant hill blue, and it is lit by "
+              "sunlight that has come the same distance. The whole inside of the habitat is its "
+              "own weather system.";
     page.facts.push_back({.label = "Pressure at the floor",
                           .value = std::format("{:.1f} kPa", atmosphere.surfacePressurePa / 1000.0),
                           .note  = std::format("{:.0f}% of it still there at the axis",
@@ -289,7 +378,8 @@ AlmanacPage theAir(const AlmanacState& state)
          .note =
              state.weather.rain > 0.05
                  ? std::format("raining; the ground is {:.0f}% wet", 100.0 * state.weather.wetness)
-                 : std::format("wind {:.1f} m/s along the valley", state.weather.windAlongMS)});
+                 : std::format("wind {:.1f} m/s {}", state.weather.windAlongMS,
+                               kalpana(state) ? "round the land" : "along the valley")});
     return page;
 }
 
@@ -300,10 +390,19 @@ AlmanacPage theSkyOutside(const AlmanacState& state)
     AlmanacPage page;
     page.title = "The sky outside";
     page.story =
-        "The stars outside are the real ones, in their real places, for the date on the clock. "
-        "They do not rise and set: they sweep. The habitat turns once every couple of minutes, so "
-        "the whole sky wheels past the windows at a pace you can watch, around the point the axis "
-        "is aimed at. Everything else -- the planets, the Earth, the Moon -- keeps its own time.";
+        kalpana(state)
+            ? std::format(
+                  "The stars outside are the real ones, in their real places, for the date on the "
+                  "clock. They do not rise and set: they circle. The axis points at the pole of "
+                  "the ecliptic, so through each glass end the whole sky turns round that pole "
+                  "once every {:.0f} seconds. The Sun, the planets, Earth and the Moon all lie "
+                  "near the ecliptic, beside the habitat, where the hull hides them.",
+                  metrics.periodS)
+            : "The stars outside are the real ones, in their real places, for the date on the "
+              "clock. They do not rise and set: they sweep. The habitat turns once every couple of "
+              "minutes, so the whole sky wheels past the windows at a pace you can watch, around "
+              "the point the axis is aimed at. Everything else -- the planets, the Earth, the "
+              "Moon -- keeps its own time.";
     page.facts.push_back({.label = "Where this is",
                           .value = astro::locationName(state.location),
                           .note  = "the habitat holds station here"});

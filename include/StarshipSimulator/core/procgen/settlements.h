@@ -2,10 +2,13 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "StarshipSimulator/core/habitat/HabitatGeometry.h"
+#include "StarshipSimulator/core/habitat/MeridianProfile.h"
+#include "StarshipSimulator/core/habitat/land_layout.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/procgen/props.h"
 #include "StarshipSimulator/core/procgen/terrain_grid.h"
@@ -18,20 +21,31 @@
 namespace StarshipSimulator
 {
 
-/// A patch of the valley floor unrolled flat around an origin: x metres around the habitat (in
-/// the spin direction, increasing theta), y metres along the axis (+z).
+/// A patch of the floor unrolled flat around an origin, laid out like its band of land (see
+/// `LandBand`). In a valley running along the axis, x is metres around the habitat (in the spin
+/// direction, increasing theta) and y metres along the axis (+z). On a band running around the
+/// axis, x is metres along the floor toward -z and y metres around it, which keeps the same
+/// handedness, so the towns come out the same way up.
 struct FloorPlane
 {
-    double z0     = 0.0;
-    double theta0 = 0.0;
-    double radius = 1.0;  // of the floor
+    double   z0     = 0.0;
+    double   theta0 = 0.0;
+    double   radius = 1.0;  // of the floor at the origin
+    BandAxis axis   = BandAxis::ALONG_Z;
+    double   u0     = 0.0;  // AROUND: the floor profile's arc length at z0
+    std::shared_ptr<const MeridianProfile> profile =
+        nullptr;  // AROUND: the floor, to walk along it
 
-    [[nodiscard]] double theta(double x) const { return theta0 + (x / radius); }
-    [[nodiscard]] double z(double y) const { return z0 + y; }
+    /// A plan centred on (z, theta), laid out like `band`.
+    [[nodiscard]] static FloorPlane onBand(const LandBand& band, double z, double theta);
+    /// Where the plan's point (x, y) lies on the floor.
+    [[nodiscard]] SurfaceSpot surface(const Vec2d& p) const;
     /// The point on the plan at (x, y), `height` above the floor (toward the axis).
     [[nodiscard]] Vec3d point(const Vec2d& p, double height) const;
     /// Where (z, theta) lies on the plan.
     [[nodiscard]] Vec2d toPlan(double z, double theta) const;
+    /// The direction of the plan's +y at (x, y), in the habitat frame.
+    [[nodiscard]] Vec3d alongDirection(const Vec2d& p) const;
 };
 
 enum class RoofKind : std::uint8_t

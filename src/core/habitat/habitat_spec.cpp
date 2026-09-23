@@ -292,7 +292,23 @@ std::vector<std::string> validate(const HabitatSpec& spec)
 bool habitatKindBuilt(HabitatKind kind)
 {
     // Every kind can be described and saved; the worlds inside them arrive one M8 step at a time.
-    return kind == HabitatKind::ONEILL_CYLINDER;
+    return kind == HabitatKind::ONEILL_CYLINDER || kind == HabitatKind::KALPANA_CYLINDER;
+}
+
+bool axisPointsAtSun(HabitatKind kind)
+{
+    return kind != HabitatKind::KALPANA_CYLINDER;
+}
+
+HabitatSpec normalizedForKind(const HabitatSpec& spec)
+{
+    HabitatSpec normal = spec;
+    if (spec.kind == HabitatKind::KALPANA_CYLINDER)
+    {
+        normal.sunwardEndcap     = makeEndcap(EndcapShape::FLAT);
+        normal.antisunwardEndcap = makeEndcap(EndcapShape::FLAT);
+    }
+    return normal;
 }
 
 const char* habitatKindKey(HabitatKind kind)

@@ -54,8 +54,13 @@ struct alignas(16) HabitatUniforms
     Vec4f weather{0.0F};
     // x: fresh green, y: autumn gold, z: spring blossom, w: how far the clouds have turned (rad)
     Vec4f season{1.0F, 0.0F, 0.0F, 0.0F};
+    // x: 1 when the sun images are points (beams' xyz is where), 0 when they are directions (the
+    // mirrors of an O'Neill cylinder); y: how many images there are
+    Vec4f light{0.0F};
+    // x: 1 when the land runs round the axis (its patterns must wrap), y: the round's length (m)
+    Vec4f band{0.0F};
 };
-static_assert(sizeof(HabitatUniforms) == 16 * (2 + kMaxSunBeams + 9));
+static_assert(sizeof(HabitatUniforms) == 16 * (2 + kMaxSunBeams + 11));
 static_assert(offsetof(HabitatUniforms, sunColor) == 16 * (2 + kMaxSunBeams));
 
 /// The starry sky (shaders/include/sky.glsl, block "Sky").

@@ -323,4 +323,21 @@ Mat3d habitatFromEqj(const Vec3d& sunDirection, double spinPhase)
     return unspin * atRest;
 }
 
+Mat3d habitatFromEqj(const Vec3d& sunDirection, double spinPhase, SpinAxis axis)
+{
+    if (axis == SpinAxis::TOWARD_SUN)
+    {
+        return habitatFromEqj(sunDirection, spinPhase);
+    }
+    const Vec3d z(0.0, -std::sin(kObliquity), std::cos(kObliquity));  // the ecliptic's north pole
+    Vec3d       x  = glm::normalize(sunDirection) - (z * glm::dot(glm::normalize(sunDirection), z));
+    x              = glm::dot(x, x) > 1e-20 ? glm::normalize(x) : Vec3d(1.0, 0.0, 0.0);
+    const Vec3d  y = glm::cross(z, x);
+    const Mat3d  atRest = glm::transpose(Mat3d(x, y, z));
+    const double c      = std::cos(spinPhase);
+    const double s      = std::sin(spinPhase);
+    const Mat3d  unspin(Vec3d(c, -s, 0.0), Vec3d(s, c, 0.0), Vec3d(0.0, 0.0, 1.0));  // Rz(-phase)
+    return unspin * atRest;
+}
+
 }  // namespace StarshipSimulator::astro

@@ -174,6 +174,14 @@ struct HabitatSpec
 [[nodiscard]] std::vector<HabitatKind>   allHabitatKinds();
 [[nodiscard]] DaylightKind               daylightKindFor(HabitatKind kind);
 
+/// Whether the habitat's spin axis points at the Sun (to catch its light along the axis). Kalpana
+/// One's points out of the plane of the solar system instead, to the ecliptic's north pole, so the
+/// Sun shines on it from the side and lights its end caps all the time.
+[[nodiscard]] bool axisPointsAtSun(HabitatKind kind);
+
+/// The habitat with the fields its kind fixes filled in: a Kalpana cylinder's ends are flat glass.
+[[nodiscard]] HabitatSpec normalizedForKind(const HabitatSpec& spec);
+
 /// How many bands of land the habitat has (the O'Neill cylinder's valleys; one elsewhere).
 [[nodiscard]] int bandCount(const HabitatSpec& spec);
 

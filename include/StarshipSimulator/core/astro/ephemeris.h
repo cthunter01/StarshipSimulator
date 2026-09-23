@@ -106,4 +106,15 @@ struct SkyState
 /// directions into the (spinning) habitat frame.
 [[nodiscard]] Mat3d habitatFromEqj(const Vec3d& sunDirection, double spinPhase);
 
+/// Where a habitat points its spin axis.
+enum class SpinAxis : std::uint8_t
+{
+    TOWARD_SUN,      // O'Neill's cylinders: the Sun stays on the axis, the mirrors bring it in
+    ECLIPTIC_NORTH,  // Kalpana One: square to the ecliptic, so the Sun circles round the hull
+};
+
+/// The same for a habitat pointing its axis either way. With the axis at the ecliptic's north
+/// pole, +X points toward the Sun at spin phase 0.
+[[nodiscard]] Mat3d habitatFromEqj(const Vec3d& sunDirection, double spinPhase, SpinAxis axis);
+
 }  // namespace StarshipSimulator::astro

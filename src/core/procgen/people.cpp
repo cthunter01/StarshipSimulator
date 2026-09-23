@@ -9,6 +9,8 @@
 #include <vector>
 
 #include "StarshipSimulator/core/SplitMix64.h"
+#include "StarshipSimulator/core/habitat/HabitatGeometry.h"
+#include "StarshipSimulator/core/habitat/land_layout.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/procgen/mesh.h"
 #include "StarshipSimulator/core/procgen/settlements.h"
@@ -36,16 +38,24 @@ void dress(Person& person, SplitMix64& rng)
 Person standing(const Settlement& place, const TerrainGrid& grid, const Vec2d& at,
                 const Vec2d& facing)
 {
-    Person       person;
-    const double theta  = place.plane.theta(at.x);
-    const double z      = place.plane.z(at.y);
-    const double height = grid.groundHeight(z, theta);
-    person.position     = place.plane.point(at, height);
+    Person            person;
+    const SurfaceSpot spot   = place.plane.surface(at);
+    const double      theta  = spot.theta;
+    const double      height = grid.groundHeight(spot.z, theta);
+    person.position          = place.plane.point(at, height);
+    const Vec2d aim = glm::length(facing) > 1e-9 ? glm::normalize(facing) : Vec2d(0.0, 1.0);
+    if (place.plane.axis == BandAxis::AROUND)
+    {
+        // The plan's y runs around the axis, its x across it.
+        const Vec3d along  = place.plane.alongDirection(at);
+        const Vec3d across = glm::cross(HabitatGeometry::localUp(person.position), along);
+        person.forward     = glm::normalize((across * aim.x) + (along * aim.y));
+        return person;
+    }
     // The plan's x runs around the habitat (spinward), its y along the axis.
     const Vec3d around(-std::sin(theta), std::cos(theta), 0.0);
     const Vec3d along(0.0, 0.0, 1.0);
-    const Vec2d aim = glm::length(facing) > 1e-9 ? glm::normalize(facing) : Vec2d(0.0, 1.0);
-    person.forward  = glm::normalize((around * aim.x) + (along * aim.y));
+    person.forward = glm::normalize((around * aim.x) + (along * aim.y));
     return person;
 }
 

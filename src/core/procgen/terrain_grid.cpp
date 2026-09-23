@@ -228,7 +228,7 @@ TerrainGrid sampleTerrain(const HabitatGeometry& geometry, double targetCellM, u
                     0.0, catmullRom(rowValues[0], rowValues[1], rowValues[2], rowValues[3], fr));
             }
             const double theta = layout.theta(column);
-            h = Landscape::shapeNearWater(h, landscape.shoreDistance(z, theta, kShapingReachM));
+            h           = landscape.shape(h, landscape.shoreDistance(z, theta, kShapingReachM));
             out[column] = static_cast<std::uint16_t>(
                 std::lround(std::clamp((h - low) / range, 0.0, 1.0) * 65535.0));
         }

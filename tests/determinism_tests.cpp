@@ -138,6 +138,17 @@ TEST(Determinism, TheCoriolisPlaygroundAlwaysMakesTheSameWorld)
     EXPECT_EQ(worldHash(playground->habitat), kPlaygroundHash);
 }
 
+TEST(Determinism, KalpanaOneAlwaysMakesTheSameWorld)
+{
+    // A habitat whose land runs round the axis, pinned the same way: its river, towns, farms and
+    // looping tramway are all laid out on a band that closes on itself.
+    const auto kalpana =
+        loadScenario(pathFromUtf8(STARSHIPSIMULATOR_DATA_DIR) / "presets" / "kalpana_one.toml");
+    ASSERT_TRUE(kalpana.has_value()) << kalpana.error().describe();
+    constexpr std::uint64_t kKalpanaHash = 0x763F0776F282C6B5ULL;
+    EXPECT_EQ(worldHash(kalpana->habitat), kKalpanaHash);
+}
+
 TEST(Determinism, TheThreadCountDoesNotChangeTheTerrain)
 {
     const HabitatGeometry geometry{sample()};

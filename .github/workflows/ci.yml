@@ -53,7 +53,9 @@ jobs:
           app=build/${{ matrix.preset }}/bin/StarshipSimulator
           $app --size 960x540 --view town --capture metal-town.png --capture-ui 2>&1 | tee metal-town.log
           $app --size 960x540 --view valley --capture metal-valley.png 2>&1 | tee metal-valley.log
-          test -s metal-town.png && test -s metal-valley.png
+          $app --size 960x540 --view valley --scenario build/${{ matrix.preset }}/bin/data/presets/kalpana_one.toml \
+            --capture metal-kalpana.png 2>&1 | tee metal-kalpana.log
+          test -s metal-town.png && test -s metal-valley.png && test -s metal-kalpana.png
       - uses: actions/upload-artifact@v7
         if: always()
         with:

@@ -10,6 +10,7 @@
 #include "StarshipSimulator/core/Frustum.h"
 #include "StarshipSimulator/core/habitat/HabitatGeometry.h"
 #include "StarshipSimulator/core/habitat/Landscape.h"
+#include "StarshipSimulator/core/habitat/habitat_spec.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/procgen/terrain_grid.h"
 
@@ -90,8 +91,9 @@ LeafBounds leafBounds(const TerrainGrid& grid, const HabitatGeometry& geometry, 
     const double strip   = geometry.stripAngle();
     const double nearest = std::round(0.5 * (a0 + a1) / strip) * strip;
     const double half    = geometry.windowHalfAngle();
-    leaf.hidden          = zRange.x >= geometry.floorZMin() && zRange.y <= geometry.floorZMax() &&
-                           std::abs(a0 - nearest) <= half && std::abs(a1 - nearest) <= half;
+    leaf.hidden = zRange.x >= geometry.floorZMin() && zRange.y <= geometry.floorZMax() &&
+                  std::abs(a0 - nearest) <= half && std::abs(a1 - nearest) <= half &&
+                  geometry.kind() == HabitatKind::ONEILL_CYLINDER;  // the others: no strips
     return leaf;
 }
 

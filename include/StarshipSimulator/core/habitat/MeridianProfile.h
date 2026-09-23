@@ -50,4 +50,8 @@ private:
 /// The inner surface profile of an O'Neill cylinder with its endcaps (anti-sunward end first).
 [[nodiscard]] MeridianProfile buildOneillProfile(const HabitatSpec& spec);
 
+/// The floor's profile for any kind of habitat (anti-sunward end first). Throws
+/// std::invalid_argument for a kind that cannot be built yet.
+[[nodiscard]] MeridianProfile buildFloorProfile(const HabitatSpec& spec);
+
 }  // namespace StarshipSimulator

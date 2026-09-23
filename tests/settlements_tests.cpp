@@ -12,6 +12,7 @@
 #include "StarshipSimulator/core/habitat/HabitatGeometry.h"
 #include "StarshipSimulator/core/habitat/Landscape.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
+#include "StarshipSimulator/core/habitat/land_layout.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/procgen/terrain_grid.h"
 #include "StarshipSimulator/core/procgen/trees.h"
@@ -135,8 +136,9 @@ TEST(Settlements, BuildingsStandOnDryValleyFloor)
         const Settlement& place = s.places[b.settlement];
         for (const Vec2d& corner : footprint(b))
         {
-            const double z     = place.plane.z(corner.y);
-            const double theta = place.plane.theta(corner.x);
+            const SurfaceSpot spot  = place.plane.surface(corner);
+            const double      z     = spot.z;
+            const double      theta = spot.theta;
             EXPECT_GT(geometry.landscape().shoreDistance(z, theta), 4.0);
             const Region region = geometry.regionAt(z, theta);
             EXPECT_EQ(region.kind, RegionKind::LAND);
@@ -216,11 +218,11 @@ TEST(Settlements, WildTreesKeepOutOfTownsAndFarmyards)
     {
         EXPECT_TRUE(s.keepsTreesOff(place.plane.z0, place.plane.theta0)) << place.name;
         // A kilometre away along the valley is open country (or another settlement's edge).
-        const Vec2d away(0.0, place.kind == SettlementKind::TOWN ? 1500.0 : 300.0);
-        if (s.townAt(place.plane.z(away.y), place.plane.theta(away.x)) == nullptr)
+        const Vec2d       away(0.0, place.kind == SettlementKind::TOWN ? 1500.0 : 300.0);
+        const SurfaceSpot there = place.plane.surface(away);
+        if (s.townAt(there.z, there.theta) == nullptr)
         {
-            EXPECT_FALSE(s.keepsTreesOff(place.plane.z(away.y), place.plane.theta(away.x)))
-                << place.name;
+            EXPECT_FALSE(s.keepsTreesOff(there.z, there.theta)) << place.name;
         }
     }
     const Settlement& first = s.places.front();

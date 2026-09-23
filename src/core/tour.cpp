@@ -188,10 +188,105 @@ TourStop under(TourStop stop, std::string weather)
     return stop;
 }
 
+/// Kalpana One's tours: the same three as a valley's, but its land runs round the axis between
+/// two glass ends, the light comes in through them, and its axis points at the ecliptic's pole.
+std::vector<Tour> kalpanaTours(const HabitatGeometry& geometry, std::string_view name)
+{
+    const HabitatSpec& spec   = geometry.spec();
+    const double       middle = 0.5 * (geometry.floorZMin() + geometry.floorZMax());
+    const double       radius = geometry.radius();
+    const double       across = 2.0 * radius;
+    const double       length = geometry.floorZMax() - geometry.floorZMin();
+    const double       round  = 2.0 * kPi * radius;
+    const double       period = 2.0 * kPi / geometry.omega();
+    const double       glass  = geometry.floorZMax() - std::min(30.0, 0.1 * length);
+    const double       step   = std::min(0.4, 150.0 / radius);  // radians round, between stops
+    const int          towns  = spec.settlements.townsPerValley;
+    constexpr double   kAlong = 90.0;  // yaw along the land: spinward, round the axis
+
+    Tour first;
+    first.name  = std::format("{} in five minutes", name);
+    first.blurb = "The whole place, from its loop of land to the axis.";
+    first.stops = {
+        under(lit(at(std::format("You are standing inside a cylinder {} across and only {} long, "
+                                 "turning once every {}. The land runs once round the inside: "
+                                 "you could walk all the way round in about {:.0f} minutes.",
+                                 spanText(across), spanText(length), periodText(period),
+                                 round / 1.4 / 60.0),
+                     place(geometry, middle, 0.0, 1.7), kAlong, 2.0, 0.5, 10.0, 2.0),
+                  50.0),
+              "fair"),
+        at(std::format("There is no sky over you. That is the far side of the floor, {} up, and "
+                       "the blue between is the habitat's own air.",
+                       spanText(across)),
+           place(geometry, middle, 0.0, 26.0), kAlong, 72.0, 4.0, 9.0),
+        at("The ends are the windows. Mirrors outside each glass end fold the sunlight in along "
+           "the axis, so the light comes from both ends at once.",
+           place(geometry, middle, 0.0, 30.0), 0.0, 20.0, 6.0, 9.0),
+        at(std::format("People live here: {} beside a river that runs all the way round and back "
+                       "into itself, a tram that only ever goes one way round, and farms "
+                       "between them.",
+                       counted(towns, "village", "villages")),
+           place(geometry, middle, step, 40.0), kAlong, -22.0, 8.0, 9.0, 4.0),
+        at("Climb toward the axis and the gravity fades: it is made by the spin, and the spin "
+           "reaches you through the floor.",
+           onAxis(middle, 2.0 * step, 0.45 * radius), kAlong, -10.0, 10.0, 8.0, 5.0),
+        at("At the axis there is none left at all. This is where you could fly under your own "
+           "power, with a pair of wings.",
+           onAxis(middle, 3.0 * step, 0.12 * radius), 0.0, 0.0, 9.0, 10.0, 9.0),
+    };
+
+    Tour day;
+    day.name  = "How the shutters make a day";
+    day.blurb = "Sunrise to nightfall from one spot.";
+    TourStop morning =
+        lit(at("Morning. The axis points at the pole of the ecliptic, square to the sunlight: "
+               "mirrors outside the ends catch the Sun and fold it in through the glass.",
+               place(geometry, middle, 0.0, 24.0), kAlong, 18.0, 0.5, 8.0),
+            80.0);
+    morning.weather = std::string("fair");
+    day.stops       = {
+        std::move(morning),
+        lit(at("Noon. The mirrors stand at their steepest and the light comes in high from both "
+               "ends; there is no east or west in here, only the two ends.",
+               place(geometry, middle, 0.0, 24.0), kAlong, 30.0, 4.0, 8.0),
+            45.0),
+        lit(at("Evening. The light falls low along the axis and the shadows reach in toward the "
+               "middle from both ends.",
+               place(geometry, middle, 0.0, 24.0), 0.0, 12.0, 4.0, 8.0),
+            88.0),
+        lit(at("Past ninety degrees the shutters close, and the glass ends show the real stars, "
+               "circling the middle of each end as the habitat turns.",
+               place(geometry, glass, 0.0, 1.7), 0.0, 35.0, 6.0, 12.0),
+            110.0),
+    };
+
+    Tour sky;
+    sky.name  = "The sky outside";
+    sky.blurb = "What you see through the glass ends, and why it circles.";
+    sky.stops = {
+        under(lit(at(std::format("The ends are glass. Stand near one and the stars wheel round "
+                                 "its middle, a full turn every {}: the habitat's axis points "
+                                 "at the pole of the ecliptic.",
+                                 periodText(period)),
+                     place(geometry, glass, 0.0, 1.7), 0.0, 40.0, 0.5, 14.0),
+                  115.0),
+              "clear"),
+        at("Those are the real stars for the date on the clock. The Sun, Earth and the planets "
+           "lie beside the habitat, near the ecliptic, where the hull hides them.",
+           place(geometry, glass, 0.0, 12.0), 0.0, 25.0, 5.0, 14.0, 6.0),
+    };
+    return {std::move(first), std::move(day), std::move(sky)};
+}
+
 }  // namespace
 
 std::vector<Tour> habitatTours(const HabitatGeometry& geometry, std::string_view name)
 {
+    if (geometry.kind() == HabitatKind::KALPANA_CYLINDER)
+    {
+        return kalpanaTours(geometry, name);
+    }
     const HabitatSpec& spec   = geometry.spec();
     const double       valley = geometry.landCenter(0);
     const double       window = geometry.windowCenter(0);

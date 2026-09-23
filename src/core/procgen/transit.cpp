@@ -12,6 +12,7 @@
 
 #include "StarshipSimulator/core/habitat/HabitatGeometry.h"
 #include "StarshipSimulator/core/habitat/Landscape.h"
+#include "StarshipSimulator/core/habitat/land_layout.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/procgen/mesh.h"
 #include "StarshipSimulator/core/procgen/settlements.h"
@@ -48,6 +49,7 @@ constexpr double kTramLengthM = kTramBodyLengthM;
 constexpr double kTramWidthM  = kTramBodyWidthM;
 constexpr double kTramHeightM = kTramBodyHeightM;
 constexpr double kHubRadiusM  = 70.0;  // the funicular stops where the ramp reaches the hub
+constexpr double kLoopAcross  = 0.55;  // a loop runs this far across its band, off the river
 
 /// The line runs down the valley, off to one side of the river's meander.
 double lineAngle(const HabitatGeometry& geometry, int valley)
@@ -81,8 +83,13 @@ TrackPoint pointAlong(const TramLine& line, double alongM)
     {
         return {};
     }
-    const double where = std::clamp(alongM, 0.0, line.lengthM);
-    const auto   last  = line.track.size() - 1;
+    double where = std::clamp(alongM, 0.0, line.lengthM);
+    if (line.kind == LineKind::LOOP && line.lengthM > 0.0)
+    {
+        where = std::fmod(alongM, line.lengthM);  // round and round
+        where = where < 0.0 ? where + line.lengthM : where;
+    }
+    const auto last = line.track.size() - 1;
     // The points are not evenly spaced (the ground rises and falls), so look the place up.
     const auto after = std::ranges::lower_bound(line.track, where, {}, &TrackPoint::alongM);
     const auto index =
@@ -109,11 +116,36 @@ namespace
 /// One sample of the ground under a line, and how far the alignment may stray from it there.
 struct GroundSample
 {
-    double z      = 0.0;
+    double at     = 0.0;  // on the line's plan: z down a valley, metres round a loop
     double ground = 0.0;  // the land's height above the meridian profile
     double low    = 0.0;  // the deepest cutting the line will take here
     double high   = 0.0;  // and the tallest trestle
 };
+
+/// Where a point on a line's plan lies on the floor.
+SurfaceSpot spotOf(const TramLine& line, double at)
+{
+    if (line.kind == LineKind::LOOP)
+    {
+        return {.z = line.z, .theta = line.theta + (at / line.radiusM)};
+    }
+    return {.z = at, .theta = line.theta};
+}
+
+/// One sounding of the ground under a line.
+GroundSample soundAt(const TramLine& line, const HabitatGeometry& geometry, const TerrainGrid& grid,
+                     double at, double cutM, double riseM)
+{
+    const SurfaceSpot spot   = spotOf(line, at);
+    const double      ground = grid.groundHeight(spot.z, spot.theta);
+    GroundSample sample{.at = at, .ground = ground, .low = ground - cutM, .high = ground + riseM};
+    // Over water the formation has to clear the surface, on a viaduct.
+    if (geometry.waterDepth(spot.z, spot.theta) > 0.0)
+    {
+        sample.low = std::max(sample.low, kWaterLevelM + kViaductM);
+    }
+    return sample;
+}
 
 /// Samples the ground under a line, finely, from one end of it to the other.
 std::vector<GroundSample> soundGround(const TramLine& line, const HabitatGeometry& geometry,
@@ -126,15 +158,24 @@ std::vector<GroundSample> soundGround(const TramLine& line, const HabitatGeometr
     samples.reserve(static_cast<std::size_t>(count) + 1);
     for (int i = 0; i <= count; ++i)
     {
-        const double z      = from + (step * i);
-        const double ground = grid.groundHeight(z, line.theta);
-        GroundSample sample{.z = z, .ground = ground, .low = ground - cutM, .high = ground + riseM};
-        // Over water the formation has to clear the surface, on a viaduct.
-        if (geometry.waterDepth(z, line.theta) > 0.0)
-        {
-            sample.low = std::max(sample.low, kWaterLevelM + kViaductM);
-        }
-        samples.push_back(sample);
+        samples.push_back(soundAt(line, geometry, grid, from + (step * i), cutM, riseM));
+    }
+    return samples;
+}
+
+/// Samples the ground once round a loop, a whole number of soundings, the last just short of
+/// where the first was taken.
+std::vector<GroundSample> soundLoop(const TramLine& line, const HabitatGeometry& geometry,
+                                    const TerrainGrid& grid, double cutM, double riseM)
+{
+    const double              round = 2.0 * kPi * line.radiusM;
+    const auto                count = static_cast<int>(std::ceil(round / kSoundM));
+    const double              step  = round / count;
+    std::vector<GroundSample> samples;
+    samples.reserve(static_cast<std::size_t>(count));
+    for (int i = 0; i < count; ++i)
+    {
+        samples.push_back(soundAt(line, geometry, grid, step * i, cutM, riseM));
     }
     return samples;
 }
@@ -184,16 +225,61 @@ void smoothAlignment(std::vector<double>& height, const std::vector<GroundSample
     round(kRoundPasses / 8);
 }
 
+/// The same for a loop, whose alignment runs back into itself.
+void smoothLoop(std::vector<double>& height, const std::vector<GroundSample>& ground)
+{
+    const auto count = static_cast<std::ptrdiff_t>(height.size());
+    if (count < 3)
+    {
+        return;
+    }
+    const auto wrap = [count](std::ptrdiff_t i) {
+        return static_cast<std::size_t>(((i % count) + count) % count);
+    };
+    for (std::ptrdiff_t stride = std::max<std::ptrdiff_t>(1, count / 8); stride >= 1; stride /= 2)
+    {
+        for (int pass = 0; pass < kSmoothPasses; ++pass)
+        {
+            for (std::ptrdiff_t i = 0; i < count; ++i)
+            {
+                const auto   at   = static_cast<std::size_t>(i);
+                const double even = 0.5 * (height[wrap(i - stride)] + height[wrap(i + stride)]);
+                height[at]        = std::clamp(even, ground[at].low, ground[at].high);
+            }
+        }
+    }
+    const auto round = [&](int passes) {
+        for (int pass = 0; pass < passes; ++pass)
+        {
+            for (std::ptrdiff_t i = 0; i < count; ++i)
+            {
+                const auto at = static_cast<std::size_t>(i);
+                height[at] =
+                    0.5 * (height[at] + (0.5 * (height[wrap(i - 1)] + height[wrap(i + 1)])));
+            }
+        }
+    };
+    round(kRoundPasses);
+    for (std::size_t i = 0; i < height.size(); ++i)
+    {
+        height[i] =
+            std::clamp(height[i], ground[i].low - kOvershootM, ground[i].high + kOvershootM);
+    }
+    round(kRoundPasses / 8);
+}
+
 /// Lays a line's track: its alignment, and a point about every kStepM along it for the mesh.
 void layTrack(TramLine& line, const HabitatGeometry& geometry, const TerrainGrid& grid, double from,
               double to, double railM)
 {
     // A funicular up a rough ramp is happier cutting than a tramway across gentle fields is.
     const bool                      ramp  = line.kind == LineKind::ENDCAP;
+    const bool                      loop  = line.kind == LineKind::LOOP;
     const double                    cutM  = ramp ? 14.0 : kMaxCutM;
     const double                    riseM = ramp ? 16.0 : kMaxRiseM;
     const std::vector<GroundSample> ground =
-        soundGround(line, geometry, grid, from, to, cutM, riseM);
+        loop ? soundLoop(line, geometry, grid, cutM, riseM)
+             : soundGround(line, geometry, grid, from, to, cutM, riseM);
     if (ground.size() < 3)
     {
         return;
@@ -204,20 +290,28 @@ void layTrack(TramLine& line, const HabitatGeometry& geometry, const TerrainGrid
     {
         formation.push_back(std::clamp(sample.ground, sample.low, sample.high));
     }
-    smoothAlignment(formation, ground);
+    if (loop)
+    {
+        smoothLoop(formation, ground);
+    }
+    else
+    {
+        smoothAlignment(formation, ground);
+    }
 
     // Down to the points the track is actually built from, about kStepM apart along it.
     double along = 0.0;
     Vec3d  last(0.0);
     for (std::size_t i = 0; i < ground.size(); ++i)
     {
-        const double z    = ground[i].z;
-        const double rail = formation[i] + railM;
-        const double base = geometry.profile().radiusAt(z).value_or(geometry.radius());
-        const double r    = base - rail;
-        const Vec3d  at(r * std::cos(line.theta), r * std::sin(line.theta), z);
-        const double above = formation[i] - ground[i].ground;
-        const bool   atEnd = i + 1 == ground.size();
+        const SurfaceSpot spot = spotOf(line, ground[i].at);
+        const double      z    = spot.z;
+        const double      rail = formation[i] + railM;
+        const double      base = geometry.profile().radiusAt(z).value_or(geometry.radius());
+        const double      r    = base - rail;
+        const Vec3d       at(r * std::cos(spot.theta), r * std::sin(spot.theta), z);
+        const double      above = formation[i] - ground[i].ground;
+        const bool        atEnd = !loop && i + 1 == ground.size();
         if (!line.track.empty())
         {
             const double reach = glm::distance(at, last);
@@ -231,8 +325,18 @@ void layTrack(TramLine& line, const HabitatGeometry& geometry, const TerrainGrid
                               .alongM       = along,
                               .railHeightM  = rail,
                               .aboveGroundM = above,
-                              .carried      = above > kMaxFillM});
+                              .carried      = above > kMaxFillM,
+                              .planM        = ground[i].at});
         last = at;
+    }
+    if (loop)
+    {
+        // Back to the start, which closes the loop.
+        TrackPoint close = line.track.front();
+        along += glm::distance(close.position, last);
+        close.alongM = along;
+        close.planM  = 2.0 * kPi * line.radiusM;
+        line.track.push_back(close);
     }
     line.lengthM = along;
 }
@@ -258,6 +362,80 @@ void callAtTowns(TramLine& line, const Settlements& settlements)
                               .dwellS   = town != nullptr ? 16.0 : 8.0});
         sinceStop = 0.0;
     }
+}
+
+/// The stretch of a loop's track nearest a point, off any trestle.
+const TrackPoint* nearestOnTrack(const TramLine& line, const Vec3d& to)
+{
+    const TrackPoint* nearest = nullptr;
+    for (const TrackPoint& point : line.track)
+    {
+        if (!point.carried && (nearest == nullptr || glm::distance(point.position, to) <
+                                                         glm::distance(nearest->position, to)))
+        {
+            nearest = &point;
+        }
+    }
+    return nearest;
+}
+
+/// Halts in the long gaps between a loop's stops, all the way round if it has none.
+std::vector<TramStop> loopHalts(const TramLine& line)
+{
+    std::vector<TramStop> halts;
+    const auto            count = static_cast<std::ptrdiff_t>(line.stops.size());
+    for (std::ptrdiff_t i = 0; i < std::max<std::ptrdiff_t>(count, 1); ++i)
+    {
+        const double from = count > 0 ? line.stops[static_cast<std::size_t>(i)].alongM : 0.0;
+        const double to =
+            count > 1 ? line.stops[static_cast<std::size_t>((i + 1) % count)].alongM : from;
+        const double gap =
+            count > 1 ? std::fmod(to - from + line.lengthM, line.lengthM) : line.lengthM;
+        const int extra = static_cast<int>(gap / kStopEveryM);
+        for (int k = 1; k <= extra; ++k)
+        {
+            const TrackPoint here = pointAlong(line, from + (gap * k / (extra + 1)));
+            if (!here.carried)
+            {
+                halts.push_back({.name     = "halt",
+                                 .alongM   = here.alongM,
+                                 .position = here.position,
+                                 .dwellS   = 8.0});
+            }
+        }
+    }
+    return halts;
+}
+
+/// Where a loop calls: at the stretch of track nearest each town on its band, and at halts where
+/// the towns are far apart.
+void callRound(TramLine& line, const Settlements& settlements)
+{
+    for (const Settlement& place : settlements.places)
+    {
+        if (place.kind != SettlementKind::TOWN || place.valley != line.valley)
+        {
+            continue;
+        }
+        if (const TrackPoint* nearest = nearestOnTrack(line, place.plane.point(Vec2d(0.0), 0.0)))
+        {
+            line.stops.push_back({.name     = place.name,
+                                  .alongM   = nearest->alongM,
+                                  .position = nearest->position,
+                                  .dwellS   = 16.0});
+        }
+    }
+    std::ranges::sort(line.stops, [](const TramStop& a, const TramStop& b) {
+        return a.alongM != b.alongM ? a.alongM < b.alongM : a.name < b.name;
+    });
+    // Two towns served from one place get one stop.
+    const auto close = std::ranges::unique(line.stops, [](const TramStop& a, const TramStop& b) {
+        return b.alongM - a.alongM < 60.0;
+    });
+    line.stops.erase(close.begin(), close.end());
+    const std::vector<TramStop> halts = loopHalts(line);
+    line.stops.insert(line.stops.end(), halts.begin(), halts.end());
+    std::ranges::stable_sort(line.stops, {}, &TramStop::alongM);
 }
 
 /// How far down the endcap the ramp still has ground to run on, before it reaches the hub.
@@ -307,8 +485,26 @@ void callAtTerraces(TramLine& line)
 std::vector<TramLine> planTramLines(const HabitatGeometry& geometry, const TerrainGrid& grid)
 {
     std::vector<TramLine> lines;
-    for (int valley = 0; valley < geometry.stripCount(); ++valley)
+    for (int valley = 0; valley < geometry.bandCount(); ++valley)
     {
+        const LandBand& band = geometry.band(valley);
+        if (band.axis == BandAxis::AROUND)
+        {
+            // Once round the band, to one side of the river.
+            const SurfaceSpot start = band.toSurface(Vec2d(kLoopAcross * band.halfWidthM, 0.0));
+            TramLine          line;
+            line.kind    = LineKind::LOOP;
+            line.valley  = valley;
+            line.theta   = start.theta;
+            line.z       = start.z;
+            line.radiusM = geometry.profile().radiusAt(start.z).value_or(geometry.radius());
+            layTrack(line, geometry, grid, 0.0, 0.0, kRailHeadM);
+            if (line.track.size() >= 2)
+            {
+                lines.push_back(std::move(line));
+            }
+            continue;
+        }
         // The tramway runs the length of the valley floor (the endcaps' ramps are for the lifts).
         TramLine line;
         line.kind    = LineKind::VALLEY;
@@ -324,8 +520,12 @@ std::vector<TramLine> planTramLines(const HabitatGeometry& geometry, const Terra
     }
 
     // The funicular up each valley's end of the antisunward ramp, to the hub at the axis.
-    for (int valley = 0; valley < geometry.stripCount(); ++valley)
+    for (int valley = 0; valley < geometry.bandCount(); ++valley)
     {
+        if (geometry.band(valley).axis != BandAxis::ALONG_Z)
+        {
+            continue;
+        }
         TramLine line;
         line.kind         = LineKind::ENDCAP;
         line.valley       = valley;
@@ -351,6 +551,10 @@ void addTramStops(std::vector<TramLine>& lines, const Settlements& settlements)
         if (line.kind == LineKind::VALLEY)
         {
             callAtTowns(line, settlements);
+        }
+        else if (line.kind == LineKind::LOOP)
+        {
+            callRound(line, settlements);
         }
         else
         {
@@ -428,6 +632,84 @@ void gradeRow(TerrainGrid& grid, const TramLine& line, std::uint32_t row, double
     }
 }
 
+/// The alignment's formation level on a loop, `round` metres round it from its start.
+double loopFormationAt(const TramLine& line, double round, bool& carried)
+{
+    // The points are in order of how far round they are, the last one closing the loop.
+    const auto        after = std::ranges::upper_bound(line.track, round, {}, &TrackPoint::planM);
+    const std::size_t high  = std::clamp<std::size_t>(
+        static_cast<std::size_t>(after - line.track.begin()), 1, line.track.size() - 1);
+    const TrackPoint& a    = line.track[high - 1];
+    const TrackPoint& b    = line.track[high];
+    const double      span = b.planM - a.planM;
+    const double      t    = span > 1e-9 ? std::clamp((round - a.planM) / span, 0.0, 1.0) : 0.0;
+    carried                = a.carried && b.carried;
+    return std::lerp(a.railHeightM, b.railHeightM, t) - kRailHeadM;
+}
+
+/// Cuts and fills the heights of a loop's corridor at one column of the grid: the mirror of
+/// gradeRow, for a line running around the axis rather than along it.
+void gradeColumn(TerrainGrid& grid, const TramLine& line, std::uint32_t column, double theta,
+                 double formation)
+{
+    const TerrainGridLayout& layout    = grid.layout;
+    const double             middleRow = grid.cellAt(line.z, theta).y;
+    const auto               last      = static_cast<std::int64_t>(layout.rows()) - 1;
+    const auto               middle    = std::clamp<std::int64_t>(std::llround(middleRow), 0, last);
+    const double             depth =
+        std::abs(formation - grid.height(column, static_cast<std::uint32_t>(middle)));
+    const double batter = kBlendM + (kSideSlope * depth);
+    const auto   reach  = static_cast<std::int64_t>((kGradeM + batter) / layout.cellU) + 1;
+    for (std::int64_t row = std::max<std::int64_t>(middle - reach, 0);
+         row <= std::min(middle + reach, last); ++row)
+    {
+        const auto   at     = static_cast<std::uint32_t>(row);
+        const double across = std::abs(static_cast<double>(row) - middleRow) * layout.cellU;
+        if (across > kGradeM + batter)
+        {
+            continue;
+        }
+        const double blend = glm::smoothstep(kGradeM, kGradeM + batter, across);
+        grid.setHeight(column, at, std::lerp(formation, grid.height(column, at), blend));
+    }
+}
+
+/// Grades a loop's whole corridor, column by column, and clears the woods from it.
+void gradeLoop(TerrainGrid& grid, const TramLine& line)
+{
+    const TerrainGridLayout& layout = grid.layout;
+    const double             round  = 2.0 * kPi * line.radiusM;
+    for (std::uint32_t column = 0; column < layout.columns; ++column)
+    {
+        const double theta     = layout.theta(column);
+        double       angle     = std::remainder(theta - line.theta, 2.0 * kPi);
+        angle                  = angle < 0.0 ? angle + (2.0 * kPi) : angle;
+        bool         carried   = false;
+        const double formation = loopFormationAt(line, angle / (2.0 * kPi) * round, carried);
+        if (!carried)
+        {
+            gradeColumn(grid, line, column, theta, formation);
+        }
+    }
+    // The woods, in the cover map's coarser rows (two grid rows each).
+    const double cell      = 2.0 * layout.cellU;
+    const double middleRow = grid.cellAt(line.z, line.theta).y / 2.0;
+    const auto   middle    = static_cast<std::int64_t>(std::llround(middleRow));
+    const auto   reach     = static_cast<std::int64_t>((kGradeM + kBlendM) / cell) + 1;
+    for (std::int64_t row = std::max<std::int64_t>(middle - reach, 0);
+         row <= std::min<std::int64_t>(middle + reach, grid.coverRows - 1); ++row)
+    {
+        if (std::abs(static_cast<double>(row) - middleRow) * cell >= kGradeM + kBlendM)
+        {
+            continue;
+        }
+        for (std::uint32_t column = 0; column < grid.coverColumns; ++column)
+        {
+            grid.cover[((static_cast<std::size_t>(row) * grid.coverColumns) + column) * 4] = 0;
+        }
+    }
+}
+
 /// Clears the painted woods from a line's corridor, in the cover map's coarser cells.
 void clearWoods(TerrainGrid& grid, const TramLine& line, double from, double to)
 {
@@ -469,6 +751,11 @@ void gradeForTrack(TerrainGrid& grid, const std::vector<TramLine>& lines)
         {
             continue;
         }
+        if (line.kind == LineKind::LOOP)
+        {
+            gradeLoop(grid, line);
+            continue;
+        }
         const double from = std::min(line.track.front().position.z, line.track.back().position.z);
         const double to   = std::max(line.track.front().position.z, line.track.back().position.z);
         for (std::uint32_t row = 0; row < grid.layout.rows(); ++row)
@@ -496,6 +783,10 @@ bool nearTrack(const std::vector<TramLine>& lines, double z, double theta, doubl
         if (line.track.size() < 2)
         {
             return false;
+        }
+        if (line.kind == LineKind::LOOP)
+        {
+            return std::abs(z - line.z) < clearM;  // it goes all the way round at one z
         }
         const double from = std::min(line.track.front().position.z, line.track.back().position.z);
         const double to   = std::max(line.track.front().position.z, line.track.back().position.z);
@@ -542,9 +833,31 @@ Progress runLeg(const TramLine& line, double into, bool back)
     return {.travelled = progress.travelled + (left * line.topSpeed)};
 }
 
+/// One tram of a loop, at a moment: always going the same way round.
+Tram loopTramAt(const TramLine& line, std::size_t index, double seconds, int which)
+{
+    const double phase =
+        std::fmod((seconds / line.journeyS) + (static_cast<double>(which) / line.trams), 1.0);
+    const Progress   leg   = runLeg(line, phase * line.journeyS, false);
+    const TrackPoint here  = pointAlong(line, leg.travelled);
+    const TrackPoint ahead = pointAlong(line, leg.travelled + 4.0);
+    const Vec3d      step  = ahead.position - here.position;
+    return {.line     = index,
+            .position = here.position,
+            .forward  = glm::length(step) > 1e-6 ? glm::normalize(step) : Vec3d(0.0, 0.0, 1.0),
+            .speedMS  = leg.atStop ? 0.0 : line.topSpeed,
+            .alongM   = here.alongM,
+            .atStop   = leg.atStop,
+            .stop     = leg.stop};
+}
+
 /// One tram of a line, at a moment.
 Tram tramAt(const TramLine& line, std::size_t index, double seconds, int which)
 {
+    if (line.kind == LineKind::LOOP)
+    {
+        return loopTramAt(line, index, seconds, which);
+    }
     const double cycle = 2.0 * line.journeyS;  // down the line and back again
     const double phase =
         std::fmod((seconds / cycle) + (static_cast<double>(which) / line.trams), 1.0);

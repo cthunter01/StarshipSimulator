@@ -7,6 +7,7 @@
 #include <functional>
 #include <vector>
 
+#include "StarshipSimulator/core/habitat/land_layout.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/procgen/settlements.h"
 
@@ -83,7 +84,11 @@ GroundAtlas packGroundAtlas(const Settlements& settlements)
                 static_cast<std::size_t>(map.width) * 4);
         }
         const Vec2d size = Vec2d(map.width, map.height) * map.texelM;
-        atlas.records.emplace_back(Vec4d(town.plane.z0, town.plane.theta0, town.plane.radius, 0.0));
+        // A plan along a valley is placed by (z0, theta0); one running round the axis by its
+        // profile arc length u0 instead, and flagged in w.
+        const bool around = town.plane.axis == BandAxis::AROUND;
+        atlas.records.emplace_back(Vec4d(around ? town.plane.u0 : town.plane.z0, town.plane.theta0,
+                                         town.plane.radius, around ? 1.0 : 0.0));
         atlas.records.emplace_back(Vec4d(map.origin, map.origin + size));
         atlas.records.emplace_back(Vec4d(
             static_cast<double>(slot.x) / atlas.width, static_cast<double>(slot.y) / atlas.height,

@@ -1,8 +1,11 @@
 #pragma once
 
+#include <optional>
 #include <vector>
 
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
+#include "StarshipSimulator/core/habitat/land_layout.h"
+#include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/procgen/SimplexNoise.h"
 
 // The valleys' water and woods. Water in a habitat is shallow: every tonne of it presses on the
@@ -17,26 +20,32 @@ namespace StarshipSimulator
 /// toward the axis from the floor datum.
 inline constexpr double kWaterLevelM = -0.4;
 inline constexpr double kWaterDepthM = 1.1;
+/// How far the flat meadows beside the water reach, on land wide enough for them.
+inline constexpr double kFloodplainM = 220.0;
 
-/// Where the habitat's land is: what the landscape needs from the habitat geometry.
+/// Where the habitat's land is: what the landscape needs from the habitat geometry. An O'Neill
+/// cylinder's valleys are described by the strips; a band of land running round the axis by
+/// `around`.
 struct LandscapeFrame
 {
-    double radiusM         = 4000.0;
-    double floorZMin       = -12000.0;
-    double floorZMax       = 12000.0;
-    int    stripCount      = 3;
-    double stripAngle      = 0.0;  // radians between window centres
-    double windowHalfAngle = 0.0;  // radians
+    double                  radiusM         = 4000.0;
+    double                  floorZMin       = -12000.0;
+    double                  floorZMax       = 12000.0;
+    int                     stripCount      = 3;
+    double                  stripAngle      = 0.0;  // radians between window centres
+    double                  windowHalfAngle = 0.0;  // radians
+    std::optional<LandBand> around;
 };
 
-/// A lake: an ellipse on the valley floor, longer along the axis than across.
+/// A lake: an ellipse on the land, longer along its band than across.
 struct Lake
 {
-    int    valley      = 0;
+    int    valley      = 0;    // its band
     double z           = 0.0;  // centre
     double theta       = 0.0;  // centre (radians)
-    double halfLengthM = 0.0;  // along the axis
-    double halfWidthM  = 0.0;  // around the habitat
+    double halfLengthM = 0.0;  // along the band (in a valley: along the axis)
+    double halfWidthM  = 0.0;  // across it
+    Vec2d  plan{0.0};          // its centre on the band's plan (bands running round the axis)
 };
 
 class Landscape
@@ -49,6 +58,11 @@ public:
 
     /// The river's centreline in valley `valley` at axial position z (radians).
     [[nodiscard]] double riverAngle(int valley, double z) const;
+    /// On a band running round the axis: the river's centreline across the band (plan x) at a
+    /// distance along it (plan y), and how fast it swings across (d x / d y).
+    [[nodiscard]] Vec2d riverAcross(double alongM) const;
+    /// How wide the flat meadows beside the water are here.
+    [[nodiscard]] double floodplainM() const { return floodplainM_; }
 
     /// Signed distance along the floor from (z, theta) to the nearest shore, in metres: negative in
     /// the water. Large (at least `far`) away from all water; cheap to evaluate beyond that.
@@ -60,15 +74,26 @@ public:
 
     /// Terrain height near water: the bed, the banks and the flat floodplain, blended into the
     /// natural height `natural` farther away. `shore` from shoreDistance().
-    [[nodiscard]] static double shapeNearWater(double natural, double shore);
+    [[nodiscard]] static double shapeNearWater(double natural, double shore,
+                                               double floodplainM = kFloodplainM);
+    /// The same, with this landscape's own floodplain.
+    [[nodiscard]] double shape(double natural, double shore) const
+    {
+        return shapeNearWater(natural, shore, floodplainM_);
+    }
 
 private:
     [[nodiscard]] double riverDistance(int valley, double z, double theta) const;
     [[nodiscard]] double meanderAngle(int valley, double z) const;  // from the noise
     [[nodiscard]] double lakeDistance(const Lake& lake, double z, double theta) const;
     [[nodiscard]] int    valleyAt(double theta) const;
+    // Bands running round the axis.
+    void                 planAround(const TerrainSpec& terrain);
+    [[nodiscard]] double aroundMeander(double alongM) const;
+    [[nodiscard]] double aroundShoreDistance(double z, double theta, double far) const;
 
     LandscapeFrame    frame_;
+    double            floodplainM_     = kFloodplainM;
     double            riverHalfWidthM_ = 0.0;
     double            meanderM_        = 0.0;  // amplitude of the river's swing
     double            riverZMin_       = 0.0;

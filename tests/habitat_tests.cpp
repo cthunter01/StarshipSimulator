@@ -336,6 +336,45 @@ TEST(MirrorOptics, DaylightFadesAtDuskAndNight)
     EXPECT_NEAR(beams[0].intensity, 0.9, 1e-12);  // mirror reflectivity
 }
 
+TEST(MirrorOptics, KalpanaOneIsLitThroughBothEnds)
+{
+    HabitatSpec spec;
+    spec.kind    = HabitatKind::KALPANA_CYLINDER;
+    spec.radiusM = 250.0;
+    spec.lengthM = 325.0;
+    const HabitatGeometry geometry(spec);
+    const auto            beams = sunBeams(geometry, degreesToRadians(45.0));
+    ASSERT_EQ(beams.size(), 2U);
+    for (const SunBeam& beam : beams)
+    {
+        // An image of the Sun on the axis, beyond the glass, at the steepest the mirrors manage.
+        ASSERT_TRUE(beam.image.has_value());
+        const Vec3d image = beam.image.value_or(Vec3d(0.0));
+        EXPECT_NEAR(std::hypot(image.x, image.y), 0.0, 1e-12);
+        const double beyond = std::abs(image.z) - 162.5;
+        EXPECT_NEAR(radiansToDegrees(std::atan2(250.0, beyond)), 40.0, 1e-9);
+        EXPECT_NEAR(beam.intensity, 0.9, 1e-12);
+    }
+    EXPECT_GT(beams[0].image.value_or(Vec3d(0.0)).z, 162.5);
+    EXPECT_LT(beams[1].image.value_or(Vec3d(0.0)).z, -162.5);
+
+    // Seen from anywhere inside, the light comes from both ends, a different way at each spot.
+    const Vec3d floor(250.0, 0.0, 100.0);
+    EXPECT_DOUBLE_EQ(beamReach(geometry, floor, beams[0]), 1.0);
+    EXPECT_DOUBLE_EQ(beamReach(geometry, floor, beams[1]), 1.0);
+    EXPECT_GT(towardSunFrom(beams[0], floor).z, 0.0);
+    EXPECT_LT(towardSunFrom(beams[1], floor).z, 0.0);
+    EXPECT_GT(glm::dot(towardSunFrom(beams[0], floor), HabitatGeometry::localUp(floor)), 0.0);
+    // The nearer end's light stands higher.
+    EXPECT_GT(glm::dot(towardSunFrom(beams[0], floor), HabitatGeometry::localUp(floor)),
+              glm::dot(towardSunFrom(beams[1], floor), HabitatGeometry::localUp(floor)));
+    EXPECT_EQ(dominantBeam(geometry, degreesToRadians(45.0), floor), 0);
+
+    // At dusk the images sink as low as the mirrors allow; past ninety the shutters close.
+    EXPECT_NEAR(radiansToDegrees(endCapElevation(degreesToRadians(88.0))), 15.0, 1e-9);
+    EXPECT_DOUBLE_EQ(sunBeams(geometry, degreesToRadians(100.0)).front().intensity, 0.0);
+}
+
 // ---- Day schedule -----------------------------------------------------------------------------
 
 TEST(DaySchedule, SunriseNoonSunsetAndMidnight)

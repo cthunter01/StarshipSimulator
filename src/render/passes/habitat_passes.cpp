@@ -1,5 +1,6 @@
 #include "StarshipSimulator/render/passes/habitat_passes.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -34,6 +35,8 @@ namespace
 {
 
 constexpr std::uint32_t kVerticesPerQuad = 6;
+// One mirror per window strip, or eight petals round each glass end (mirror.vert).
+constexpr std::uint32_t kMirrorQuads = std::max<std::uint32_t>(gpu::kMaxSunBeams, 16);
 
 struct alignas(16) GlassUniforms
 {
@@ -538,8 +541,7 @@ void MirrorPass::draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
     SDL_PushGPUVertexUniformData(commands, 1, view.habitat, sizeof(gpu::HabitatUniforms));
     SDL_PushGPUVertexUniformData(commands, 2, &placement, sizeof(placement));
     pushHabitatFragmentUniforms(commands, view);
-    SDL_DrawGPUPrimitives(pass, static_cast<std::uint32_t>(gpu::kMaxSunBeams) * kVerticesPerQuad, 1,
-                          0, 0);
+    SDL_DrawGPUPrimitives(pass, kMirrorQuads * kVerticesPerQuad, 1, 0, 0);
 }
 
 // ---- Glass -------------------------------------------------------------------------------------

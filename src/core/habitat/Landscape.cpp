@@ -8,6 +8,7 @@
 
 #include "StarshipSimulator/core/SplitMix64.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
+#include "StarshipSimulator/core/habitat/land_layout.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/procgen/SimplexNoise.h"
 
@@ -17,10 +18,9 @@ namespace StarshipSimulator
 namespace
 {
 
-constexpr double kBankWidthM       = 5.0;    // from the waterline up to the floodplain
-constexpr double kShelfM           = 12.0;   // from the waterline down to full depth
-constexpr double kFloodplainM      = 220.0;  // flat meadows beside the water
-constexpr double kPlainHeightM     = 0.35;   // floodplain above the datum
+constexpr double kBankWidthM       = 5.0;   // from the waterline up to the floodplain
+constexpr double kShelfM           = 12.0;  // from the waterline down to full depth
+constexpr double kPlainHeightM     = 0.35;  // floodplain above the datum
 constexpr double kMeanderWaveM     = 2600.0;
 constexpr double kWoodsFeatureM    = 620.0;
 constexpr int    kWoodsOctaves     = 4;
@@ -44,6 +44,11 @@ double angularDistance(double a, double b)
 Landscape::Landscape(const TerrainSpec& terrain, const LandscapeFrame& frame)
   : frame_(frame), meander_(hashSeed(terrain.seed, 4)), woods_(hashSeed(terrain.seed, 3))
 {
+    if (frame.around)
+    {
+        planAround(terrain);
+        return;
+    }
     const double landHalfWidth = ((0.5 * frame.stripAngle) - frame.windowHalfAngle) * frame.radiusM;
     const double margin        = std::max(0.2 * landHalfWidth, 30.0);  // water keeps off walkways
     const double floorLength   = frame.floorZMax - frame.floorZMin;
@@ -189,6 +194,10 @@ double Landscape::lakeDistance(const Lake& lake, double z, double theta) const
 
 double Landscape::shoreDistance(double z, double theta, double far) const
 {
+    if (frame_.around)
+    {
+        return aroundShoreDistance(z, theta, far);
+    }
     if (z < frame_.floorZMin - far || z > frame_.floorZMax + far)
     {
         return far;
@@ -211,14 +220,17 @@ double Landscape::shoreDistance(double z, double theta, double far) const
 
 double Landscape::woodland(double z, double theta) const
 {
-    const Vec3d  p(frame_.radiusM * std::cos(theta), frame_.radiusM * std::sin(theta), z);
+    const double radius = frame_.around
+                              ? frame_.around->profile->radiusAt(z).value_or(frame_.radiusM)
+                              : frame_.radiusM;
+    const Vec3d  p(radius * std::cos(theta), radius * std::sin(theta), z);
     const double n = woods_.fbm(p / kWoodsFeatureM, kWoodsOctaves);
     return glm::smoothstep(woodsThreshold_ - kWoodsSoftness, woodsThreshold_ + kWoodsSoftness, n);
 }
 
-double Landscape::shapeNearWater(double natural, double shore)
+double Landscape::shapeNearWater(double natural, double shore, double floodplainM)
 {
-    if (shore >= kFloodplainM)
+    if (shore >= floodplainM)
     {
         return natural;
     }
@@ -226,8 +238,168 @@ double Landscape::shapeNearWater(double natural, double shore)
         shore >= 0.0
             ? std::lerp(kWaterLevelM, kPlainHeightM, glm::smoothstep(0.0, kBankWidthM, shore))
             : kWaterLevelM - (kWaterDepthM * glm::smoothstep(0.0, kShelfM, -shore));
-    const double weight = 1.0 - glm::smoothstep(kBankWidthM, kFloodplainM, shore);
+    const double weight = 1.0 - glm::smoothstep(kBankWidthM, floodplainM, shore);
     return std::lerp(natural, nearWater, weight);
+}
+
+// ---- A band running round the axis --------------------------------------------------------------
+//
+// Laid out on the band's plan (x across, y along), the river runs once round the habitat and back
+// into itself, so its meander is noise sampled round a circle; the lakes lie along it. Everything
+// scales with the band, which may be a few hundred metres wide rather than kilometres.
+
+void Landscape::planAround(const TerrainSpec& terrain)
+{
+    if (!frame_.around)
+    {
+        return;
+    }
+    const LandBand& band      = *frame_.around;
+    const double    length    = band.alongLengthM();
+    const double    halfWidth = band.halfWidthM;
+    const double    margin    = std::max(0.2 * halfWidth, 15.0);  // water keeps off the walkways
+    const double    halfRiver = 0.5 * terrain.riverWidthM;
+    floodplainM_              = std::min(kFloodplainM, 0.25 * halfWidth);
+    meanderM_                 = std::clamp(0.3 * halfWidth, 0.0, 700.0);
+    meanderM_ = std::min(meanderM_, std::max(0.0, halfWidth - margin - halfRiver - floodplainM_));
+    if (halfRiver > 0.0 && halfWidth - margin - meanderM_ > halfRiver)
+    {
+        riverHalfWidthM_ = halfRiver;
+        riverTableStep_  = kRiverTableStepM;
+        const auto count = static_cast<std::size_t>(std::ceil(length / riverTableStep_));
+        riverTableStep_  = length / static_cast<double>(count);  // a whole number of steps round
+        auto& table      = riverTable_.emplace_back(count);
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            const double along = band.alongMinM + (static_cast<double>(i) * riverTableStep_);
+            const double slope = (aroundMeander(along + 2.0) - aroundMeander(along - 2.0)) / 4.0;
+            table[i]           = Vec2d(aroundMeander(along), slope);
+        }
+    }
+
+    // Lakes, spread round the band on the river's course.
+    const int  lakes = terrain.lakesPerValley;
+    SplitMix64 random(hashSeed(terrain.seed, 100));
+    for (int i = 0; i < lakes; ++i)
+    {
+        const double segment = length / lakes;
+        const double spot    = random.uniform(0.2, 0.8);
+        const double along   = band.alongMinM + (segment * (i + spot));
+        const double swing   = random.uniform(-0.3, 0.3);
+        const double across  = hasRivers() ? riverAcross(along).x : swing * meanderM_;
+        const double room    = halfWidth - margin - std::abs(across);
+        const double width   = random.uniform(0.7, 1.2);
+        const double stretch = random.uniform(1.3, 2.4);
+        Lake         lake;
+        lake.valley          = 0;
+        lake.plan            = Vec2d(across, along);
+        lake.halfWidthM      = std::min(terrain.lakeRadiusM * width, room);
+        lake.halfLengthM     = std::min(lake.halfWidthM * stretch, 0.45 * segment);
+        const SurfaceSpot at = band.toSurface(lake.plan);
+        lake.z               = at.z;
+        lake.theta           = at.theta;
+        if (lake.halfWidthM >= 5.0 && lake.halfLengthM >= 5.0)
+        {
+            lakes_.push_back(lake);
+        }
+    }
+
+    // Woods: the noise level above which about forestCover of the land lies.
+    std::vector<double> samples;
+    samples.reserve(kCalibrationCount);
+    SplitMix64 woods(hashSeed(terrain.seed, 5));
+    for (int i = 0; i < kCalibrationCount; ++i)
+    {
+        const double z     = woods.uniform(frame_.floorZMin, frame_.floorZMax);
+        const double theta = woods.uniform(0.0, 2.0 * kPi);
+        const double r     = band.profile->radiusAt(z).value_or(frame_.radiusM);
+        const Vec3d  p(r * std::cos(theta), r * std::sin(theta), z);
+        samples.push_back(woods_.fbm(p / kWoodsFeatureM, kWoodsOctaves));
+    }
+    const double cover = std::clamp(terrain.forestCover, 0.0, 1.0);
+    const auto   index = static_cast<std::size_t>(
+        std::clamp((1.0 - cover) * (kCalibrationCount - 1), 0.0, kCalibrationCount - 1.0));
+    std::ranges::nth_element(samples, samples.begin() + static_cast<std::ptrdiff_t>(index));
+    woodsThreshold_ = cover <= 0.0 ? 10.0 : samples[index];
+}
+
+double Landscape::aroundMeander(double alongM) const
+{
+    // Noise round a circle, so the river's course closes on itself after one turn.
+    if (!frame_.around)
+    {
+        return 0.0;
+    }
+    const LandBand& band   = *frame_.around;
+    const double    length = band.alongLengthM();
+    const double    wave   = std::clamp(length / 4.0, 100.0, kMeanderWaveM);
+    const double    ring   = length / (2.0 * kPi * wave);
+    const double    phase  = 2.0 * kPi * (alongM - band.alongMinM) / length;
+    const Vec2d     round(std::cos(phase), std::sin(phase));
+    const double    swing = meander_.sample(Vec3d(round * ring, 0.5)) +
+                            (0.35 * meander_.sample(Vec3d(round * (ring / 0.37), 4.5)));
+    return swing / 1.35 * meanderM_;
+}
+
+Vec2d Landscape::riverAcross(double alongM) const
+{
+    if (riverTable_.empty() || !frame_.around)
+    {
+        return Vec2d(0.0);
+    }
+    const auto& table = riverTable_.front();
+    const auto  count = static_cast<double>(table.size());
+    double      t     = std::fmod((alongM - frame_.around->alongMinM) / riverTableStep_, count);
+    t                 = t < 0.0 ? t + count : t;
+    const auto i      = std::min(static_cast<std::size_t>(t), table.size() - 1);
+    const auto next   = (i + 1) % table.size();
+    return glm::mix(table[i], table[next], t - static_cast<double>(i));
+}
+
+double Landscape::aroundShoreDistance(double z, double theta, double far) const
+{
+    if (!frame_.around)
+    {
+        return far;
+    }
+    const LandBand& band = *frame_.around;
+    const Vec2d     p    = band.toPlan(z, theta);
+    if (std::abs(p.x) > band.halfWidthM + far)
+    {
+        return far;
+    }
+    double best = far;
+    if (hasRivers())
+    {
+        const Vec2d  river  = riverAcross(p.y);
+        const double across = std::abs(p.x - river.x) / std::sqrt(1.0 + (river.y * river.y));
+        best                = std::min(best, across - riverHalfWidthM_);
+    }
+    const double length = band.alongLengthM();
+    for (const Lake& lake : lakes_)
+    {
+        const double along = std::remainder(p.y - lake.plan.y, length);
+        if (std::abs(along) > (lake.halfLengthM * 1.2) + far)
+        {
+            continue;
+        }
+        const double da   = along / lake.halfLengthM;
+        const double dx   = (p.x - lake.plan.x) / lake.halfWidthM;
+        const double e    = std::hypot(da, dx);
+        const double size = std::min(lake.halfLengthM, lake.halfWidthM);
+        if (e > 1.5)
+        {
+            best = std::min(best, (e - 1.0) * size);
+            continue;
+        }
+        // An irregular shore, as in a valley's lakes.
+        const double direction = std::atan2(dx, da);
+        const double wobble =
+            1.0 + (0.12 * meander_.sample(Vec3d(2.0 * std::cos(direction),
+                                                2.0 * std::sin(direction), lake.plan.y / 997.0)));
+        best = std::min(best, (e - wobble) * size);
+    }
+    return best;
 }
 
 }  // namespace StarshipSimulator

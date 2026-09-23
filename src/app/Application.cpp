@@ -51,6 +51,7 @@
 #include "StarshipSimulator/core/habitat/Landscape.h"
 #include "StarshipSimulator/core/habitat/day_schedule.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
+#include "StarshipSimulator/core/habitat/land_layout.h"
 #include "StarshipSimulator/core/habitat/metrics.h"
 #include "StarshipSimulator/core/habitat/mirror_optics.h"
 #include "StarshipSimulator/core/habitat/weather.h"
@@ -193,9 +194,42 @@ Scenario loadInitialScenario(const AppOptions& options)
     return fallback;
 }
 
+/// The yaw (degrees) facing a direction on a settlement's plan. Yaw is measured from the axis
+/// toward the spin: in a valley from plan +y toward plan +x, on a band running round from plan -x
+/// toward plan +y.
+double planYawDeg(const FloorPlane& plane, const Vec2d& direction)
+{
+    if (plane.axis == BandAxis::AROUND)
+    {
+        return radiansToDegrees(std::atan2(direction.y, -direction.x));
+    }
+    return radiansToDegrees(std::atan2(direction.x, direction.y));
+}
+
+/// How far along a band running round the axis the river view is from the start.
+constexpr double kRiverViewAheadM = 120.0;
+
 /// Places kept free of trees: where the visit starts and the viewpoints near it.
 std::vector<Clearing> startClearings(const HabitatGeometry& geometry, const StartSpec& start)
 {
+    const int       bands = geometry.bandCount();
+    const LandBand& band  = geometry.band(((start.band % bands) + bands) % bands);
+    if (band.axis == BandAxis::AROUND)
+    {
+        const SurfaceSpot     here = band.toSurface(Vec2d(start.acrossM, start.alongM));
+        std::vector<Clearing> clearings{
+            {.centre = geometry.surfacePoint(here.z, here.theta), .radiusM = 25.0}};
+        if (geometry.landscape().hasRivers())
+        {
+            const double      along = start.alongM + kRiverViewAheadM;
+            const double      bank  = geometry.landscape().riverAcross(along).x +
+                                      (0.5 * geometry.spec().terrain.riverWidthM) + 12.0;
+            const SurfaceSpot there = band.toSurface(Vec2d(bank, along));
+            clearings.push_back(
+                {.centre = geometry.surfacePoint(there.z, there.theta), .radiusM = 20.0});
+        }
+        return clearings;
+    }
     const int             strips = geometry.stripCount();
     const int             valley = ((start.band % strips) + strips) % strips;
     const double          theta  = geometry.landCenter(valley);
@@ -252,10 +286,14 @@ GeneratedWorld generateWorld(const HabitatSpec& spec, const StartSpec& visitStar
         addStandingTrees(*world.trees, world.settlements);
         world.settlementMeshes = buildSettlementMeshes(world.settlements);
         world.track            = buildTrackMeshes(world.tramLines);
-        // The clouds, wrapped once round the habitat and once along it.
-        world.clouds =
-            makeCloudMap(hashSeed(spec.terrain.seed, 0xC10D), 2.0 * kPi * world.geometry->radius(),
-                         world.geometry->profile().zMax() - world.geometry->profile().zMin());
+        // The clouds, wrapped once round the habitat and once along it. Where the land runs round
+        // the axis the habitat is short, and the clouds come smaller to fit.
+        const double around = 2.0 * kPi * world.geometry->radius();
+        const double along  = world.geometry->profile().zMax() - world.geometry->profile().zMin();
+        world.clouds = world.geometry->band(0).axis == BandAxis::AROUND
+                           ? makeCloudMap(hashSeed(spec.terrain.seed, 0xC10D), around, along,
+                                          std::clamp(0.15 * around, 200.0, 900.0))
+                           : makeCloudMap(hashSeed(spec.terrain.seed, 0xC10D), around, along);
         // The physics: what the towns built, and everything lying about in them.
         world.physics = std::make_unique<PhysicsWorld>(world.geometry, world.terrain);
         world.physics->addColliders(settlementColliders(world.settlements));
@@ -696,8 +734,18 @@ void Application::refreshScenarioList()
 void Application::placeAtStart()
 {
     const HabitatGeometry& geometry = *geometry_;
-    const int              strips   = geometry.stripCount();
-    const int              valley   = ((scenario_.start.band % strips) + strips) % strips;
+    const LandBand&        band     = geometry.band(startValley());
+    if (band.axis == BandAxis::AROUND)
+    {
+        const SurfaceSpot spot = startSpot(0.0, 0.0);
+        player_.setLocomotion(Locomotion::WALK);
+        player_.placeOnGround(geometry, spot.z, spot.theta);
+        look_.setFrame(player_.viewUp(), kNorth);
+        look_.setAngles(degreesToRadians(bandYaw(scenario_.start.headingDeg)), 0.0);
+        return;
+    }
+    const int strips = geometry.stripCount();
+    const int valley = ((scenario_.start.band % strips) + strips) % strips;
     player_.setLocomotion(Locomotion::WALK);
     player_.placeOnGround(geometry, scenario_.start.alongM, geometry.landCenter(valley));
     look_.setFrame(player_.viewUp(), kNorth);
@@ -731,8 +779,21 @@ void Application::flyTo(const Vec3d& eye, double yawDeg, double pitchDeg)
 
 int Application::startValley() const
 {
-    const int strips = geometry_->stripCount();
-    return ((scenario_.start.band % strips) + strips) % strips;
+    const int bands = geometry_->bandCount();
+    return ((scenario_.start.band % bands) + bands) % bands;
+}
+
+SurfaceSpot Application::startSpot(double aheadM, double asideM) const
+{
+    const LandBand& band = geometry_->band(startValley());
+    return band.toSurface(Vec2d(scenario_.start.acrossM + asideM, scenario_.start.alongM + aheadM));
+}
+
+double Application::bandYaw(double headingDeg) const
+{
+    // Yaw is measured from the axis toward the spin; a heading from the plan's +y toward its +x.
+    // Along a band running round the axis, plan +y is spinward and plan +x points toward -z.
+    return geometry_->band(startValley()).axis == BandAxis::AROUND ? headingDeg + 90.0 : headingDeg;
 }
 
 double Application::startViewZ() const
@@ -750,8 +811,13 @@ void Application::applyTransitView(std::string_view name)
 {
     const HabitatGeometry& geometry = *geometry_;
     const bool             endcap   = name != "tram";
-    const auto             wanted   = endcap ? LineKind::ENDCAP : LineKind::VALLEY;
-    std::size_t            found    = tramLines_.size();
+    const bool             round    = geometry.band(startValley()).axis == BandAxis::AROUND;
+    auto                   wanted   = round ? LineKind::LOOP : LineKind::VALLEY;
+    if (endcap)
+    {
+        wanted = LineKind::ENDCAP;
+    }
+    std::size_t found = tramLines_.size();
     for (std::size_t i = 0; i < tramLines_.size(); ++i)
     {
         const bool mine =
@@ -780,6 +846,22 @@ void Application::applyTransitView(std::string_view name)
         walkTo(foot.position.z + 25.0, line.theta + (6.0 / geometry.radius()), 180.0, 6.0);
         return;
     }
+    if (line.kind == LineKind::LOOP)
+    {
+        // The stop nearest the start, standing on the platform's side, looking along the line.
+        const SurfaceSpot start   = startSpot(0.0, 0.0);
+        const Vec3d       from    = geometry.surfacePoint(start.z, start.theta);
+        const TramStop*   nearest = &line.stops.front();
+        for (const TramStop& stop : line.stops)
+        {
+            if (glm::distance(stop.position, from) < glm::distance(nearest->position, from))
+            {
+                nearest = &stop;
+            }
+        }
+        walkTo(nearest->position.z - 4.4, HabitatGeometry::angleOf(nearest->position), 90.0, 0.0);
+        return;
+    }
     // The stop nearest the habitat's starting point, standing beside the track.
     const double    startZ  = startViewZ();
     const TramStop* nearest = &line.stops.front();
@@ -797,8 +879,12 @@ void Application::applyTransitView(std::string_view name)
 void Application::applyView(std::string_view name)
 {
     const HabitatGeometry& geometry = *geometry_;
-    const double           valley   = geometry.landCenter(startValley());
-    const double           startZ   = startViewZ();
+    if (geometry.band(startValley()).axis == BandAxis::AROUND && applyRoundView(name))
+    {
+        return;
+    }
+    const double valley = geometry.landCenter(startValley());
+    const double startZ = startViewZ();
     if (name == "river" || name == "lake")
     {
         applyWaterView(name);
@@ -851,6 +937,73 @@ void Application::applyView(std::string_view name)
     }
 }
 
+double Application::openAround(double z, double theta) const
+{
+    // Step round until nothing built or grown stands within a few tens of metres.
+    const HabitatGeometry& geometry = *geometry_;
+    const double           step     = 10.0 / geometry.radius();
+    for (int i = 0; i < 200; ++i)
+    {
+        const double at   = theta + (step * i);
+        const bool built  = settlements_ && (settlements_->townAt(z, at) != nullptr ||
+                                             settlements_->townAt(z, at + (3.0 * step)) != nullptr);
+        const bool wooded = geometry.forestDensity(z, at) > 0.05;
+        const bool flooded = geometry.waterDepth(z, at) > 0.0;
+        if (!built && !wooded && !flooded)
+        {
+            return at;
+        }
+    }
+    return theta;
+}
+
+bool Application::applyRoundView(std::string_view name)
+{
+    // Kalpana One: the land runs round the axis between two glass end walls. The views that
+    // stand somewhere on the band (the river, the towns, the tram) work as in a valley; these are
+    // the ones that differ.
+    const HabitatGeometry& geometry = *geometry_;
+    const SurfaceSpot      start    = startSpot(0.0, 0.0);
+    const double           zMin     = geometry.floorZMin();
+    const double           zMax     = geometry.floorZMax();
+    const double           reach    = std::min(30.0, 0.1 * (zMax - zMin));
+    if (name == "valley" || name == "lookup")
+    {
+        walkTo(start.z, start.theta, bandYaw(0.0), name == "valley" ? 6.0 : 75.0);
+    }
+    else if (name == "window" || name == "sunward")
+    {
+        // Facing the glass at the +z end, far enough back to see the land meet its rim.
+        const double z = zMax - ((name == "window" ? 2.0 : 3.0) * reach);
+        walkTo(z, openAround(z, start.theta), 0.0, name == "window" ? 22.0 : 12.0);
+    }
+    else if (name == "endcap" || name == "ramp")
+    {
+        const double z = zMin + reach;
+        walkTo(z, openAround(z, start.theta), 180.0, name == "endcap" ? 10.0 : 25.0);
+    }
+    else if (name == "axis" || name == "hub")
+    {
+        // Floating by the axis, half way along, looking round the drum of land.
+        flyTo((radial(start.theta) * 20.0) + Vec3d(0.0, 0.0, 0.5 * (zMin + zMax)), 90.0, 0.0);
+    }
+    else if (name == "overview")
+    {
+        flyTo((radial(start.theta) * (0.35 * geometry.radius())) + Vec3d(0.0, 0.0, zMin + reach),
+              0.0, -8.0);
+    }
+    else if (name == "lift")
+    {
+        status_ = "There is no lift in this habitat: its land runs round, not up to an axis";
+        walkTo(start.z, start.theta, bandYaw(0.0), 6.0);
+    }
+    else
+    {
+        return false;
+    }
+    return true;
+}
+
 void Application::applyWaterView(std::string_view name)
 {
     // On the bank (or the lake shore), looking along the water.
@@ -858,6 +1011,24 @@ void Application::applyWaterView(std::string_view name)
     const Landscape&       landscape = geometry.landscape();
     const int              valley    = startValley();
     const auto             lake      = std::ranges::find(landscape.lakes(), valley, &Lake::valley);
+    const LandBand&        band      = geometry.band(valley);
+    if (band.axis == BandAxis::AROUND)
+    {
+        // Before the lake, looking along it; or on the river bank a little way round.
+        if (name == "lake" && lake != landscape.lakes().end())
+        {
+            const SurfaceSpot spot =
+                band.toSurface(lake->plan - Vec2d(0.0, lake->halfLengthM + 25.0));
+            walkTo(spot.z, spot.theta, bandYaw(0.0), -2.0);
+            return;
+        }
+        const double along = scenario_.start.alongM + kRiverViewAheadM;
+        const double bank =
+            landscape.riverAcross(along).x + (0.5 * geometry.spec().terrain.riverWidthM) + 12.0;
+        const SurfaceSpot spot = band.toSurface(Vec2d(bank, along));
+        walkTo(spot.z, spot.theta, bandYaw(-15.0), -4.0);
+        return;
+    }
     if (name == "lake" && lake != landscape.lakes().end())
     {
         walkTo(lake->z - lake->halfLengthM - 25.0, lake->theta, 0.0, -2.0);
@@ -901,9 +1072,8 @@ void Application::applyTownView(std::string_view name)
         hall = b.settlement == town && b.use == BuildingUse::HALL ? b.centre : hall;
     }
     const Vec2d away    = glm::normalize(square - hall);
-    const auto  yawFrom = [](const Vec2d& from, const Vec2d& to) {
-        // Yaw is measured from the axis (plan +y) toward the spin (plan +x).
-        return radiansToDegrees(std::atan2(to.x - from.x, to.y - from.y));
+    const auto  yawFrom = [&place](const Vec2d& from, const Vec2d& to) {
+        return planYawDeg(place.plane, to - from);
     };
     if (name == "rooftops")
     {
@@ -924,15 +1094,16 @@ void Application::applyTownView(std::string_view name)
     }
     if (name == "street" && main != nullptr)
     {
-        const Vec2d dir   = glm::normalize(main->to - main->from);
-        const Vec2d stand = main->from + (Vec2d(-dir.y, dir.x) * 2.0);
-        const bool  back  = glm::dot(dir, square - stand) > 0.0;  // away from the square
-        walkTo(place.plane.z(stand.y), place.plane.theta(stand.x),
-               yawFrom(stand, stand + (back ? -dir : dir)), 3.0);
+        const Vec2d       dir   = glm::normalize(main->to - main->from);
+        const Vec2d       stand = main->from + (Vec2d(-dir.y, dir.x) * 2.0);
+        const bool        back  = glm::dot(dir, square - stand) > 0.0;  // away from the square
+        const SurfaceSpot spot  = place.plane.surface(stand);
+        walkTo(spot.z, spot.theta, yawFrom(stand, stand + (back ? -dir : dir)), 3.0);
         return;
     }
-    const Vec2d stand = square + (away * 11.0);
-    walkTo(place.plane.z(stand.y), place.plane.theta(stand.x), yawFrom(stand, hall), 6.0);
+    const Vec2d       stand = square + (away * 11.0);
+    const SurfaceSpot spot  = place.plane.surface(stand);
+    walkTo(spot.z, spot.theta, yawFrom(stand, hall), 6.0);
 }
 
 void Application::applyCameraPose(const CameraPose& pose)
@@ -1133,10 +1304,16 @@ void Application::updateSound(double realSeconds)
     }
 }
 
+astro::SpinAxis Application::spinAxis() const
+{
+    return axisPointsAtSun(geometry_->kind()) ? astro::SpinAxis::TOWARD_SUN
+                                              : astro::SpinAxis::ECLIPTIC_NORTH;
+}
+
 void Application::updateSky()
 {
     sky_            = astro::computeSky(scenario_.sky.location, simTime_);
-    habitatFromSky_ = astro::habitatFromEqj(sky_.sunDirection, spinPhase_);
+    habitatFromSky_ = astro::habitatFromEqj(sky_.sunDirection, spinPhase_, spinAxis());
     if (hudSettings_.followSchedule)
     {
         const double hour  = astro::hourOfDay(simTime_, scenario_.sky.utcOffsetHours);
@@ -1236,15 +1413,21 @@ void Application::lookAtName(std::string_view name)
 void Application::lookAtPartner()
 {
     // The partner lies along +X of the habitat at rest (spin phase 0).
-    lookOut(glm::transpose(astro::habitatFromEqj(sky_.sunDirection, 0.0)) * Vec3d(1.0, 0.0, 0.0),
+    lookOut(glm::transpose(astro::habitatFromEqj(sky_.sunDirection, 0.0, spinAxis())) *
+                Vec3d(1.0, 0.0, 0.0),
             "the partner cylinder");
 }
 
 void Application::lookOut(Vec3d directionEqj, std::string_view name)
 {
     // directionEqj is a copy: it often points into sky_, which updateSky() below replaces.
+    if (!axisPointsAtSun(geometry_->kind()))
+    {
+        lookThroughEnd(directionEqj, name);
+        return;
+    }
     // Turn the habitat so the direction lies straight out from window 0 (angle 0) ...
-    const Vec3d atRest = astro::habitatFromEqj(sky_.sunDirection, 0.0) * directionEqj;
+    const Vec3d atRest = astro::habitatFromEqj(sky_.sunDirection, 0.0, spinAxis()) * directionEqj;
     spinPhase_         = std::fmod(std::atan2(atRest.y, atRest.x) + (2.0 * kPi), 2.0 * kPi);
     updateSky();
     const Vec3d d = habitatFromSky_ * directionEqj;  // now in the x-z plane, x >= 0
@@ -1254,8 +1437,10 @@ void Application::lookOut(Vec3d directionEqj, std::string_view name)
     constexpr double       kOffAxis = 60.0;
     const double           reach    = (geometry.radius() + kOffAxis) / std::max(d.x, 1e-3);
     const double           middle   = 0.5 * (geometry.floorZMin() + geometry.floorZMax());
-    const double           z = std::clamp(middle - (reach * d.z), geometry.walkableZMin() + 500.0,
-                                          geometry.walkableZMax() - 500.0);
+    const double           margin =
+        std::min(500.0, 0.25 * (geometry.walkableZMax() - geometry.walkableZMin()));
+    const double z = std::clamp(middle - (reach * d.z), geometry.walkableZMin() + margin,
+                                geometry.walkableZMax() - margin);
     player_.setLocomotion(Locomotion::FLY);
     player_.teleport(Vec3d(-kOffAxis, 0.0, z));
     look_.setFrame(player_.viewUp(), kNorth);
@@ -1273,6 +1458,35 @@ void Application::lookOut(Vec3d directionEqj, std::string_view name)
                         "{:.0f} s",
                         name, 2.0 * kPi / geometry.omega())
                   : std::format("{} is nearly along the spin axis: the endcaps hide it", name);
+}
+
+void Application::lookThroughEnd(Vec3d directionEqj, std::string_view name)
+{
+    // The only windows are the glass end caps, square to the axis: float by the axis, as far back
+    // from the nearer one as still lets the direction through it, and look out. The spin turns
+    // the sky about the axis, so whatever is seen there circles the middle of the glass.
+    updateSky();
+    const HabitatGeometry& geometry = *geometry_;
+    const Vec3d            d        = habitatFromSky_ * directionEqj;
+    const double           slant    = std::acos(std::min(std::abs(d.z), 1.0));  // from the axis
+    const double glass  = d.z >= 0.0 ? geometry.profile().zMax() : geometry.profile().zMin();
+    const double length = geometry.profile().zMax() - geometry.profile().zMin();
+    const double fits   = geometry.radius() / std::max(std::tan(slant), 1e-6);
+    const double back   = std::clamp(0.5 * fits, 10.0, length - 20.0);
+    player_.setLocomotion(Locomotion::FLY);
+    player_.teleport(Vec3d(-5.0, 0.0, glass - std::copysign(back, d.z)));
+    look_.setFrame(player_.viewUp(), kNorth);
+    const Vec3d  up         = look_.up();
+    const Vec3d  horizontal = d - (glm::dot(d, up) * up);
+    const double yaw =
+        std::atan2(glm::dot(horizontal, glm::cross(up, kNorth)), glm::dot(horizontal, kNorth));
+    look_.setAngles(yaw, std::asin(std::clamp(glm::dot(d, up), -1.0, 1.0)));
+    status_ = fits > 10.0
+                  ? std::format(
+                        "Looking at {} through the glass at the end; the spin "
+                        "carries it round every {:.0f} s",
+                        name, 2.0 * kPi / geometry.omega())
+                  : std::format("{} lies beside the habitat: neither end looks toward it", name);
 }
 
 double Application::mirrorAngle() const
@@ -1898,9 +2112,10 @@ std::optional<int> Application::render(int frame, bool screenshotRequested, ImDr
     if (const auto beam = dominantBeam(*geometry_, mirrorAngle(), player_.eyePosition()))
     {
         const auto beams = sunBeams(*geometry_, mirrorAngle());
-        shadow = gpu::makeShadowUniforms(player_.eyePosition(),
-                                         beams.at(static_cast<std::size_t>(*beam)).towardSun, *beam,
-                                         kShadowHalfExtentM, kShadowMapResolution);
+        shadow           = gpu::makeShadowUniforms(
+            player_.eyePosition(),
+            towardSunFrom(beams.at(static_cast<std::size_t>(*beam)), player_.eyePosition()), *beam,
+            kShadowHalfExtentM, kShadowMapResolution);
     }
     propPoses_.clear();
     for (const PropState& prop : physics_->props())
@@ -1930,6 +2145,14 @@ std::optional<int> Application::render(int frame, bool screenshotRequested, ImDr
                                   animationSeconds_, scenario_.habitat.terrain.seed, crowd);
     }
 
+    gpu::HabitatUniforms habitat =
+        gpu::makeHabitatUniforms(*geometry_, mirrorAngle(), lighting, weather_, cloudSettings_);
+    if (!axisPointsAtSun(geometry_->kind()))
+    {
+        // The Sun lies off the axis, and circles the hull as the habitat turns.
+        habitat.sun = Vec4f(Vec4d(glm::normalize(habitatFromSky_ * sky_.sunDirection),
+                                  static_cast<double>(habitat.sun.w)));
+    }
     const SceneView scene{
         .camera      = camera(),
         .world       = world_.get(),
@@ -1945,8 +2168,7 @@ std::optional<int> Application::render(int frame, bool screenshotRequested, ImDr
         .transit     = gpuTransit_.get(),
         .trams       = trams_,
         .shadow      = shadow,
-        .habitat =
-            gpu::makeHabitatUniforms(*geometry_, mirrorAngle(), lighting, weather_, cloudSettings_),
+        .habitat     = habitat,
         .sky =
             gpu::makeSkyUniforms(habitatFromSky_, static_cast<double>(hudSettings_.starBrightness),
                                  kMilkyWayScale * static_cast<double>(hudSettings_.milkyWay)),

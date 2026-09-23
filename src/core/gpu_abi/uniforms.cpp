@@ -12,6 +12,7 @@
 #include "StarshipSimulator/core/habitat/HabitatGeometry.h"
 #include "StarshipSimulator/core/habitat/Landscape.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
+#include "StarshipSimulator/core/habitat/land_layout.h"
 #include "StarshipSimulator/core/habitat/mirror_optics.h"
 #include "StarshipSimulator/core/habitat/weather.h"
 #include "StarshipSimulator/core/math.h"
@@ -91,9 +92,20 @@ HabitatUniforms makeHabitatUniforms(const HabitatGeometry& geometry, double open
     {
         if (index < kMaxSunBeams)
         {
-            habitat.beams.at(index) = Vec4f(Vec4d(beam.towardSun, beam.intensity));
+            habitat.beams.at(index) =
+                Vec4f(Vec4d(beam.image.value_or(beam.towardSun), beam.intensity));
+            habitat.light.x = beam.image ? 1.0F : 0.0F;
             ++index;
         }
+    }
+    habitat.light.y = static_cast<float>(index);
+    if (geometry.band(0).axis == BandAxis::AROUND)
+    {
+        habitat.band = Vec4f(Vec4d(1.0, 2.0 * kPi * geometry.radius(), 0.0, 0.0));
+    }
+    if (geometry.kind() != HabitatKind::ONEILL_CYLINDER)
+    {
+        habitat.strips.y = 0.0F;  // no window strips along the hull
     }
     habitat.sunColor    = Vec4f(Vec4d(kSunColor * lighting.sunIntensity, 1.0));
     habitat.ambientUp   = Vec4f(Vec4d(kFarSideColor * (lighting.ambient * daylight), 0.0));

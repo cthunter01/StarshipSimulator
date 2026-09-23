@@ -11,8 +11,9 @@
 #include "StarshipSimulator/core/procgen/terrain_grid.h"
 
 // The tramway: one line down each valley, calling at the towns, on a track that follows the ground
-// and crosses the river on a low viaduct. Where the trams are follows from the clock, like the
-// weather and the birds, so nothing has to be simulated or saved.
+// and crosses the river on a low viaduct; where the land runs around the axis instead, one line
+// once round it. Where the trams are follows from the clock, like the weather and the birds, so
+// nothing has to be simulated or saved.
 namespace StarshipSimulator
 {
 
@@ -35,22 +36,25 @@ struct TrackPoint
         0.0;  // of the rail head above the meridian profile (radius = profile - it)
     double aboveGroundM = 0.0;    // how far the formation stands above the land as it was found
     bool   carried      = false;  // on a trestle or a viaduct, with nothing but air underneath
+    double planM = 0.0;  // where on the line's own plan: z down a valley, metres round a loop
 };
 
 enum class LineKind : std::uint8_t
 {
     VALLEY,  // a tramway down the valley floor, calling at the towns
     ENDCAP,  // a funicular up the endcap's ramp to the hub, where there is no gravity left
+    LOOP,    // a tramway once round a band of land that runs around the axis, always one way
 };
 
-/// One line, running the length of a valley (or up an endcap) and back.
+/// One line, running the length of a valley (or up an endcap) and back, or round a loop.
 struct TramLine
 {
-    LineKind                kind    = LineKind::VALLEY;
-    int                     valley  = 0;
-    double                  theta   = 0.0;  // the line runs around the habitat at this angle
-    double                  radiusM = 1.0;  // of the floor it runs on, for arc lengths
-    std::vector<TrackPoint> track;          // evenly spaced along the line
+    LineKind kind    = LineKind::VALLEY;
+    int      valley  = 0;    // the band of land it serves
+    double   theta   = 0.0;  // the line runs along the axis at this angle (a loop: where it starts)
+    double   z       = 0.0;  // a loop runs around the axis at this z
+    double   radiusM = 1.0;  // of the floor it runs on, for arc lengths
+    std::vector<TrackPoint> track;  // evenly spaced along the line
     std::vector<TramStop>   stops;
     double                  lengthM  = 0.0;
     double                  topSpeed = 16.0;  // m/s between stops
@@ -71,9 +75,10 @@ struct Tram
 };
 
 /// Plans where the habitat's lines run: a tramway down each valley, and a funicular from the foot
-/// of the antisunward endcap's ramp up to the hub at the axis. The alignment is smoothed into
-/// something that could be built -- as straight as it can be while keeping its cuttings shallow --
-/// so it does not follow every bump in the ground. Deterministic; the stops come later.
+/// of the antisunward endcap's ramp up to the hub at the axis; or a loop round a band of land. The
+/// alignment is smoothed into something that could be built -- as straight as it can be while
+/// keeping its cuttings shallow -- so it does not follow every bump in the ground. Deterministic;
+/// the stops come later.
 [[nodiscard]] std::vector<TramLine> planTramLines(const HabitatGeometry& geometry,
                                                   const TerrainGrid&     grid);
 
@@ -95,7 +100,7 @@ void addTramStops(std::vector<TramLine>& lines, const Settlements& settlements);
 /// The trams of every line at a moment (`seconds` is wall-clock time, like the spin).
 [[nodiscard]] std::vector<Tram> tramsAt(const std::vector<TramLine>& lines, double seconds);
 
-/// Where a tram is when it has travelled `alongM` down a line.
+/// Where a tram is when it has travelled `alongM` down a line (on a loop, as far round as that is).
 [[nodiscard]] TrackPoint pointAlong(const TramLine& line, double alongM);
 
 /// The track's mesh, in chunks: rails, sleepers, ballast, and piers where it crosses water. Each

@@ -1,0 +1,77 @@
+# StarshipSimulator habitat scenario
+format_version = 1
+generator_version = 5
+title = "Kalpana One"
+description = "A short cylinder 500 m across and 325 m long, turning at 1.9 rpm (Globus and others, 2007). It has no windows along its sides: sunlight comes in through the glass at both ends, and the land runs once round inside, a loop of fields, woods and three villages 1.6 km long."
+
+# Kalpana One's axis points at the ecliptic pole, not the Sun: mirrors outside each glass end cap
+# throw the sunlight in, and shutters close them at night. Gravity comes from spin: omega^2 * radius.
+[habitat]
+type = "kalpana_cylinder"
+radius_m = 250.0
+length_m = 325.0
+surface_gravity_g = 1.0
+population_density_per_km2 = 5900.0
+
+# The day schedule sets how far the shutters open: 45 degrees is full day, 90 dusk.
+[habitat.mirrors]
+opening_angle_deg = 50.0
+reflectivity = 0.9
+
+[habitat.partner]
+enabled = false
+separation_m = 80000.0
+
+[habitat.atmosphere]
+surface_pressure_kpa = 101.325
+temperature_k = 293.0
+
+[habitat.terrain]
+seed = 11
+hill_height_m = 3.0
+mountain_height_m = 6.0
+feature_size_m = 60.0
+river_width_m = 7.0
+lakes_per_valley = 2
+lake_radius_m = 28.0
+forest_cover = 0.25
+
+# Villages along the river and farmsteads in the fields, all the way round.
+[habitat.settlements]
+towns_per_valley = 3
+town_radius_m = 75.0
+farms_per_valley = 6
+
+# Where the visit begins: on the band of land, along it (round the axis) and across it.
+[start]
+band = 0
+along_m = 0.0
+across_m = 0.0
+heading_deg = 0.0
+
+# Where the habitat is and when the visit begins (UTC).
+# Locations: earth_moon_l4, earth_moon_l5, sun_earth_l4, sun_earth_l5, sun_mars_l4, sun_mars_l5
+[sky]
+location = "earth_moon_l5"
+start = "2045-06-15T09:00:00Z"
+utc_offset_hours = 0.0
+
+# The shutters' daily swing (local time): 90 degrees at sunrise and sunset.
+[day]
+enabled = true
+day_length_hours = 14.0
+sunrise_hour = 6.0
+noon_angle_deg = 45.0
+night_angle_deg = 105.0
+
+# Weather: a low deck of cloud, as in any cylinder this small.
+[climate]
+cloud_base_m = 95.0
+cloud_top_m = 150.0
+cloudiness = 0.35
+raininess = 0.3
+wind_speed_ms = 2.0
+mistiness = 0.5
+year_days = 40.0
+season_swing_hours = 1.5
+season_at_epoch = 0.153  # so the preset starts in early summer

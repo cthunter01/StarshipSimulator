@@ -21,6 +21,7 @@
 #include "StarshipSimulator/core/habitat/Landscape.h"
 #include "StarshipSimulator/core/habitat/day_schedule.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
+#include "StarshipSimulator/core/habitat/land_layout.h"
 #include "StarshipSimulator/core/habitat/metrics.h"
 #include "StarshipSimulator/core/habitat/mirror_optics.h"
 #include "StarshipSimulator/core/habitat/weather.h"
@@ -59,9 +60,19 @@ bool sliderDouble(const char* label, double& value, double min, double max, cons
     return ImGui::SliderScalar(label, ImGuiDataType_Double, &value, &min, &max, format);
 }
 
-std::string describeSun(double openingAngleDeg)
+std::string describeSun(double openingAngleDeg, HabitatKind kind)
 {
     const double alpha = degreesToRadians(openingAngleDeg);
+    if (daylightKindFor(kind) == DaylightKind::END_CAPS)
+    {
+        // The mirrors outside the glass ends, shuttered at night.
+        if (daylightFactor(alpha) <= 0.0)
+        {
+            return "Night: the shutters are closed over the ends";
+        }
+        return std::format("The light comes in {:.0f} degrees up, from both ends",
+                           radiansToDegrees(endCapElevation(alpha)));
+    }
     if (daylightFactor(alpha) <= 0.0)
     {
         return openingAngleDeg >= 90.0 ? "Night: the mirrors are open past the sun"
@@ -139,13 +150,27 @@ void drawLocation(const HudModel& model, HudSettings& settings, PlayerSettings& 
                                        geometry.spec().atmosphere.surfacePressurePa / 1000.0;
     const double coriolis = glm::length(RotatingFrame(geometry.omega()).coriolis(you.velocity()));
 
-    std::string where = regionKindName(ground.region.kind);
-    if (ground.region.index >= 0)
+    if (geometry.band(0).axis == BandAxis::AROUND)
     {
-        where += std::format(" {}", ground.region.index + 1);
+        // Land that runs round the axis: how far round it you are, and how far from its middle.
+        const LandBand& band = geometry.band(0);
+        const Vec2d     plan = band.toPlan(eye.z, HabitatGeometry::angleOf(eye));
+        const double    round =
+            std::fmod(plan.y - band.alongMinM + band.alongLengthM(), band.alongLengthM());
+        ui::field("Where",
+                  std::format("{:.0f} m round the land, {:.0f} m along the axis", round, eye.z));
     }
-    ui::field("Where", std::format("{}, {:.2f} km along, {:.0f} deg around", where, eye.z / 1000.0,
-                                   radiansToDegrees(HabitatGeometry::angleOf(eye))));
+    else
+    {
+        std::string where = regionKindName(ground.region.kind);
+        if (ground.region.index >= 0)
+        {
+            where += std::format(" {}", ground.region.index + 1);
+        }
+        ui::field("Where",
+                  std::format("{}, {:.2f} km along, {:.0f} deg around", where, eye.z / 1000.0,
+                              radiansToDegrees(HabitatGeometry::angleOf(eye))));
+    }
     if (!model.place.empty())
     {
         ui::field("Place", model.place);
@@ -302,7 +327,8 @@ void drawTimeAndLook(const HudModel& model, HudSettings& settings, HudActions& a
         settings.followSchedule = false;  // the user took over
     }
     ImGui::Checkbox("Mirrors follow the day schedule", &settings.followSchedule);
-    ui::textMuted(describeSun(static_cast<double>(settings.mirrorAngleDeg)));
+    ui::textMuted(
+        describeSun(static_cast<double>(settings.mirrorAngleDeg), model.geometry->kind()));
     if (model.sky.sky != nullptr)
     {
         drawSkyObjects(model.sky, actions);
@@ -516,6 +542,18 @@ void drawEditorPartner(HabitatSpec& spec)
 
 void drawEditorShape(HabitatSpec& spec)
 {
+    if (spec.kind == HabitatKind::KALPANA_CYLINDER)
+    {
+        // A short cylinder with glass ends: no strips, no endcaps to shape, no partner.
+        sliderDouble("Radius (m)", spec.radiusM, 100.0, 1000.0, "%.0f");
+        sliderDouble("Length (m)", spec.lengthM, 100.0, 2000.0, "%.0f");
+        sliderDouble("Gravity (g)", spec.surfaceGravityG, 0.1, 1.5, "%.2f");
+        sliderDouble("People per km2", spec.populationDensityPerKm2, 0.0, 20000.0, "%.0f");
+        const HabitatMetrics preview = computeMetrics(spec);
+        ui::textMuted(std::format("Spins at {:.2f} rpm; hull: {}", preview.rpm,
+                                  materialClassName(preview.material)));
+        return;
+    }
     sliderDouble("Radius (m)", spec.radiusM, 200.0, 10000.0, "%.0f");
     sliderDouble("Length (m)", spec.lengthM, 1000.0, 60000.0, "%.0f");
     sliderDouble("Gravity (g)", spec.surfaceGravityG, 0.1, 1.5, "%.2f");
@@ -539,7 +577,7 @@ void drawEditorShape(HabitatSpec& spec)
 void drawEditorDay(HabitatSpec& spec, DayScheduleSpec& day)
 {
     sliderDouble("Mirror angle (deg)", spec.mirrors.openingAngleDeg, 20.0, 150.0, "%.0f");
-    ui::textMuted(describeSun(spec.mirrors.openingAngleDeg));
+    ui::textMuted(describeSun(spec.mirrors.openingAngleDeg, spec.kind));
     sliderDouble("Reflectivity", spec.mirrors.reflectivity, 0.3, 1.0, "%.2f");
     ImGui::Separator();
     ImGui::Checkbox("The mirrors keep a daily schedule", &day.enabled);

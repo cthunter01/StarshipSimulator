@@ -16,6 +16,7 @@
 #include "StarshipSimulator/core/habitat/HabitatGeometry.h"
 #include "StarshipSimulator/core/habitat/Landscape.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
+#include "StarshipSimulator/core/habitat/land_layout.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/physics/colliders.h"
 #include "StarshipSimulator/core/procgen/props.h"
@@ -33,6 +34,7 @@ constexpr double kStreetHalfWidth      = 3.25;
 constexpr double kCrossStreetHalfWidth = 3.0;
 constexpr double kWaterMarginM         = 8.5;   // buildings keep off the river front path
 constexpr double kWalkwayMarginM       = 60.0;  // and from the windows
+constexpr double kBandEdgeMarginM      = 25.0;  // or from the end walls of a band running round
 constexpr double kMaxFootprintRiseM    = 3.0;   // most height difference under a building
 constexpr double kPromenadeNearM       = 2.0;   // the river front path: this far from the water
 constexpr double kPromenadeFarM        = 7.0;   // ... to this far
@@ -193,29 +195,43 @@ struct GroundCheck
 
     [[nodiscard]] bool dry(const Vec2d& p, double margin) const
     {
-        const double z     = plane.z(p.y);
-        const double theta = plane.theta(p.x);
-        if (site.landscape->shoreDistance(z, theta, 100.0) < margin)
+        const SurfaceSpot spot = plane.surface(p);
+        if (site.landscape->shoreDistance(spot.z, spot.theta, 100.0) < margin)
         {
             return false;
         }
-        const Region region = site.geometry->regionAt(z, theta);
+        const Region region = site.geometry->regionAt(spot.z, spot.theta);
         return region.kind == RegionKind::LAND && region.index == valley &&
-               distanceToWindow(p) > kWalkwayMarginM;
+               distanceToWindow(p) > walkwayMargin();
     }
 
+    /// How far inside its band a point is: from the window strips beside a valley, or from the
+    /// ends of a band running round the axis.
     [[nodiscard]] double distanceToWindow(const Vec2d& p) const
     {
         const HabitatGeometry& geometry = *site.geometry;
-        const double           theta    = plane.theta(p.x);
-        const double           centre   = geometry.landCenter(valley);
-        const double off = std::abs(std::remainder(theta - centre, 2.0 * kPi)) * plane.radius;
+        const SurfaceSpot      spot     = plane.surface(p);
+        if (plane.axis == BandAxis::AROUND)
+        {
+            const LandBand& band = geometry.band(valley);
+            return band.halfWidthM - std::abs(band.toPlan(spot.z, spot.theta).x);
+        }
+        const double theta  = spot.theta;
+        const double centre = geometry.landCenter(valley);
+        const double off    = std::abs(std::remainder(theta - centre, 2.0 * kPi)) * plane.radius;
         return (geometry.landHalfAngle() * plane.radius) - off;
+    }
+
+    /// The walkway kept clear along the band's edges.
+    [[nodiscard]] double walkwayMargin() const
+    {
+        return plane.axis == BandAxis::AROUND ? kBandEdgeMarginM : kWalkwayMarginM;
     }
 
     [[nodiscard]] double height(const Vec2d& p) const
     {
-        return site.grid->groundHeight(plane.z(p.y), plane.theta(p.x));
+        const SurfaceSpot spot = plane.surface(p);
+        return site.grid->groundHeight(spot.z, spot.theta);
     }
 
     /// Floor level and foundation depth for a footprint, if the ground there can take it.
@@ -249,10 +265,105 @@ struct GroundCheck
 
 // ---- Towns ------------------------------------------------------------------------------------
 
+/// The river's plan x at plan y on a plan laid out on a band running round the axis.
+double riverOnPlanAround(const Site& site, const FloorPlane& plane, int band, double y)
+{
+    const LandBand&   land   = site.geometry->band(band);
+    const SurfaceSpot here   = plane.surface(Vec2d(0.0, y));
+    const double      along  = land.toPlan(here.z, here.theta).y;
+    const double      across = site.landscape->riverAcross(along).x;
+    const SurfaceSpot river  = land.toSurface(Vec2d(across, along));
+    return plane.toPlan(river.z, river.theta).x;
+}
+
+/// The river's plan x at plan y on a town's plan.
+double riverX(const Site& site, const TownFrame& town, double y)
+{
+    if (town.plane.axis == BandAxis::AROUND)
+    {
+        return riverOnPlanAround(site, town.plane, town.valley, y);
+    }
+    const double z = town.plane.z0 + y;
+    return std::remainder(site.landscape->riverAngle(town.valley, z) - town.plane.theta0,
+                          2.0 * kPi) *
+           town.plane.radius;
+}
+
+/// Where a town goes on a band running round the axis: spread evenly round it, beside the river
+/// on whichever bank has the room.
+std::optional<TownFrame> placeTownAround(const Site& site, const LandBand& band, int index,
+                                         int count, SplitMix64& random)
+{
+    const HabitatGeometry& geometry = *site.geometry;
+    const SettlementSpec&  spec     = geometry.spec().settlements;
+    const double           landHalf = band.halfWidthM - kBandEdgeMarginM;
+    const double           segment  = band.alongLengthM() / count;
+
+    TownFrame town;
+    town.valley     = band.index;
+    town.halfLength = spec.townRadiusM * random.uniform(0.75, 1.25);
+    town.halfWidth  = std::min(0.6 * town.halfLength, 0.32 * band.halfWidthM);
+    town.halfLength = std::min({town.halfLength, 1.8 * town.halfWidth, 0.35 * segment});
+    town.wobble1    = random.uniform(0.0, 2.0 * kPi);
+    town.wobble2    = random.uniform(0.0, 2.0 * kPi);
+    if (town.halfWidth < 25.0)
+    {
+        return std::nullopt;
+    }
+
+    // The band goes all the way round, so no margin at its ends: the towns share it evenly.
+    const double     along = band.alongMinM + (segment * (index + 0.5 + random.uniform(-0.2, 0.2)));
+    const Landscape& landscape = *site.landscape;
+    const bool       rivers    = landscape.hasRivers();
+    double           riverX    = 0.0;
+    Vec2d            direction(0.0, 1.0);
+    if (rivers)
+    {
+        const Vec2d river = landscape.riverAcross(along);
+        riverX            = river.x;
+        direction         = glm::normalize(Vec2d(river.y, 1.0));
+    }
+    const double halfRiver = 0.5 * geometry.spec().terrain.riverWidthM;
+    const double swing     = random.uniform(-0.3, 0.3);
+    double       offset    = rivers ? halfRiver + 20.0 + (0.55 * town.halfWidth) : swing * landHalf;
+    double       side      = (index % 2 == 0) ? 1.0 : -1.0;
+    if (rivers && landHalf - (side * riverX) < offset + town.halfWidth)
+    {
+        side = -side;  // no room on this bank
+    }
+    const auto spotAt = [&](double off) {
+        return band.toSurface(Vec2d(riverX + (side * off), along));
+    };
+    SurfaceSpot spot = spotAt(offset);
+    while (rivers &&
+           landscape.shoreDistance(spot.z, spot.theta, 400.0) < (0.45 * town.halfWidth) + 10.0 &&
+           offset < landHalf - town.halfWidth)
+    {
+        offset += 5.0;
+        spot = spotAt(offset);
+    }
+    town.plane     = FloorPlane::onBand(band, spot.z, spot.theta);
+    town.riverSide = rivers ? side : 1.0;
+    town.along     = glm::dot(rotate90(direction), Vec2d(side, 0.0)) < 0.0 ? -direction : direction;
+    town.across    = rotate90(town.along);
+
+    const GroundCheck check{.site = site, .plane = town.plane, .valley = band.index};
+    if (!check.dry(Vec2d(0.0), 10.0) ||
+        check.distanceToWindow(Vec2d(0.0)) < town.halfWidth + kBandEdgeMarginM)
+    {
+        return std::nullopt;
+    }
+    return town;
+}
+
 /// Where a town goes: beside the river, on alternate banks along the valley.
 std::optional<TownFrame> placeTown(const Site& site, int valley, int index, int count,
                                    SplitMix64& random)
 {
+    if (site.geometry->band(valley).axis == BandAxis::AROUND)
+    {
+        return placeTownAround(site, site.geometry->band(valley), index, count, random);
+    }
     const HabitatGeometry& geometry  = *site.geometry;
     const SettlementSpec&  spec      = geometry.spec().settlements;
     const double           radius    = geometry.radius();
@@ -414,12 +525,7 @@ private:
             for (int i = 0; i < samples; ++i)
             {
                 const double y = -span + (5.0 * i);
-                const double z = town_.plane.z(y);
-                const Vec2d  river(
-                    std::remainder(landscape.riverAngle(town_.valley, z) - town_.plane.theta0,
-                                   2.0 * kPi) *
-                        town_.plane.radius,
-                    y);
+                const Vec2d  river(riverX(site_, town_, y), y);
                 bend_.emplace_back(town_.u(river), town_.w(river));
             }
             // By u, and by the swing where two share a u: std::sort may leave equal elements in
@@ -724,10 +830,11 @@ private:
             return;
         }
         const Vec3d ground = town_.plane.point(p, check_.height(p) + lift);
-        plan_.props.push_back({.kind        = kind,
-                               .position    = ground,
-                               .orientation = floorOrientation(ground, -angle),
-                               .tint        = static_cast<float>(random_->uniform())});
+        plan_.props.push_back(
+            {.kind        = kind,
+             .position    = ground,
+             .orientation = floorOrientation(ground, -angle, town_.plane.alongDirection(p)),
+             .tint        = static_cast<float>(random_->uniform())});
     }
 
     /// Places a building if the ground takes it. Returns its index in the plan.
@@ -1121,9 +1228,9 @@ private:
             const int            steps = stepsBelow(0.0, 3.0 * town_.halfWidth, 1.0);
             for (int i = 0; i < steps; ++i)
             {
-                const Vec2d  p = at(u, -static_cast<double>(i));
-                const double shore =
-                    landscape.shoreDistance(town_.plane.z(p.y), town_.plane.theta(p.x), 50.0);
+                const Vec2d       p     = at(u, -static_cast<double>(i));
+                const SurfaceSpot spot  = town_.plane.surface(p);
+                const double      shore = landscape.shoreDistance(spot.z, spot.theta, 50.0);
                 if (shore < 4.5)
                 {
                     bank = p;
@@ -1162,8 +1269,8 @@ private:
         const int    j     = std::min(squareJ_ + 1, static_cast<int>(us_.size()) - 1);
         const double u     = uAt(j);
         const auto   shore = [&](double w) {
-            const Vec2d p = at(u, w);
-            return landscape.shoreDistance(town_.plane.z(p.y), town_.plane.theta(p.x), 60.0);
+            const SurfaceSpot spot = town_.plane.surface(at(u, w));
+            return landscape.shoreDistance(spot.z, spot.theta, 60.0);
         };
         // Walk from the main street toward the river, across it, and up the far bank.
         std::optional<double> nearBank;
@@ -1249,8 +1356,8 @@ private:
 class GroundPainter
 {
 public:
-    GroundPainter(const Site& site, const TownFrame& town, const TownPlan& plan)
-      : site_(site), town_(town), plan_(&plan)
+    GroundPainter(const Site& site, TownFrame town, const TownPlan& plan)
+      : site_(site), town_(std::move(town)), plan_(&plan)
     {
         frame();
         const std::size_t count = static_cast<std::size_t>(map_.width) * map_.height;
@@ -1381,13 +1488,10 @@ private:
         std::uint8_t     kind      = style_[index(x, y)];
         if (landscape.hasRivers() && reach < 1.25)
         {
-            const double z     = town_.plane.z(p.y);
-            const double shore = landscape.shoreDistance(z, town_.plane.theta(p.x), 20.0);
-            const double river =
-                std::remainder(landscape.riverAngle(town_.valley, z) - town_.plane.theta0,
-                               2.0 * kPi) *
-                town_.plane.radius;
-            const double path = std::max(kPromenadeNearM - shore, shore - kPromenadeFarM);
+            const SurfaceSpot spot  = town_.plane.surface(p);
+            const double      shore = landscape.shoreDistance(spot.z, spot.theta, 20.0);
+            const double      river = riverX(site_, town_, p.y);
+            const double      path  = std::max(kPromenadeNearM - shore, shore - kPromenadeFarM);
             if ((p.x - river) * town_.riverSide > 0.0 && reach < 1.1 && path < d)
             {
                 d    = path;
@@ -1416,6 +1520,25 @@ private:
 
 // ---- Farms ------------------------------------------------------------------------------------
 
+/// Where to try a farmstead next: anywhere on a band running round the axis, or along a valley
+/// away from its ends.
+SurfaceSpot farmSpot(const HabitatGeometry& geometry, const LandBand& band, SplitMix64& random)
+{
+    if (band.axis == BandAxis::AROUND)
+    {
+        const double along  = random.uniform(band.alongMinM, band.alongMaxM);
+        const double across = random.uniform(-0.8, 0.8) * band.halfWidthM;
+        return band.toSurface(Vec2d(across, along));
+    }
+    const double radius   = geometry.radius();
+    const double landHalf = geometry.landHalfAngle() * radius;
+    const double margin   = std::min(800.0, 0.1 * (geometry.floorZMax() - geometry.floorZMin()));
+    const double z = random.uniform(geometry.floorZMin() + margin, geometry.floorZMax() - margin);
+    const double theta =
+        geometry.landCenter(band.index) + (random.uniform(-0.8, 0.8) * landHalf / radius);
+    return {.z = z, .theta = theta};
+}
+
 std::optional<Settlement> planFarm(const Site& site, int valley, std::size_t index,
                                    const std::vector<Settlement>& others, SplitMix64& random,
                                    std::vector<Building>&      buildings,
@@ -1423,23 +1546,29 @@ std::optional<Settlement> planFarm(const Site& site, int valley, std::size_t ind
                                    std::vector<StandingTree>&  trees)
 {
     const HabitatGeometry& geometry = *site.geometry;
-    const double           radius   = geometry.radius();
-    const double           landHalf = geometry.landHalfAngle() * radius;
-    const double margin = std::min(800.0, 0.1 * (geometry.floorZMax() - geometry.floorZMin()));
+    const LandBand&        band     = geometry.band(valley);
+    // Clear of the windows beside a valley; on a narrow band running round, clear of its ends,
+    // and closer to the water and the neighbours, or a band a few hundred metres wide has no room.
+    const bool   around    = band.axis == BandAxis::AROUND;
+    const double clearance = around ? std::min(150.0, 0.4 * band.halfWidthM) : 150.0;
+    const double dryM      = around ? 35.0 : 70.0;
+    const double townRoomM = around ? 60.0 : 250.0;
+    const double farmRoomM = around ? 120.0 : 400.0;
     for (int attempt = 0; attempt < kFarmAttempts; ++attempt)
     {
-        const double z =
-            random.uniform(geometry.floorZMin() + margin, geometry.floorZMax() - margin);
-        const double theta =
-            geometry.landCenter(valley) + (random.uniform(-0.8, 0.8) * landHalf / radius);
-        const FloorPlane  plane{.z0 = z, .theta0 = wrapAngle(theta), .radius = radius};
+        const SurfaceSpot spot  = farmSpot(geometry, band, random);
+        const double      z     = spot.z;
+        const double      theta = spot.theta;
+        const FloorPlane  plane = FloorPlane::onBand(band, z, theta);
         const GroundCheck check{.site = site, .plane = plane, .valley = valley};
         const Vec3d       here    = plane.point(Vec2d(0.0), 0.0);
         const bool        crowded = std::ranges::any_of(others, [&](const Settlement& other) {
-            const double room = other.kind == SettlementKind::TOWN ? other.radiusM + 250.0 : 400.0;
+            const double room =
+                other.kind == SettlementKind::TOWN ? other.radiusM + townRoomM : farmRoomM;
             return glm::distance(other.plane.point(Vec2d(0.0), 0.0), here) < room;
         });
-        if (crowded || !check.dry(Vec2d(0.0), 70.0) || check.distanceToWindow(Vec2d(0.0)) < 150.0 ||
+        if (crowded || !check.dry(Vec2d(0.0), dryM) ||
+            check.distanceToWindow(Vec2d(0.0)) < clearance ||
             site.landscape->woodland(z, theta) > 0.35)
         {
             continue;
@@ -1512,10 +1641,11 @@ std::optional<Settlement> planFarm(const Site& site, int valley, std::size_t ind
             if (check.dry(p, 2.0))
             {
                 const Vec3d ground = plane.point(p, check.height(p));
-                props.push_back({.kind        = PropKind::HAY_BALE,
-                                 .position    = ground,
-                                 .orientation = floorOrientation(ground),
-                                 .tint        = static_cast<float>(random.uniform())});
+                props.push_back(
+                    {.kind        = PropKind::HAY_BALE,
+                     .position    = ground,
+                     .orientation = floorOrientation(ground, 0.0, plane.alongDirection(p)),
+                     .tint        = static_cast<float>(random.uniform())});
             }
         }
         for (const double side : {-1.0, 1.0})
@@ -1549,16 +1679,61 @@ void fitBounds(Settlement& place, std::span<const Building> buildings)
 
 }  // namespace
 
+FloorPlane FloorPlane::onBand(const LandBand& band, double z, double theta)
+{
+    if (band.axis == BandAxis::ALONG_Z)
+    {
+        return {.z0 = z, .theta0 = wrapAngle(theta), .radius = band.radiusM};
+    }
+    return {.z0      = z,
+            .theta0  = wrapAngle(theta),
+            .radius  = band.profile->radiusAt(z).value_or(band.radiusM),
+            .axis    = BandAxis::AROUND,
+            .u0      = band.profile->arcAt(z),
+            .profile = band.profile};
+}
+
+SurfaceSpot FloorPlane::surface(const Vec2d& p) const
+{
+    if (axis == BandAxis::ALONG_Z)
+    {
+        return {.z = z0 + p.y, .theta = theta0 + (p.x / radius)};
+    }
+    return {.z = profile->pointAt(u0 - p.x).x, .theta = theta0 + (p.y / radius)};
+}
+
 Vec3d FloorPlane::point(const Vec2d& p, double height) const
 {
-    const double t = theta(p.x);
-    const double r = radius - height;
-    return {r * std::cos(t), r * std::sin(t), z(p.y)};
+    if (axis == BandAxis::ALONG_Z)
+    {
+        const double t = theta0 + (p.x / radius);
+        const double r = radius - height;
+        return {r * std::cos(t), r * std::sin(t), z0 + p.y};
+    }
+    const Vec2d  floor = profile->pointAt(u0 - p.x);  // (z, r)
+    const double t     = theta0 + (p.y / radius);
+    const double r     = floor.y - height;
+    return {r * std::cos(t), r * std::sin(t), floor.x};
 }
 
 Vec2d FloorPlane::toPlan(double z, double theta) const
 {
-    return {std::remainder(theta - theta0, 2.0 * kPi) * radius, z - z0};
+    const double around = std::remainder(theta - theta0, 2.0 * kPi) * radius;
+    if (axis == BandAxis::ALONG_Z)
+    {
+        return {around, z - z0};
+    }
+    return {u0 - profile->arcAt(z), around};
+}
+
+Vec3d FloorPlane::alongDirection(const Vec2d& p) const
+{
+    if (axis == BandAxis::ALONG_Z)
+    {
+        return {0.0, 0.0, 1.0};
+    }
+    const double t = theta0 + (p.y / radius);
+    return {-std::sin(t), std::cos(t), 0.0};
 }
 
 Vec4d GroundMap::sample(const Vec2d& p) const
@@ -1650,7 +1825,7 @@ Settlements planSettlements(const HabitatGeometry& geometry, const TerrainGrid& 
         std::swap(names[i], names[pick]);
     }
 
-    for (int valley = 0; valley < geometry.stripCount(); ++valley)
+    for (int valley = 0; valley < geometry.bandCount(); ++valley)
     {
         for (int i = 0; i < spec.townsPerValley; ++i)
         {
@@ -1687,7 +1862,7 @@ Settlements planSettlements(const HabitatGeometry& geometry, const TerrainGrid& 
             out.trees.insert(out.trees.end(), plan.trees.begin(), plan.trees.end());
         }
     }
-    for (int valley = 0; valley < geometry.stripCount(); ++valley)
+    for (int valley = 0; valley < geometry.bandCount(); ++valley)
     {
         for (int i = 0; i < spec.farmsPerValley; ++i)
         {
@@ -1711,10 +1886,10 @@ void stampSettlements(TerrainGrid& grid, const Settlements& settlements)
     for (const Settlement& place : settlements.places)
     {
         // The cover map's texels (two grid cells each) over the settlement's plan.
-        const Vec2d a =
-            grid.cellAt(place.plane.z(place.boundsMin.y), place.plane.theta(place.boundsMin.x));
-        const Vec2d b =
-            grid.cellAt(place.plane.z(place.boundsMax.y), place.plane.theta(place.boundsMax.x));
+        const SurfaceSpot low  = place.plane.surface(place.boundsMin);
+        const SurfaceSpot high = place.plane.surface(place.boundsMax);
+        const Vec2d       a    = grid.cellAt(low.z, low.theta);
+        const Vec2d       b    = grid.cellAt(high.z, high.theta);
         const auto   rowFrom = static_cast<std::int64_t>(std::floor(std::min(a.y, b.y) / 2.0)) - 1;
         const auto   rowTo   = static_cast<std::int64_t>(std::ceil(std::max(a.y, b.y) / 2.0)) + 1;
         const double columnSpan = std::remainder(b.x - a.x, static_cast<double>(layout.columns));

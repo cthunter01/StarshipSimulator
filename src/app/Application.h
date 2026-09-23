@@ -23,6 +23,7 @@
 #include "StarshipSimulator/core/camera.h"
 #include "StarshipSimulator/core/gpu_abi/uniforms.h"
 #include "StarshipSimulator/core/habitat/HabitatGeometry.h"
+#include "StarshipSimulator/core/habitat/land_layout.h"
 #include "StarshipSimulator/core/habitat/metrics.h"
 #include "StarshipSimulator/core/habitat/weather.h"
 #include "StarshipSimulator/core/physics/PlayerController.h"
@@ -144,14 +145,25 @@ private:
     void                 flyTo(const Vec3d& eye, double yawDeg, double pitchDeg);
     [[nodiscard]] int    startValley() const;
     [[nodiscard]] double startViewZ() const;
+    /// On the start band: `aheadM` along it and `asideM` across it from the start.
+    [[nodiscard]] SurfaceSpot startSpot(double aheadM, double asideM) const;
+    /// The yaw (degrees) facing a heading on the start band's plan (from its +y toward its +x).
+    [[nodiscard]] double bandYaw(double headingDeg) const;
+    /// The views that differ on a band running round the axis; false for the others.
+    bool applyRoundView(std::string_view name);
+    /// The nearest angle from `theta` (going spinward) where the ground at z is open: no town, no
+    /// wood, no water.
+    [[nodiscard]] double openAround(double z, double theta) const;
     void                 applyCameraPose(const CameraPose& pose);
 
     // The sky and the clock
-    void                          startSkyLoad();
-    void                          pollSky();
-    void                          adoptSky(SkyData data);
-    void                          advanceClock(double realSeconds);
-    void                          updateSky();
+    void startSkyLoad();
+    void pollSky();
+    void adoptSky(SkyData data);
+    void advanceClock(double realSeconds);
+    void updateSky();
+    /// Where this habitat points its spin axis.
+    [[nodiscard]] astro::SpinAxis spinAxis() const;
     void                          updateWeather(double realSeconds);
     void                          updateSound(double realSeconds);
     [[nodiscard]] audio::SoundMix soundMix() const;
@@ -160,12 +172,14 @@ private:
     void                          identify();
     void                          lookAtBody(astro::Body body);
     void                          lookAtPartner();
-    void                          lookAtName(std::string_view name);
-    void                          lookOut(Vec3d directionEqj, std::string_view name);
-    [[nodiscard]] double          mirrorAngle() const;  // radians
-    [[nodiscard]] double          autoExposure() const;
-    [[nodiscard]] SkyModel        skyModel() const;
-    [[nodiscard]] AlmanacState    almanacState() const;
+    /// Looks out through a glass end cap, for a habitat whose axis does not point at the Sun.
+    void                       lookThroughEnd(Vec3d directionEqj, std::string_view name);
+    void                       lookAtName(std::string_view name);
+    void                       lookOut(Vec3d directionEqj, std::string_view name);
+    [[nodiscard]] double       mirrorAngle() const;  // radians
+    [[nodiscard]] double       autoExposure() const;
+    [[nodiscard]] SkyModel     skyModel() const;
+    [[nodiscard]] AlmanacState almanacState() const;
     /// How big a picture taken now would come out, in pixels.
     [[nodiscard]] glm::uvec2              photoSize() const;
     [[nodiscard]] std::vector<TourName>   tourNames() const;

@@ -19,12 +19,59 @@ layout(location = 0) out vec3 outCameraRelative;
 layout(location = 1) out vec3 outNormal;  // reflective face
 layout(location = 2) out vec2 outUv;
 
+// A windowless cylinder's mirrors: eight petals hinged round the rim of each glass end, flared out
+// like a trumpet. Sunlight arrives from the side, square to the axis; a petal flared 45 degrees
+// would turn it straight along the axis, and one flared further sends it in at an angle, down onto
+// the land. So by day the flare is 45 degrees plus half the light's elevation; at night they fold
+// flat, out of the way of the glass, and the ends show the stars.
+const int PETALS = 8;
+
+void endCapPetal(int index, vec2 uv)
+{
+    if (index >= 2 * PETALS)
+    {
+        gl_Position = vec4(0.0);
+        return;
+    }
+    float alpha     = habitat.mirror.x;
+    float twilight  = radians(4.0);
+    float daylight  = smoothstep(0.0, twilight, alpha) * (1.0 - smoothstep(PI / 2.0 - twilight, PI / 2.0, alpha));
+    float elevation = clamp(atan(sin(2.0 * alpha), abs(cos(2.0 * alpha))), radians(15.0), radians(40.0));
+    float flare     = mix(PI / 2.0, PI / 4.0 + 0.5 * elevation, daylight);
+
+    float side    = index < PETALS ? 1.0 : -1.0;  // the +z end, then the -z end
+    float glass   = side > 0.0 ? habitat.strips.w : habitat.strips.z;
+    float phi     = (float(index % PETALS) + 0.5) * (2.0 * PI / float(PETALS));
+    float radius  = habitat.shape.x;
+    float reach   = 0.9 * radius;
+    vec3  outward = vec3(cos(phi), sin(phi), 0.0);
+    vec3  tangent = vec3(-sin(phi), cos(phi), 0.0);
+    vec3  axis    = vec3(0.0, 0.0, side);
+    vec3  along   = sin(flare) * outward + cos(flare) * axis;
+    // Widening outward, so neighbours meet edge to edge round the cone (with a hand's breadth
+    // between).
+    float halfWidth = sin(PI / float(PETALS)) * 0.97 * (radius + uv.y * reach * sin(flare));
+    vec3  hinge = radius * outward + vec3(0.0, 0.0, glass + side * 0.5);
+    vec3  world = hinge + (uv.x * 2.0 - 1.0) * halfWidth * tangent + uv.y * reach * along;
+
+    outCameraRelative = (placement.model * vec4(world, 1.0)).xyz;
+    // The reflective face looks outward and back toward the habitat: into the Sun and the glass.
+    outNormal   = mat3(placement.model) * (cos(flare) * outward - sin(flare) * axis);
+    outUv       = uv;
+    gl_Position = frame.viewProjection * vec4(outCameraRelative, 1.0);
+}
+
 void main()
 {
     int  mirrorIndex = gl_VertexIndex / 6;
     int  corner      = gl_VertexIndex % 6;
     vec2 uv          = vec2(corner == 1 || corner == 2 || corner == 4 ? 1.0 : 0.0,
                             corner == 2 || corner == 4 || corner == 5 ? 1.0 : 0.0);
+    if (pointImages())
+    {
+        endCapPetal(mirrorIndex, uv);
+        return;
+    }
     if (mirrorIndex >= stripCount())
     {
         gl_Position = vec4(0.0);  // degenerate: nothing drawn

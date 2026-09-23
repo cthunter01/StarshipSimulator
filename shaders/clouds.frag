@@ -54,19 +54,19 @@ struct SpanLight
 vec3 beamsAt(vec3 p, inout float best, inout vec3 towardSun)
 {
     vec3 light = vec3(0.0);
-    for (int i = 0; i < stripCount(); ++i)
+    for (int i = 0; i < beamCount(); ++i)
     {
         float intensity = habitat.beams[i].w;
         if (intensity <= 0.0)
         {
             continue;
         }
-        float strength = intensity * beamAperture(p, habitat.beams[i].xyz, i);
+        float strength = intensity * beamAperture(p, beamDirection(p, i), i);
         light += habitat.sunColor.rgb * strength;
         if (strength > best)
         {
             best      = strength;
-            towardSun = habitat.beams[i].xyz;
+            towardSun = beamDirection(p, i);
         }
     }
     return light;

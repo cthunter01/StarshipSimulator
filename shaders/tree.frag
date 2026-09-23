@@ -58,13 +58,13 @@ void main()
         float inside = mix(0.45, 1.0, smoothstep(0.35, 0.95, inHeight));
         // Light through the leaves: some of it reaches faces turned away from the sun.
         vec3 light = vec3(0.0);
-        for (int i = 0; i < stripCount(); ++i)
+        for (int i = 0; i < beamCount(); ++i)
         {
             vec3 beam = beamLight(p, n, i) * 0.85 + beamLight(p, -n, i) * 0.2;
             if (max(beam.r, max(beam.g, beam.b)) > 0.0)
             {
                 light += beam * treeShadow(inCameraRelative, n, i) *
-                         cloudShade(cloudMap, p, habitat.beams[i].xyz);
+                         cloudShade(cloudMap, p, beamDirection(p, i));
             }
         }
         color = albedo * (light + ambientLight(p, n)) * inside;
@@ -72,10 +72,10 @@ void main()
     else
     {
         vec3 light = vec3(0.0);
-        for (int i = 0; i < stripCount(); ++i)
+        for (int i = 0; i < beamCount(); ++i)
         {
             light += beamLight(p, n, i) * treeShadow(inCameraRelative, n, i) *
-                     cloudShade(cloudMap, p, habitat.beams[i].xyz);
+                     cloudShade(cloudMap, p, beamDirection(p, i));
         }
         color = BARK * (light + ambientLight(p, n)) * 0.7;
     }

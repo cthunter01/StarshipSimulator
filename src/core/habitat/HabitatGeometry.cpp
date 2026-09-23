@@ -8,6 +8,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "StarshipSimulator/core/SplitMix64.h"
 #include "StarshipSimulator/core/habitat/Landscape.h"
@@ -23,8 +24,12 @@ namespace StarshipSimulator
 namespace
 {
 
-constexpr double kWindowMarginM    = 30.0;   // flat walkway beside the glass
-constexpr double kWindowBlendM     = 200.0;  // terrain fades in over this distance
+constexpr double kWindowMarginM = 30.0;   // flat walkway beside the glass
+constexpr double kWindowBlendM  = 200.0;  // terrain fades in over this distance
+// A Kalpana cylinder is a few hundred metres long: a narrower walkway along the foot of each glass
+// end wall, and the land rising from it sooner.
+constexpr double kEndWalkwayM      = 12.0;
+constexpr double kEndBlendM        = 40.0;
 constexpr double kHubBlendM        = 150.0;  // terrain fades out toward the hub
 constexpr double kMountainBlendM   = 400.0;  // endcap relief fades in from the floor
 constexpr double kEndMarginM       = 1.0;    // keep off the end walls
@@ -50,7 +55,17 @@ HabitatSpec validated(const HabitatSpec& spec)
         }
         throw std::invalid_argument(message);
     }
-    return spec;
+    return normalizedForKind(spec);
+}
+
+/// The band of land that runs round the axis, if the habitat's land is laid out that way.
+std::optional<LandBand> aroundBand(const std::vector<LandBand>& bands)
+{
+    if (bands.size() == 1 && bands.front().axis == BandAxis::AROUND)
+    {
+        return bands.front();
+    }
+    return std::nullopt;
 }
 
 double wrapAngle(double angle)
@@ -108,7 +123,7 @@ const char* regionKindName(RegionKind kind)
 
 HabitatGeometry::HabitatGeometry(const HabitatSpec& spec)
   : spec_(validated(spec)),
-    profile_(std::make_shared<const MeridianProfile>(buildOneillProfile(spec_))),
+    profile_(std::make_shared<const MeridianProfile>(buildFloorProfile(spec_))),
     hills_(hashSeed(spec_.terrain.seed, 1)),
     ridges_(hashSeed(spec_.terrain.seed, 2)),
     omega_(spinRate(spec_.radiusM, spec_.surfaceGravityG)),
@@ -121,7 +136,8 @@ HabitatGeometry::HabitatGeometry(const HabitatSpec& spec)
                                              .floorZMax       = floorZMax_,
                                              .stripCount      = spec_.stripPairs,
                                              .stripAngle      = stripAngle(),
-                                             .windowHalfAngle = windowHalfAngle()})
+                                             .windowHalfAngle = windowHalfAngle(),
+                                             .around          = aroundBand(bands_)})
 {
     walkableZMin_ = std::max(profile_->zMin() + kEndMarginM,
                              zWhereRadiusReaches(*profile_, kPoleRadiusM, false));
@@ -180,6 +196,11 @@ Region HabitatGeometry::regionAt(double z, double theta) const
     {
         return {.kind = RegionKind::OUTSIDE, .index = -1};
     }
+    if (spec_.kind != HabitatKind::ONEILL_CYLINDER)
+    {
+        // The whole floor is one band of land; the windows are the end walls.
+        return {.kind = RegionKind::LAND, .index = 0};
+    }
     if (z < floorZMin_ || z > floorZMax_)
     {
         return {.kind = RegionKind::ENDCAP, .index = -1};
@@ -197,6 +218,11 @@ Region HabitatGeometry::regionAt(double z, double theta) const
 
 double HabitatGeometry::distanceToWindow(double z, double theta, double radius) const
 {
+    if (spec_.kind == HabitatKind::KALPANA_CYLINDER)
+    {
+        // The glass end walls.
+        return std::max(0.0, std::min(z - profile_->zMin(), profile_->zMax() - z));
+    }
     const double strip = stripAngle();
     const int nearest  = static_cast<int>(std::lround(wrapAngle(theta) / strip)) % spec_.stripPairs;
     const double arc =
@@ -235,8 +261,8 @@ double HabitatGeometry::waterLevelAt(double z) const
 
 double HabitatGeometry::terrainHeight(double z, double theta) const
 {
-    return Landscape::shapeNearWater(naturalHeight(z, theta),
-                                     landscape_.shoreDistance(z, theta, kFloodplainReachM));
+    return landscape_.shape(naturalHeight(z, theta),
+                            landscape_.shoreDistance(z, theta, kFloodplainReachM));
 }
 
 double HabitatGeometry::naturalHeight(double z, double theta) const
@@ -246,9 +272,12 @@ double HabitatGeometry::naturalHeight(double z, double theta) const
     {
         return 0.0;
     }
-    const double radius     = *baseRadius;
-    const double windowMask = glm::smoothstep(kWindowMarginM, kWindowMarginM + kWindowBlendM,
-                                              distanceToWindow(z, theta, radius));
+    const double radius = *baseRadius;
+    const bool   oneill = spec_.kind == HabitatKind::ONEILL_CYLINDER;
+    const double margin = oneill ? kWindowMarginM : kEndWalkwayM;
+    const double blend  = oneill ? kWindowBlendM : kEndBlendM;
+    const double windowMask =
+        glm::smoothstep(margin, margin + blend, distanceToWindow(z, theta, radius));
     const double hubRadius =
         std::min(spec_.antisunwardEndcap.hubRadiusM, spec_.sunwardEndcap.hubRadiusM);
     const double hubMask = glm::smoothstep(hubRadius, hubRadius + kHubBlendM, radius);
@@ -285,8 +314,11 @@ double HabitatGeometry::forestDensity(double z, double theta) const
     }
     const double radius = *baseRadius;
     // Not on the walkways beside the windows, nor in or right beside the water (meadows there).
-    const double walkway = glm::smoothstep(kWindowMarginM + 20.0, kWindowMarginM + 120.0,
-                                           distanceToWindow(z, theta, radius));
+    const bool   oneill  = spec_.kind == HabitatKind::ONEILL_CYLINDER;
+    const double walkway = oneill ? glm::smoothstep(kWindowMarginM + 20.0, kWindowMarginM + 120.0,
+                                                    distanceToWindow(z, theta, radius))
+                                  : glm::smoothstep(kEndWalkwayM + 8.0, kEndWalkwayM + 30.0,
+                                                    distanceToWindow(z, theta, radius));
     const double shore   = landscape_.shoreDistance(z, theta, kFloodplainReachM);
     const double water   = glm::smoothstep(15.0, 90.0, shore);
     // Woods thin out up the endcap mountains and stop near the hub.

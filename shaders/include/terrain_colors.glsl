@@ -42,17 +42,30 @@ vec3 weathered(vec3 albedo)
 // Fades out detail of the given size (m) once a pixel covers more than about half of it.
 float detail(float footprint, float size) { return 1.0 - smoothstep(0.25 * size, 0.6 * size, footprint); }
 
+// Value noise of a given feature size (m) over the land. Where the land runs round the axis it is
+// taken in 3D, so it wraps with the land; in a valley, over the unrolled floor.
+float landNoise(vec2 uv, vec3 p, float size)
+{
+    return landRunsRound() ? valueNoise3(p / size) : valueNoise(uv / size);
+}
+
 // woods and wetness (lush meadows near water) come from the land-cover map, 0..1.
 vec3 valleyAlbedo(vec2 uv, vec3 p, float woods, float wetness)
 {
     float footprint = length(fwidth(uv));
 
-    // Patchwork fields, their grid gently warped so it doesn't look machine made.
-    vec2  warped = uv + 60.0 * vec2(fbm2(uv / 900.0), fbm2(uv / 900.0 + 7.3));
-    vec2  cell   = warped / vec2(170.0, 240.0);
+    // Patchwork fields, their grid gently warped so it doesn't look machine made. Land running
+    // round the axis gets a whole number of fields round, so the patchwork closes on itself.
+    vec2  warp   = landRunsRound() ? vec2(fbm3(p / 900.0), fbm3(p / 900.0 + 7.3))
+                                   : vec2(fbm2(uv / 900.0), fbm2(uv / 900.0 + 7.3));
+    float fields = max(floor(habitat.band.y / 170.0 + 0.5), 1.0);
+    vec2  size   = vec2(landRunsRound() ? habitat.band.y / fields : 170.0, 240.0);
+    vec2  warped = uv + 60.0 * warp;
+    vec2  cell   = warped / size;
     vec2  id     = floor(cell);
+    id.x         = landRunsRound() ? mod(id.x, fields) : id.x;
     float crop   = hash12(id);
-    vec3  field  = cropColor(crop) * (0.85 + 0.3 * valueNoise(uv / 18.0));
+    vec3  field  = cropColor(crop) * (0.85 + 0.3 * landNoise(uv, p, 18.0));
 
     // Close up: grass tufts, and furrows or crop rows running along each field.
     field *= 1.0 + 0.18 * detail(footprint, 3.0) * (valueNoise(uv / 1.3) - 0.5);
@@ -68,9 +81,9 @@ vec3 valleyAlbedo(vec2 uv, vec3 p, float woods, float wetness)
     vec3  color = mix(field, HEDGE, hedge * 0.8);
 
     // Meadows beside the rivers and lakes, left unploughed.
-    float meadow = smoothstep(0.45, 0.8, wetness + 0.15 * valueNoise(uv / 70.0));
-    vec3  grass  = LUSH * (0.75 + 0.5 * valueNoise(uv / 23.0)) * (0.9 + 0.2 * valueNoise(uv / 4.1));
-    color        = mix(color, mix(grass, MEADOW, 0.4 * valueNoise(uv / 140.0)), meadow);
+    float meadow = smoothstep(0.45, 0.8, wetness + 0.15 * landNoise(uv, p, 70.0));
+    vec3  grass  = LUSH * (0.75 + 0.5 * landNoise(uv, p, 23.0)) * (0.9 + 0.2 * landNoise(uv, p, 4.1));
+    color        = mix(color, mix(grass, MEADOW, 0.4 * landNoise(uv, p, 140.0)), meadow);
 
     // Close up: clumps of grass and scattered wildflowers in the meadows and pastures.
     float near   = detail(footprint, 0.5);
@@ -84,7 +97,7 @@ vec3 valleyAlbedo(vec2 uv, vec3 p, float woods, float wetness)
 
     // Woods and copses: tree tops, clumped.
     float forest = smoothstep(0.3, 0.7, woods);
-    float canopy = 0.8 + 0.4 * mix(0.5, valueNoise(uv / 9.0), detail(footprint, 9.0));
+    float canopy = 0.8 + 0.4 * mix(0.5, landNoise(uv, p, 9.0), detail(footprint, 9.0));
     color        = mix(color, FOREST * canopy, forest);
 
     // A stone promenade along the windows, where the terrain is flat.

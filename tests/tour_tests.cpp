@@ -35,6 +35,19 @@ const HabitatGeometry& playground()
     return kGeometry;
 }
 
+/// Kalpana One: its land runs round the axis, and its windows are its ends.
+const HabitatGeometry& kalpana()
+{
+    static const HabitatGeometry kGeometry{[] {
+        HabitatSpec spec;
+        spec.kind    = HabitatKind::KALPANA_CYLINDER;
+        spec.radiusM = 250.0;
+        spec.lengthM = 325.0;
+        return spec;
+    }()};
+    return kGeometry;
+}
+
 void checkStop(const TourStop& stop, const HabitatGeometry& geometry, const std::string& tour)
 {
     EXPECT_GT(stop.caption.size(), 40U) << "a stop with nothing to read";
@@ -67,6 +80,23 @@ TEST(Tour, EveryTourIsWorthTakingAndFitsTheHabitat)
 {
     checkTours(island());
     checkTours(playground());
+    checkTours(kalpana());
+}
+
+TEST(Tour, TellsOfTheGlassEndsInKalpanaOne)
+{
+    const std::vector<Tour> tours   = habitatTours(kalpana(), "Kalpana One");
+    const std::string&      opening = tours.front().stops.front().caption;
+    EXPECT_NE(opening.find("500 metres across"), std::string::npos) << opening;
+    EXPECT_NE(opening.find("325 metres long"), std::string::npos) << opening;
+    for (const Tour& tour : tours)
+    {
+        for (const TourStop& stop : tour.stops)
+        {
+            EXPECT_EQ(stop.caption.find("valley"), std::string::npos) << stop.caption;
+            EXPECT_EQ(stop.caption.find("window strip"), std::string::npos) << stop.caption;
+        }
+    }
 }
 
 TEST(Tour, TalksAboutTheHabitatItIsIn)

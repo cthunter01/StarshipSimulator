@@ -34,5 +34,8 @@ struct StaticColliders
 /// The rotation that takes local axes (x across, y up, z along) to the habitat frame at a point on
 /// the floor: y toward the spin axis, z along it (+Z), turned by `yaw` (radians) about y.
 [[nodiscard]] Quatd floorOrientation(const Vec3d& position, double yaw = 0.0);
+/// The same with local z pointing `along` instead (a unit vector across the local up), for plans
+/// laid out on a band of land that runs around the axis.
+[[nodiscard]] Quatd floorOrientation(const Vec3d& position, double yaw, const Vec3d& along);
 
 }  // namespace StarshipSimulator

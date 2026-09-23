@@ -16,6 +16,8 @@ layout(std140, set = UNIFORM_SET, binding = 1) uniform Habitat
     vec4 cloud;    // x: radius of the cloud deck's top, y: its base, z: cover, w: light let through
     vec4 weather;  // x: rain, y: mist, z: wetness of the ground, w: cloud drift along the axis (m)
     vec4 season;   // x: fresh green, y: autumn gold, z: blossom, w: how far the clouds have turned
+    vec4 light;    // x: 1 when the sun images are points (beams' xyz), 0 directions; y: how many
+    vec4 band;     // x: 1 when the land runs round the axis, y: the round's length (m)
 }
 habitat;
 
@@ -23,12 +25,32 @@ const float PI = 3.14159265358979;
 
 int stripCount() { return int(habitat.strips.y + 0.5); }
 
+// Land running round the axis: its arc coordinate starts again after one turn, so the patterns
+// drawn on it have to wrap too.
+bool landRunsRound() { return habitat.band.x > 0.5; }
+
+// Sun images at points: the light through a windowless cylinder's glass end caps.
+bool pointImages() { return habitat.light.x > 0.5; }
+
+// How many sun images light the habitat: one per window strip, or one per glass end cap.
+int beamCount() { return pointImages() ? int(habitat.light.y + 0.5) : stripCount(); }
+
+// The direction toward sun image i, seen from p.
+vec3 beamDirection(vec3 p, int i)
+{
+    return pointImages() ? normalize(habitat.beams[i].xyz - p) : habitat.beams[i].xyz;
+}
+
 // |a - b| wrapped to [0, pi].
 float angularDistance(float a, float b) { return abs(mod(a - b + PI, 2.0 * PI) - PI); }
 
 // Distance (m) around the hull from p to the nearest window strip (0 over a window).
 float distanceToWindow(vec3 p)
 {
+    if (habitat.strips.y < 0.5)
+    {
+        return 1e6;  // no window strips along the hull
+    }
     float phase = mod(atan(p.y, p.x) + habitat.shape.w, habitat.strips.x);  // window: [0, 2 hw)
     float edge  = min(phase - 2.0 * habitat.shape.w, habitat.strips.x - phase);
     return max(edge, 0.0) * habitat.shape.x;
@@ -104,19 +126,19 @@ vec3 airLight() { return habitat.sunColor.rgb * habitat.atmosphere.w * 0.42 + ve
 // forward Mie peak (white) around each sun image, relative to the average over all directions.
 const float MIE_G = 0.76;
 
-vec3 phaseWeight(vec3 view)
+vec3 phaseWeight(vec3 view, vec3 from)
 {
     vec3  weight = vec3(0.0);
     float lit    = 0.0;
     vec3  beta   = RAYLEIGH + MIE;
-    for (int i = 0; i < stripCount(); ++i)
+    for (int i = 0; i < beamCount(); ++i)
     {
         float intensity = habitat.beams[i].w;
         if (intensity <= 0.0)
         {
             continue;
         }
-        float mu       = dot(view, habitat.beams[i].xyz);
+        float mu       = dot(view, beamDirection(from, i));
         float rayleigh = 0.75 * (1.0 + mu * mu);
         float mie      = (1.0 - MIE_G * MIE_G) / pow(1.0 + MIE_G * MIE_G - 2.0 * MIE_G * mu, 1.5);
         weight += intensity * (RAYLEIGH * rayleigh + MIE * mie) / beta;
@@ -142,7 +164,7 @@ Haze aerialPerspective(vec3 camera, vec3 point)
     vec3  transmittance = exp(-(air + vec3(water)));
     vec3  view          = normalize(point - camera);
     float grey          = water / max(water + air.g, 1e-7);
-    vec3  glow          = mix(airLight() * phaseWeight(view), mistLight(), grey);
+    vec3  glow          = mix(airLight() * phaseWeight(view, camera), mistLight(), grey);
     return Haze(transmittance, glow * (1.0 - transmittance));
 }
 
@@ -151,6 +173,10 @@ Haze aerialPerspective(vec3 camera, vec3 point)
 // between the mirror's hinge and the end of the window. (Terrain and tree shadows are separate.)
 float beamAperture(vec3 p, vec3 towardSun, int i)
 {
+    if (pointImages())
+    {
+        return 1.0;  // an image on the axis beyond the glass shines through it from anywhere inside
+    }
     float R = habitat.shape.x;
     float a = dot(towardSun.xy, towardSun.xy);
     if (a < 1e-8)
@@ -172,11 +198,23 @@ float beamAperture(vec3 p, vec3 towardSun, int i)
     return across * along;
 }
 
+// How far a beam has come through the habitat's air to reach p: from the far side, or from the
+// glass end cap it came in through.
+float beamPathLength(vec3 p, vec3 towardSun)
+{
+    if (pointImages())
+    {
+        float glass = towardSun.z > 0.0 ? habitat.strips.w : habitat.strips.z;
+        return clamp((glass - p.z) / max(abs(towardSun.z), 1e-3) * sign(towardSun.z), 0.0, 6000.0);
+    }
+    return 6000.0;
+}
+
 // Direct sunlight from beam i arriving at p with normal n, before terrain shadows (zero where the
 // beam cannot reach p through its window).
 vec3 beamLight(vec3 p, vec3 n, int i)
 {
-    vec3  towardSun = habitat.beams[i].xyz;
+    vec3  towardSun = beamDirection(p, i);
     float intensity = habitat.beams[i].w;
     float facing    = dot(n, towardSun);
     if (intensity <= 0.0 || facing <= 0.0)
@@ -189,7 +227,7 @@ vec3 beamLight(vec3 p, vec3 n, int i)
         return vec3(0.0);
     }
     // Light crossing the habitat's air picks up a warm tint on long paths.
-    vec3 beamTransmittance = exp(-extinction() * densityPath(p, p + towardSun * 6000.0, 4));
+    vec3 beamTransmittance = exp(-extinction() * densityPath(p, p + towardSun * beamPathLength(p, towardSun), 4));
     return habitat.sunColor.rgb * (intensity * facing * aperture) * beamTransmittance;
 }
 
@@ -197,7 +235,7 @@ vec3 beamLight(vec3 p, vec3 n, int i)
 vec3 sunlight(vec3 p, vec3 n)
 {
     vec3 light = vec3(0.0);
-    for (int i = 0; i < stripCount(); ++i)
+    for (int i = 0; i < beamCount(); ++i)
     {
         light += beamLight(p, n, i);
     }

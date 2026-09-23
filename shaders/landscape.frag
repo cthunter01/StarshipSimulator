@@ -63,14 +63,14 @@ void main()
     vec2  uv    = vec2(theta * landscape.heights.w, inCell.y * cellU);  // metres: around, along
     vec3  albedo = onFloor ? valleyAlbedo(uv, p, cover.r, cover.g) : endcapAlbedo(p, n, cover.r);
     // Towns: streets, squares and gardens (only looked up where the cover map marks a town).
-    vec2 plan      = vec2(theta * landscape.heights.w, profile.x);
-    vec2 planDx    = dFdx(plan);
-    vec2 planDy    = dFdy(plan);
+    vec3 plan      = vec3(theta * landscape.heights.w, profile.x, uv.y);  // around, z, arc
+    vec3 planDx    = dFdx(plan);
+    vec3 planDy    = dFdy(plan);
     float metres   = length(fwidth(uv));
     vec4 town      = vec4(4.0, 0.0, 0.0, 0.0);
     if (onFloor && cover.b > 0.0)
     {
-        town   = townGround(profile.x, theta, planDx, planDy);
+        town   = townGround(profile.x, theta, uv.y, planDx, planDy);
         albedo = townAlbedo(albedo, uv, town, metres);
     }
     albedo = shoreAlbedo(albedo, uv, landscape.heights.z - h);
@@ -79,15 +79,15 @@ void main()
     // surface (the patch mesh can differ from it by metres far away).
     vec3 ground = vec3(radial.xy * (profile.y - h), profile.x);
     vec3 direct = vec3(0.0);
-    for (int i = 0; i < stripCount(); ++i)
+    for (int i = 0; i < beamCount(); ++i)
     {
         vec3 beam = beamLight(p, n, i);
         if (max(beam.r, max(beam.g, beam.b)) > 0.0)
         {
-            beam *= terrainShadow(heightMap, profileMap, arcMap, ground, habitat.beams[i].xyz,
+            beam *= terrainShadow(heightMap, profileMap, arcMap, ground, beamDirection(ground, i),
                                   0.5 + 0.004 * length(inCameraRelative)) *
                     treeShadow(inCameraRelative, n, i) *
-                    cloudShade(cloudMap, ground, habitat.beams[i].xyz);
+                    cloudShade(cloudMap, ground, beamDirection(ground, i));
         }
         direct += beam;
     }

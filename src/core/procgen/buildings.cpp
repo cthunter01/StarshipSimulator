@@ -163,7 +163,8 @@ struct BuildingFrame
 BuildingFrame frameOf(const Settlement& place, const Vec2d& centre, double height, double angle)
 {
     const Vec3d base = place.plane.point(centre, height);
-    return {.base = base, .orientation = floorOrientation(base, -angle)};
+    return {.base        = base,
+            .orientation = floorOrientation(base, -angle, place.plane.alongDirection(centre))};
 }
 
 FacadeStyle styleOf(BuildingUse use)

@@ -11,6 +11,7 @@ add_executable(StarshipSimulator_tests
     determinism_tests.cpp
     habitat_mesher_tests.cpp
     habitat_tests.cpp
+    kalpana_tests.cpp
     land_layout_tests.cpp
     mesh_tests.cpp
     metal_shader_tests.cpp

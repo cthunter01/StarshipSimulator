@@ -13,6 +13,11 @@
 // axis, the sun image is fixed in the habitat frame (only the stars sweep past) and moves in the
 // plane containing the axis: alpha = 45 degrees puts it overhead, smaller angles toward the sunward
 // end (+Z), larger toward the anti-sunward end. Beyond 90 degrees no light enters: night.
+//
+// Kalpana One has no windows along its sides: mirrors outside its glass end caps send the light in
+// along the axis, so each end shows an image of the Sun, a point on the axis beyond the glass. The
+// same day schedule sets them: the lower the image, the farther out it lies, and past 90 degrees
+// the shutters are closed.
 namespace StarshipSimulator
 {
 
@@ -31,18 +36,28 @@ namespace StarshipSimulator
 /// Sun elevation above the valley horizon in radians (pi/2 at alpha = 45 degrees).
 [[nodiscard]] double sunElevation(double openingAngle);
 
+/// How high the light through a glass end cap stands above the floor at that end, in radians: the
+/// mirrors outside can only fold it in so steeply, and at dusk hold it no lower than 15 degrees.
+[[nodiscard]] double endCapElevation(double openingAngle);
+
 /// 1 in full daylight, fading to 0 as the mirrors open toward 90 degrees or close toward 0.
 [[nodiscard]] double daylightFactor(double openingAngle);
 
 struct SunBeam
 {
-    int    window = 0;
-    Vec3d  towardSun{0.0, 0.0, 1.0};  // light direction for shading
+    int    window = 0;                // or the end it comes in at (0: +Z, 1: -Z)
+    Vec3d  towardSun{0.0, 0.0, 1.0};  // light direction for shading (an image at a point: nominal)
     double intensity = 0.0;           // fraction of full sunlight (mirror reflectivity, daylight)
+    // A sun image at a point (habitat frame): the light comes from there, a different direction
+    // at every point.
+    std::optional<Vec3d> image = std::nullopt;
 };
 
-/// One beam per window.
+/// One beam per window (or per glass end cap).
 [[nodiscard]] std::vector<SunBeam> sunBeams(const HabitatGeometry& geometry, double openingAngle);
+
+/// The direction toward a beam's sun image from p.
+[[nodiscard]] Vec3d towardSunFrom(const SunBeam& beam, const Vec3d& p);
 
 /// How much of a beam reaches point p inside the habitat, 0..1: the ray toward its sun image must
 /// leave through its window, between the mirror's hinge and the far end of the window. Matches

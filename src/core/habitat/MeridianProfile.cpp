@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <format>
 #include <iterator>
 #include <optional>
 #include <stdexcept>
@@ -146,6 +147,29 @@ MeridianProfile buildOneillProfile(const HabitatSpec& spec)
     std::ranges::reverse(sunward);
     points.insert(points.end(), sunward.begin(), sunward.end());
     return MeridianProfile(points);
+}
+
+}  // namespace StarshipSimulator
+
+namespace StarshipSimulator
+{
+
+MeridianProfile buildFloorProfile(const HabitatSpec& spec)
+{
+    switch (spec.kind)
+    {
+        case HabitatKind::ONEILL_CYLINDER:
+            return buildOneillProfile(spec);
+        case HabitatKind::KALPANA_CYLINDER:
+            // A plain cylinder between two flat end walls.
+            return buildOneillProfile(normalizedForKind(spec));
+        case HabitatKind::STANFORD_TORUS:
+        case HabitatKind::BERNAL_SPHERE:
+        case HabitatKind::BISHOP_RING:
+            break;
+    }
+    throw std::invalid_argument(
+        std::format("a {} has no floor profile yet", habitatKindName(spec.kind)));
 }
 
 }  // namespace StarshipSimulator

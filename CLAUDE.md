@@ -34,7 +34,8 @@ The app can render and save a screenshot without interaction, then exit:
 `build/clang-debug/bin/StarshipSimulator --size 1280x720 --view lookup [--mirror 30] --capture out.png [--capture-ui]`
 Views: valley, river, lake, town, street, rooftops, tram, lift, hub, lookup, window, endcap, ramp, sunward,
 axis, overview (or `--camera x,y,z,yaw,pitch` in the
-habitat frame; `--scenario data/presets/coriolis_playground.toml` for the small habitat). Write captures to the
+habitat frame; `--scenario data/presets/coriolis_playground.toml` for the small habitat,
+`data/presets/kalpana_one.toml` for one whose land runs round the axis). Write captures to the
 scratchpad and inspect them with the Read tool before reporting visual work as done. The window opens briefly
 on the user's desktop (Wayland). Add `--no-gpu-debug` for quicker runs. There is no Mac here: to see what Metal
 draws, push and fetch the pictures of the macOS CI job, `gh run download <run id> -n metal-pictures`
@@ -47,7 +48,9 @@ draws, push and fetch the pictures of the macOS CI job, `gh run download <run id
   from the clock); the season follows the date, so `--time 2045-07-21T10:00` is autumn in the Island Three
   preset. Captures and `--benchmark` are always silent; `--mute` silences an ordinary run
 - The sky: `--time 2045-06-15T01:00` (UTC; the day schedule makes 20:00-06:00 night), `--look-at earth|moon|
-  jupiter|Vega|partner` (spins the habitat so it shows through window 0 and floats you off the axis facing it),
+  jupiter|Vega|partner` (spins the habitat so it shows through window 0 and floats you off the axis facing it;
+  in Kalpana One, whose only windows are its glass ends, it floats you by the axis and looks out through
+  the nearer end, or says the body lies beside the hull),
   `--fov 2.5` to zoom in. Captures step a fixed 1/60 s per frame and load the sky data synchronously, so they
   are repeatable; keep the window size small (e.g. 960x540), the compositor may resize large windows
 - Photo mode (F2) hides the HUD, frees the camera and offers a long exposure and an enlarged
@@ -78,7 +81,9 @@ draws, push and fetch the pictures of the macOS CI job, `gh run download <run id
   physics or render includes**: the `layering` test (`cmake/CheckLayering.cmake`) fails otherwise
   - `habitat/`: `HabitatSpec` (the shareable description of any kind of habitat: `HabitatKind` is an O'Neill
     cylinder, a Kalpana cylinder, a Stanford torus, a Bernal sphere or a Bishop ring, with the fields a kind
-    does not use ignored; `habitatKindBuilt` says which kinds the M8 steps have made buildable so far),
+    does not use ignored; `habitatKindBuilt` says which kinds the M8 steps have made buildable so far:
+    the O'Neill and Kalpana cylinders; `axisPointsAtSun` is false for Kalpana One, whose axis points at
+    the ecliptic's pole, `astro::SpinAxis::ECLIPTIC_NORTH`),
     `metrics` (spin, gravity, air, hull strength; land, windows and volume per kind),
     `MeridianProfile` (the floor's revolved cross-section), `HabitatGeometry` (regions, terrain, ground
     queries, water, forest density, bands), `land_layout` (the bands of land: an O'Neill cylinder's valleys
@@ -86,7 +91,9 @@ draws, push and fetch the pictures of the macOS CI job, `gh run download <run id
     out on a band's plan, x across and y along, left-handed like a valley's so one layout works on both),
     `Enclosure` (the air inside: where people and cameras can be), `Landscape` (rivers, lakes, shore shaping,
     woodland), `mirror_optics` (where the sun
-    appears, day/night, which beam lights a point), `day_schedule` (mirror angle by local time),
+    appears, day/night, which beam lights a point; in Kalpana One two sun images at points on the axis
+    beyond its glass ends, `SunBeam::image`, so the light comes from a different direction at every
+    point: `towardSunFrom`), `day_schedule` (mirror angle by local time),
     `weather` (`ClimateSpec`, `weatherAt`: cloud, rain, wetness, mist, wind and the season as a smooth function
     of time, never simulated or remembered, so two people at the same moment see the same sky; `seasonalDay`
     stretches the day schedule over the year)
@@ -118,13 +125,17 @@ draws, push and fetch the pictures of the macOS CI job, `gh run download <run id
     partner cylinder, and `partnerTransform`), placeholder star field, mesh primitives,
     `settlements` (towns and farms planned on the unrolled floor: streets that follow the river, lots,
     houses, square, bridge, river front, props, town trees, 1 m ground maps; `stampSettlements` marks them
-    in the cover map), `buildings` (their meshes and colliders; facades are packed into
+    in the cover map; a town's `FloorPlane` is laid out like its band, so `surface(p)` and
+    `alongDirection(p)` rather than z and theta, and `floorOrientation(position, yaw, along)` turns what
+    stands on it), `buildings` (their meshes and colliders; facades are packed into
     `Vertex::material` and drawn by the shader), `props` (balls, crates, barrels, bales, cafe furniture:
     meshes and collision parts), `clouds` (the cloud map: cover and detail wrapped once round the habitat and
     once along it), `birds` (flocks wheeling over fixed places on the floor, worked out fresh each frame),
     `people` (who is walking which street, sitting on which bench, and the one body mesh they all share),
     `transit` (a tramway down each valley calling at its towns, a funicular up each endcap's ramp to the
-    hub, the track's mesh in chunks, and where every car is at a moment). A line's alignment is
+    hub, the track's mesh in chunks, and where every car is at a moment; where the land runs round the
+    axis a `LineKind::LOOP` at one z instead, graded column by column, its trams always going the same
+    way round). A line's alignment is
     smoothed into something buildable -- as straight as it can be inside a band around the ground,
     then rounded into vertical curves -- and `gradeForTrack` cuts and fills the terrain grid to it,
     with side slopes at a constant angle and the woods cleared. Where the ground falls more than a
@@ -194,7 +205,10 @@ draws, push and fetch the pictures of the macOS CI job, `gh run download <run id
 - `cmake/SkyData.cmake`: downloads the star catalog and sky maps (~52 MB, SHA-256 checked) once into
   `build/_downloads/sky`; off when `CI` is set. Tests using them skip when missing. Credits: `data/CREDITS.md`
 - `shaders/`: GLSL, compiled by glslc to `build/<preset>/bin/shaders/*.spv` (`cmake/Shaders.cmake`);
-  `include/habitat.glsl` holds the shared air (aerial perspective) and sunlight (mirror beams) models;
+  `include/habitat.glsl` holds the shared air (aerial perspective) and sunlight (mirror beams) models
+  (loop over `beamCount()` and light along `beamDirection(p, i)`, never `habitat.beams[i].xyz`: in
+  Kalpana One the beams are points; `landRunsRound()` says the land's arc coordinate wraps, so its
+  patterns must too, see `landNoise`); new habitat uniforms are appended, never inserted;
   `include/clouds.glsl` the cloud deck (its map, cover, density and the shade it casts) and
   `include/clouds_shell.glsl` the stand-in cylinder's radius (keep `SHELL_SEGMENTS` in step with `CloudPass`);
   `include/landscape.glsl` the height field and terrain shadow march, `include/shadow.glsl` the tree shadow
@@ -252,7 +266,8 @@ draws, push and fetch the pictures of the macOS CI job, `gh run download <run id
   `+`) is worked out first, so `f(rng.uniform(), rng.uniform())` hands the two values over in
   whichever order the compiler chose, and the same habitat file then grows a different town under a
   different compiler. Put each draw in its own named variable first. `determinism_tests` hashes whole
-  generated worlds (a small Island Three and the Coriolis Playground preset) against one value each for
+  generated worlds (a small Island Three, the Coriolis Playground and Kalpana One presets) against one
+  value each for
   every compiler and standard library CI runs (GCC and Clang with libstdc++, Apple Clang with libc++,
   MSVC); when generation changes on purpose, bump `Scenario::kGeneratorVersion` and record the new hashes.
   Generalizing the code for new kinds of habitat must leave the existing worlds' hashes (and their

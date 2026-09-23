@@ -281,8 +281,10 @@ MeshChunk buildDiskChunk(const Grid& grid, const Job& job, double cellSize)
     const auto        rings =
         std::max<std::size_t>(1, static_cast<std::size_t>(std::ceil(radius / cellSize)));
 
-    MeshChunk chunk;
-    chunk.kind   = ChunkKind::TERRAIN;
+    // A glass end cap is drawn with the windows, its panes laid out square across it.
+    const bool glass = job.material == material::kGlass;
+    MeshChunk  chunk;
+    chunk.kind   = glass ? ChunkKind::GLASS : ChunkKind::TERRAIN;
     chunk.origin = Vec3d(0.0, 0.0, job.z0);
     chunk.mesh.vertices.reserve((rings + 1) * columns);
     for (std::size_t i = 0; i <= rings; ++i)
@@ -291,10 +293,11 @@ MeshChunk buildDiskChunk(const Grid& grid, const Job& job, double cellSize)
         for (std::size_t k = 0; k < columns; ++k)
         {
             const double theta = grid.angle(static_cast<std::ptrdiff_t>(k));
+            const Vec3d  point = radial(theta) * r;
             chunk.mesh.vertices.push_back(
-                {.position = Vec3f(radial(theta) * r),
+                {.position = Vec3f(point),
                  .normal   = Vec3f(0.0F, 0.0F, static_cast<float>(job.facing)),
-                 .uv       = Vec2f(Vec2d(theta * hullR, r)),
+                 .uv       = glass ? Vec2f(Vec2d(point)) : Vec2f(Vec2d(theta * hullR, r)),
                  .material = job.material});
         }
     }
@@ -333,7 +336,10 @@ void addEndDisks(const HabitatGeometry& geometry, std::vector<Job>& jobs)
         }
         else if (endcap.shape == EndcapShape::FLAT)
         {
-            jobs.push_back(diskJob(material::kEndcap, z, spec.radiusM, facing));
+            // Kalpana One's ends are its windows.
+            const bool glass = daylightKindFor(geometry.kind()) == DaylightKind::END_CAPS;
+            jobs.push_back(
+                diskJob(glass ? material::kGlass : material::kEndcap, z, spec.radiusM, facing));
         }
     };
     add(spec.antisunwardEndcap, profile.zMin(), 1.0);
@@ -424,12 +430,24 @@ AngleGrid buildAngleGrid(const HabitatGeometry& geometry, double cellSizeM)
     const auto   cellsFor  = [&](double arc) {
         return std::max(1, static_cast<int>(std::lround(arc * radius / cellSizeM)));
     };
+    AngleGrid grid;
+    if (geometry.kind() != HabitatKind::ONEILL_CYLINDER)
+    {
+        // No window strips: land all the way round.
+        const int cells = std::max(3, cellsFor(2.0 * kPi));
+        for (int i = 0; i < cells; ++i)
+        {
+            grid.angles.push_back(2.0 * kPi * i / cells);
+            grid.windowSegment.push_back(false);
+        }
+        grid.angles.push_back(2.0 * kPi);
+        return grid;
+    }
     const int windowCells = cellsFor(windowArc);
     const int landCells   = cellsFor(landArc);
 
     // Start at the leading edge of window 0 and go once around.
     const double start = -geometry.windowHalfAngle();
-    AngleGrid    grid;
     for (int strip = 0; strip < geometry.stripCount(); ++strip)
     {
         const double windowStart = start + (strip * geometry.stripAngle());

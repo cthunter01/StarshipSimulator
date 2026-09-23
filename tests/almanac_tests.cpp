@@ -125,6 +125,36 @@ TEST(Almanac, QuotesTheHabitatItIsGiven)
     EXPECT_NE(impossible.find("9.800 MJ/kg"), std::string::npos);
 }
 
+TEST(Almanac, TellsKalpanaOnesOwnStory)
+{
+    HabitatSpec spec;
+    spec.kind    = HabitatKind::KALPANA_CYLINDER;
+    spec.radiusM = 250.0;
+    spec.lengthM = 325.0;
+    const HabitatGeometry geometry{spec};
+    AlmanacState          state;
+    state.geometry       = &geometry;
+    state.metrics        = computeMetrics(spec);
+    state.eye            = Vec3d(geometry.radius() - 1.7, 0.0, 0.0);
+    state.mirrorAngleRad = degreesToRadians(50.0);
+    std::string text;
+    for (const AlmanacPage& page : almanacPages(state))
+    {
+        text += page.title + page.story;
+        for (const AlmanacFact& fact : page.facts)
+        {
+            text += fact.label + fact.value + fact.note;
+        }
+    }
+    EXPECT_NE(text.find("500 m across, 325 m long"), std::string::npos) << text;
+    EXPECT_NE(text.find("glass end"), std::string::npos);
+    EXPECT_NE(text.find("ecliptic"), std::string::npos);
+    for (const char* island : {"valley", "eight kilometres", "Eight kilometres", "km^3"})
+    {
+        EXPECT_EQ(text.find(island), std::string::npos) << island;
+    }
+}
+
 TEST(Almanac, WorksWithoutASkyOrAHabitatToDescribe)
 {
     EXPECT_TRUE(almanacPages(AlmanacState{}).empty());  // nothing to say about nothing

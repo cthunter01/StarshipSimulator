@@ -6,15 +6,15 @@ vec3 surfaceLight(sampler2D heights, sampler2D profiles, sampler2D arcs, sampler
                   vec3 p, vec3 n, vec3 cameraRelative)
 {
     vec3 direct = vec3(0.0);
-    for (int i = 0; i < stripCount(); ++i)
+    for (int i = 0; i < beamCount(); ++i)
     {
         vec3 beam = beamLight(p, n, i);
         if (max(beam.r, max(beam.g, beam.b)) > 0.0)
         {
-            beam *= terrainShadow(heights, profiles, arcs, p, habitat.beams[i].xyz,
+            beam *= terrainShadow(heights, profiles, arcs, p, beamDirection(p, i),
                                   0.5 + 0.004 * length(cameraRelative)) *
                     treeShadow(cameraRelative, n, i) *
-                    cloudShade(cloudMap, p, habitat.beams[i].xyz);
+                    cloudShade(cloudMap, p, beamDirection(p, i));
         }
         direct += beam;
     }

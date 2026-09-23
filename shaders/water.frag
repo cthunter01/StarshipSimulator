@@ -82,9 +82,9 @@ void main()
     vec3  farSide = habitat.ambientUp.rgb * 0.45 + vec3(0.002);
     vec3  sky     = farSide * airT + airLight() * (1.0 - airT);
     vec3  glints   = vec3(0.0);
-    for (int i = 0; i < stripCount(); ++i)
+    for (int i = 0; i < beamCount(); ++i)
     {
-        vec3  towardSun = habitat.beams[i].xyz;
+        vec3  towardSun = beamDirection(p, i);
         float intensity = habitat.beams[i].w;
         if (intensity > 0.0)
         {

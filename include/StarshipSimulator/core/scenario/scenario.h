@@ -42,9 +42,10 @@ struct Scenario
 {
     static constexpr int kFormatVersion = 1;  // file layout
     // World generation: 2 added rivers, lakes and woods; 3 towns and farms; 4 the tramway's
-    // earthworks, and fixing draws that came out in a different order under another compiler.
-    // (M8's habitat kinds leave the O'Neill cylinder's world exactly as version 4 made it.)
-    static constexpr int kGeneratorVersion = 4;
+    // earthworks, and fixing draws that came out in a different order under another compiler;
+    // 5 Kalpana One, whose land runs round the axis. (M8's habitat kinds leave the O'Neill
+    // cylinder's world exactly as version 4 made it.)
+    static constexpr int kGeneratorVersion = 5;
 
     int             formatVersion    = kFormatVersion;
     int             generatorVersion = kGeneratorVersion;
