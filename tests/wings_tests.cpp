@@ -16,7 +16,7 @@ using namespace StarshipSimulator;  // NOLINT(google-build-using-namespace): tes
 
 const HabitatGeometry& island()
 {
-    static const HabitatGeometry kGeometry{OneillCylinderSpec{}};
+    static const HabitatGeometry kGeometry{HabitatSpec{}};
     return kGeometry;
 }
 
@@ -62,7 +62,7 @@ double fly(Flight& flight, double seconds, bool flapping = false)
 
 TEST(Wings, TheAirThinsTowardTheAxis)
 {
-    const OneillCylinderSpec& spec = island().spec();
+    const HabitatSpec& spec = island().spec();
     const double floor = airDensityAt(spec.atmosphere, island().omega(), island().radius(), 4000.0);
     const double axis  = airDensityAt(spec.atmosphere, island().omega(), island().radius(), 0.0);
     EXPECT_NEAR(floor, 1.2, 0.1);            // about sea level

@@ -78,8 +78,8 @@ HabitatUniforms makeHabitatUniforms(const HabitatGeometry& geometry, double open
                                     const LightingSettings& lighting, const Weather& weather,
                                     const CloudSettings& clouds)
 {
-    const OneillCylinderSpec& spec     = geometry.spec();
-    const double              daylight = daylightFactor(openingAngle);
+    const HabitatSpec& spec     = geometry.spec();
+    const double       daylight = daylightFactor(openingAngle);
 
     HabitatUniforms habitat;
     habitat.shape     = Vec4f(Vec4d(geometry.radius(), geometry.floorZMin(), geometry.floorZMax(),

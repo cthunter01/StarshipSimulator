@@ -31,7 +31,7 @@ struct Town
 const Town& town()
 {
     static const Town kBuilt = [] {
-        OneillCylinderSpec spec;
+        HabitatSpec spec;
         spec.radiusM = 500.0;
         spec.lengthM = 3000.0;
         Town made{.geometry = HabitatGeometry(spec), .grid = {}, .places = {}};

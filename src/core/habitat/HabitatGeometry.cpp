@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <format>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -11,6 +13,7 @@
 #include "StarshipSimulator/core/habitat/Landscape.h"
 #include "StarshipSimulator/core/habitat/MeridianProfile.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
+#include "StarshipSimulator/core/habitat/land_layout.h"
 #include "StarshipSimulator/core/habitat/metrics.h"
 #include "StarshipSimulator/core/math.h"
 
@@ -31,9 +34,13 @@ constexpr int    kHillOctaves      = 5;
 constexpr int    kRidgeOctaves     = 5;
 constexpr double kFloodplainReachM = 250.0;  // water shapes the land out to this distance
 
-OneillCylinderSpec validated(const OneillCylinderSpec& spec)
+HabitatSpec validated(const HabitatSpec& spec)
 {
-    const auto problems = validate(spec);
+    auto problems = validate(spec);
+    if (!habitatKindBuilt(spec.kind))
+    {
+        problems.push_back(std::format("a {} cannot be built yet", habitatKindName(spec.kind)));
+    }
     if (!problems.empty())
     {
         std::string message = "invalid habitat:";
@@ -99,14 +106,16 @@ const char* regionKindName(RegionKind kind)
     return "unknown";
 }
 
-HabitatGeometry::HabitatGeometry(const OneillCylinderSpec& spec)
+HabitatGeometry::HabitatGeometry(const HabitatSpec& spec)
   : spec_(validated(spec)),
-    profile_(buildOneillProfile(spec_)),
+    profile_(std::make_shared<const MeridianProfile>(buildOneillProfile(spec_))),
     hills_(hashSeed(spec_.terrain.seed, 1)),
     ridges_(hashSeed(spec_.terrain.seed, 2)),
     omega_(spinRate(spec_.radiusM, spec_.surfaceGravityG)),
     floorZMin_((-spec_.lengthM / 2.0) + endcapDepthInside(spec_.antisunwardEndcap, spec_.radiusM)),
     floorZMax_((spec_.lengthM / 2.0) - endcapDepthInside(spec_.sunwardEndcap, spec_.radiusM)),
+    bands_(planLandBands(spec_, profile_, floorZMin_, floorZMax_)),
+    enclosure_(spec_, profile_),
     landscape_(spec_.terrain, LandscapeFrame{.radiusM         = spec_.radiusM,
                                              .floorZMin       = floorZMin_,
                                              .floorZMax       = floorZMax_,
@@ -114,10 +123,10 @@ HabitatGeometry::HabitatGeometry(const OneillCylinderSpec& spec)
                                              .stripAngle      = stripAngle(),
                                              .windowHalfAngle = windowHalfAngle()})
 {
-    walkableZMin_ =
-        std::max(profile_.zMin() + kEndMarginM, zWhereRadiusReaches(profile_, kPoleRadiusM, false));
-    walkableZMax_ =
-        std::min(profile_.zMax() - kEndMarginM, zWhereRadiusReaches(profile_, kPoleRadiusM, true));
+    walkableZMin_ = std::max(profile_->zMin() + kEndMarginM,
+                             zWhereRadiusReaches(*profile_, kPoleRadiusM, false));
+    walkableZMax_ = std::min(profile_->zMax() - kEndMarginM,
+                             zWhereRadiusReaches(*profile_, kPoleRadiusM, true));
 }
 
 double HabitatGeometry::stripAngle() const
@@ -167,7 +176,7 @@ Vec3d HabitatGeometry::localUp(const Vec3d& position)
 
 Region HabitatGeometry::regionAt(double z, double theta) const
 {
-    if (z < profile_.zMin() || z > profile_.zMax())
+    if (z < profile_->zMin() || z > profile_->zMax())
     {
         return {.kind = RegionKind::OUTSIDE, .index = -1};
     }
@@ -196,6 +205,34 @@ double HabitatGeometry::distanceToWindow(double z, double theta, double radius) 
     return std::hypot(arc, along);
 }
 
+double HabitatGeometry::floorRadiusAt(double z) const
+{
+    return profile_->radiusAt(std::clamp(z, profile_->zMin(), profile_->zMax())).value_or(0.0);
+}
+
+double HabitatGeometry::spanAcrossM() const
+{
+    return 2.0 * spec_.radiusM;
+}
+
+const LandBand& HabitatGeometry::band(int index) const
+{
+    return bands_.at(static_cast<std::size_t>(index));
+}
+
+bool HabitatGeometry::onLand(double z, double theta) const
+{
+    return regionAt(z, theta).kind == RegionKind::LAND;
+}
+
+double HabitatGeometry::waterLevelAt(double z) const
+{
+    // A level surface under spin gravity is a cylinder round the axis: kWaterLevelM below the floor
+    // at the land's middle line, and deeper under the floor wherever the floor rises toward the
+    // axis.
+    return kWaterLevelM + (floorRadiusAt(z) - bands_.front().radiusM);
+}
+
 double HabitatGeometry::terrainHeight(double z, double theta) const
 {
     return Landscape::shapeNearWater(naturalHeight(z, theta),
@@ -204,7 +241,7 @@ double HabitatGeometry::terrainHeight(double z, double theta) const
 
 double HabitatGeometry::naturalHeight(double z, double theta) const
 {
-    const std::optional<double> baseRadius = profile_.radiusAt(z);
+    const std::optional<double> baseRadius = profile_->radiusAt(z);
     if (!baseRadius)
     {
         return 0.0;
@@ -241,7 +278,7 @@ double HabitatGeometry::naturalHeight(double z, double theta) const
 
 double HabitatGeometry::forestDensity(double z, double theta) const
 {
-    const std::optional<double> baseRadius = profile_.radiusAt(z);
+    const std::optional<double> baseRadius = profile_->radiusAt(z);
     if (!baseRadius || regionAt(z, theta).kind == RegionKind::WINDOW)
     {
         return 0.0;
@@ -265,7 +302,7 @@ double HabitatGeometry::waterDepth(double z, double theta) const
 
 std::optional<double> HabitatGeometry::groundRadius(double z, double theta) const
 {
-    const std::optional<double> baseRadius = profile_.radiusAt(z);
+    const std::optional<double> baseRadius = profile_->radiusAt(z);
     if (!baseRadius)
     {
         return std::nullopt;
@@ -275,7 +312,7 @@ std::optional<double> HabitatGeometry::groundRadius(double z, double theta) cons
 
 Vec3d HabitatGeometry::surfacePoint(double z, double theta) const
 {
-    const double clamped = std::clamp(z, profile_.zMin(), profile_.zMax());
+    const double clamped = std::clamp(z, profile_->zMin(), profile_->zMax());
     const double r       = groundRadius(clamped, theta).value_or(0.0);
     return {r * std::cos(theta), r * std::sin(theta), clamped};
 }
@@ -284,7 +321,7 @@ GroundSample HabitatGeometry::ground(const Vec3d& position) const
 {
     GroundSample sample;
     const double theta       = angleOf(position);
-    const double z           = std::clamp(position.z, profile_.zMin(), profile_.zMax());
+    const double z           = std::clamp(position.z, profile_->zMin(), profile_->zMax());
     sample.region            = regionAt(position.z, theta);
     sample.up                = localUp(position);
     sample.groundRadius      = groundRadius(z, theta).value_or(0.0);
@@ -292,8 +329,8 @@ GroundSample HabitatGeometry::ground(const Vec3d& position) const
 
     // Surface normal from nearby ground points by central differences (d/dz x d/dtheta points into
     // the habitat), one-sided at the ends of the profile.
-    const double zLow     = std::max(profile_.zMin(), z - kNormalStepM);
-    const double zHigh    = std::min(profile_.zMax(), z + kNormalStepM);
+    const double zLow     = std::max(profile_->zMin(), z - kNormalStepM);
+    const double zHigh    = std::min(profile_->zMax(), z + kNormalStepM);
     const double dtheta   = kNormalStepM / std::max(sample.groundRadius, 1.0);
     const Vec3d  alongZ   = surfacePoint(zHigh, theta) - surfacePoint(zLow, theta);
     const Vec3d  alongArc = surfacePoint(z, theta + dtheta) - surfacePoint(z, theta - dtheta);
@@ -336,7 +373,7 @@ std::optional<double> HabitatGeometry::raycast(const Vec3d& origin, const Vec3d&
             }
             return high;
         }
-        if (const double z = origin.z + (dir.z * t); z < profile_.zMin() || z > profile_.zMax())
+        if (const double z = origin.z + (dir.z * t); z < profile_->zMin() || z > profile_->zMax())
         {
             return std::nullopt;  // left through an end
         }

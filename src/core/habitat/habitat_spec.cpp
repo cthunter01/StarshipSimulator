@@ -2,7 +2,9 @@
 
 #include <cmath>
 #include <format>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "StarshipSimulator/core/math.h"
@@ -23,7 +25,7 @@ double endcapDepthInside(const EndcapSpec& endcap, double radiusM)
     return lower + upper;
 }
 
-double minimumPartnerSeparation(const OneillCylinderSpec& spec)
+double minimumPartnerSeparation(const HabitatSpec& spec)
 {
     return 2.0 * (spec.radiusM + spec.lengthM);
 }
@@ -71,7 +73,7 @@ void validateEndcap(const EndcapSpec& endcap, const char* which, double radiusM,
 }
 
 /// The terrain, water, woods and settlements.
-void validateLand(const OneillCylinderSpec& spec, std::vector<std::string>& problems)
+void validateLand(const HabitatSpec& spec, std::vector<std::string>& problems)
 {
     if (spec.terrain.featureSizeM < 50.0 || spec.terrain.hillHeightM < 0.0 ||
         spec.terrain.mountainHeightM < 0.0)
@@ -100,31 +102,18 @@ void validateLand(const OneillCylinderSpec& spec, std::vector<std::string>& prob
     }
 }
 
-}  // namespace
-
-std::vector<std::string> validate(const OneillCylinderSpec& spec)
+/// Spin gravity on the floor.
+void validateSpin(const HabitatSpec& spec, std::vector<std::string>& problems)
 {
-    std::vector<std::string> problems;
-    if (spec.radiusM < 100.0 || spec.radiusM > 20000.0)
-    {
-        problems.emplace_back("radius must be between 100 m and 20 km");
-    }
-    if (spec.lengthM < 500.0 || spec.lengthM > 200000.0)
-    {
-        problems.emplace_back("length must be between 500 m and 200 km");
-    }
     if (spec.surfaceGravityG < 0.05 || spec.surfaceGravityG > 2.0)
     {
         problems.emplace_back("surface gravity must be between 0.05 g and 2 g");
     }
-    if (spec.stripPairs < 1 || spec.stripPairs > 6)
-    {
-        problems.emplace_back("strip pairs must be between 1 and 6");
-    }
-    if (spec.windowFraction < 0.1 || spec.windowFraction > 0.8)
-    {
-        problems.emplace_back("window fraction must be between 0.1 and 0.8");
-    }
+}
+
+/// The mirrors and the air, common to every kind.
+void validateAirAndLight(const HabitatSpec& spec, std::vector<std::string>& problems)
+{
     if (spec.mirrors.reflectivity < 0.0 || spec.mirrors.reflectivity > 1.0)
     {
         problems.emplace_back("mirror reflectivity must be between 0 and 1");
@@ -134,6 +123,29 @@ std::vector<std::string> validate(const OneillCylinderSpec& spec)
     {
         problems.emplace_back("atmosphere needs at least 1 kPa and a temperature of 150..400 K");
     }
+}
+
+/// An O'Neill cylinder: the rules Island Three was built to.
+void validateOneill(const HabitatSpec& spec, std::vector<std::string>& problems)
+{
+    if (spec.radiusM < 100.0 || spec.radiusM > 20000.0)
+    {
+        problems.emplace_back("radius must be between 100 m and 20 km");
+    }
+    if (spec.lengthM < 500.0 || spec.lengthM > 200000.0)
+    {
+        problems.emplace_back("length must be between 500 m and 200 km");
+    }
+    validateSpin(spec, problems);
+    if (spec.stripPairs < 1 || spec.stripPairs > 6)
+    {
+        problems.emplace_back("strip pairs must be between 1 and 6");
+    }
+    if (spec.windowFraction < 0.1 || spec.windowFraction > 0.8)
+    {
+        problems.emplace_back("window fraction must be between 0.1 and 0.8");
+    }
+    validateAirAndLight(spec, problems);
     validateLand(spec, problems);
     if (spec.partner.enabled && spec.partner.separationM < minimumPartnerSeparation(spec))
     {
@@ -152,7 +164,228 @@ std::vector<std::string> validate(const OneillCylinderSpec& spec)
             "the endcap ramps ({:.0f} m) leave too little flat floor in a {:.0f} m cylinder",
             endcaps, spec.lengthM));
     }
+}
+
+void validateKalpana(const HabitatSpec& spec, std::vector<std::string>& problems)
+{
+    if (spec.radiusM < 100.0 || spec.radiusM > 20000.0)
+    {
+        problems.emplace_back("radius must be between 100 m and 20 km");
+    }
+    if (spec.lengthM < 100.0 || spec.lengthM > 20000.0)
+    {
+        problems.emplace_back("length must be between 100 m and 20 km");
+    }
+    validateSpin(spec, problems);
+    validateAirAndLight(spec, problems);
+    validateLand(spec, problems);
+}
+
+void validateTorus(const HabitatSpec& spec, std::vector<std::string>& problems)
+{
+    const TorusSpec& torus = spec.torus;
+    if (spec.radiusM < 200.0 || spec.radiusM > 20000.0)
+    {
+        problems.emplace_back("the floor must be between 200 m and 20 km from the axis");
+    }
+    validateSpin(spec, problems);
+    if (torus.tubeRadiusM < 20.0 || torus.tubeRadiusM > 600.0 ||
+        torus.tubeRadiusM > 0.35 * spec.radiusM)
+    {
+        problems.push_back(std::format(
+            "the tube's radius must be between 20 and 600 m, and no more than {:.0f} m on a wheel "
+            "this size",
+            0.35 * spec.radiusM));
+    }
+    if (torus.hubRadiusM < 5.0 || torus.hubRadiusM > 0.25 * spec.radiusM)
+    {
+        problems.emplace_back(
+            "the hub's radius must be at least 5 m and at most a quarter of the "
+            "floor's");
+    }
+    if (torus.spokes < 0 || torus.spokes > 12 || torus.spokeRadiusM < 1.0 ||
+        torus.spokeRadiusM > torus.tubeRadiusM)
+    {
+        problems.emplace_back(
+            "a torus has 0 to 12 spokes, each at least 1 m and at most a tube "
+            "wide");
+    }
+    if (torus.landHalfAngleDeg < 5.0 || torus.landHalfAngleDeg > 60.0 ||
+        torus.ceilingWindowShare < 0.0 || torus.ceilingWindowShare > 0.9)
+    {
+        problems.emplace_back(
+            "the land must reach 5 to 60 degrees up the tube's sides, and the "
+            "windows take 0 to 90% of its circumference");
+    }
+    if (torus.sections < 0 || torus.sections > 24)
+    {
+        problems.emplace_back("a torus has 0 to 24 sections of town and farmland");
+    }
+    validateAirAndLight(spec, problems);
+    validateLand(spec, problems);
+}
+
+void validateSphere(const HabitatSpec& spec, std::vector<std::string>& problems)
+{
+    const SphereSpec& sphere = spec.sphere;
+    if (spec.radiusM < 100.0 || spec.radiusM > 20000.0)
+    {
+        problems.emplace_back("radius must be between 100 m and 20 km");
+    }
+    validateSpin(spec, problems);
+    if (sphere.landLatitudeDeg < 5.0 || sphere.landLatitudeDeg > 60.0 ||
+        sphere.windowLatitudeDeg < sphere.landLatitudeDeg + 5.0 || sphere.windowLatitudeDeg > 85.0)
+    {
+        problems.emplace_back(
+            "the land must reach 5 to 60 degrees of latitude, and the polar "
+            "windows begin at least 5 degrees beyond it and before 85");
+    }
+    validateAirAndLight(spec, problems);
+    validateLand(spec, problems);
+}
+
+void validateRing(const HabitatSpec& spec, std::vector<std::string>& problems)
+{
+    if (spec.radiusM < 100000.0 || spec.radiusM > 3.0e9)
+    {
+        problems.emplace_back("a ring's radius must be between 100 km and 3 million km");
+    }
+    if (spec.lengthM < 10000.0 || spec.lengthM > spec.radiusM)
+    {
+        problems.emplace_back("a ring must be at least 10 km wide and no wider than its radius");
+    }
+    if (spec.ring.wallHeightM < 1000.0 || spec.ring.wallHeightM > 0.5 * spec.radiusM)
+    {
+        problems.emplace_back("a ring's walls must be between 1 km and half its radius high");
+    }
+    validateSpin(spec, problems);
+    validateAirAndLight(spec, problems);
+    validateLand(spec, problems);
+}
+
+}  // namespace
+
+std::vector<std::string> validate(const HabitatSpec& spec)
+{
+    std::vector<std::string> problems;
+    switch (spec.kind)
+    {
+        case HabitatKind::ONEILL_CYLINDER:
+            validateOneill(spec, problems);
+            break;
+        case HabitatKind::KALPANA_CYLINDER:
+            validateKalpana(spec, problems);
+            break;
+        case HabitatKind::STANFORD_TORUS:
+            validateTorus(spec, problems);
+            break;
+        case HabitatKind::BERNAL_SPHERE:
+            validateSphere(spec, problems);
+            break;
+        case HabitatKind::BISHOP_RING:
+            validateRing(spec, problems);
+            break;
+    }
     return problems;
+}
+
+bool habitatKindBuilt(HabitatKind kind)
+{
+    // Every kind can be described and saved; the worlds inside them arrive one M8 step at a time.
+    return kind == HabitatKind::ONEILL_CYLINDER;
+}
+
+const char* habitatKindKey(HabitatKind kind)
+{
+    switch (kind)
+    {
+        case HabitatKind::ONEILL_CYLINDER:
+            return "oneill_cylinder";
+        case HabitatKind::KALPANA_CYLINDER:
+            return "kalpana_cylinder";
+        case HabitatKind::STANFORD_TORUS:
+            return "stanford_torus";
+        case HabitatKind::BERNAL_SPHERE:
+            return "bernal_sphere";
+        case HabitatKind::BISHOP_RING:
+            return "bishop_ring";
+    }
+    return "oneill_cylinder";
+}
+
+const char* habitatKindName(HabitatKind kind)
+{
+    switch (kind)
+    {
+        case HabitatKind::ONEILL_CYLINDER:
+            return "O'Neill cylinder";
+        case HabitatKind::KALPANA_CYLINDER:
+            return "Kalpana cylinder";
+        case HabitatKind::STANFORD_TORUS:
+            return "Stanford torus";
+        case HabitatKind::BERNAL_SPHERE:
+            return "Bernal sphere";
+        case HabitatKind::BISHOP_RING:
+            return "Bishop ring";
+    }
+    return "habitat";
+}
+
+std::vector<HabitatKind> allHabitatKinds()
+{
+    return {HabitatKind::ONEILL_CYLINDER, HabitatKind::KALPANA_CYLINDER,
+            HabitatKind::STANFORD_TORUS, HabitatKind::BERNAL_SPHERE, HabitatKind::BISHOP_RING};
+}
+
+std::optional<HabitatKind> habitatKindFromKey(std::string_view key)
+{
+    for (const HabitatKind kind : allHabitatKinds())
+    {
+        if (key == habitatKindKey(kind))
+        {
+            return kind;
+        }
+    }
+    return std::nullopt;
+}
+
+DaylightKind daylightKindFor(HabitatKind kind)
+{
+    switch (kind)
+    {
+        case HabitatKind::ONEILL_CYLINDER:
+            return DaylightKind::MIRROR_STRIPS;
+        case HabitatKind::KALPANA_CYLINDER:
+            return DaylightKind::END_CAPS;
+        case HabitatKind::STANFORD_TORUS:
+            return DaylightKind::OVERHEAD_MIRROR;
+        case HabitatKind::BERNAL_SPHERE:
+            return DaylightKind::POLAR_WINDOWS;
+        case HabitatKind::BISHOP_RING:
+            return DaylightKind::OPEN_SKY;
+    }
+    return DaylightKind::MIRROR_STRIPS;
+}
+
+int bandCount(const HabitatSpec& spec)
+{
+    return spec.kind == HabitatKind::ONEILL_CYLINDER ? spec.stripPairs : 1;
+}
+
+double headroomM(const HabitatSpec& spec)
+{
+    switch (spec.kind)
+    {
+        case HabitatKind::STANFORD_TORUS:
+            return 2.0 * spec.torus.tubeRadiusM;
+        case HabitatKind::BISHOP_RING:
+            return spec.ring.wallHeightM;
+        case HabitatKind::ONEILL_CYLINDER:
+        case HabitatKind::KALPANA_CYLINDER:
+        case HabitatKind::BERNAL_SPHERE:
+            break;
+    }
+    return spec.radiusM;
 }
 
 }  // namespace StarshipSimulator

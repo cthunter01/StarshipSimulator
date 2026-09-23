@@ -16,6 +16,7 @@
 #include "StarshipSimulator/core/procgen/terrain_grid.h"
 #include "StarshipSimulator/core/procgen/transit.h"
 #include "StarshipSimulator/core/scenario/scenario.h"
+#include "StarshipSimulator/core/utf8_path.h"
 
 // A habitat is shared as a small text file and built again from it, so the same file has to make
 // the same world everywhere: on this machine, on someone else's, and under either compiler. These
@@ -54,7 +55,7 @@ private:
 };
 
 /// Everything generation produces for a habitat, boiled down to one number.
-std::uint64_t worldHash(const OneillCylinderSpec& spec)
+std::uint64_t worldHash(const HabitatSpec& spec)
 {
     const HabitatGeometry geometry{spec};
     TerrainGrid           grid  = sampleTerrain(geometry, 2.0 * kPi * spec.radiusM / 1024.0);
@@ -106,9 +107,9 @@ std::uint64_t worldHash(const OneillCylinderSpec& spec)
 }
 
 /// A habitat small enough to generate quickly, but with everything in it.
-OneillCylinderSpec sample()
+HabitatSpec sample()
 {
-    OneillCylinderSpec spec;
+    HabitatSpec spec;
     spec.radiusM = 400.0;
     spec.lengthM = 3000.0;
     return spec;
@@ -126,6 +127,17 @@ TEST(Determinism, TheSameHabitatFileAlwaysMakesTheSameWorld)
     EXPECT_EQ(worldHash(sample()), worldHash(sample()));
 }
 
+TEST(Determinism, TheCoriolisPlaygroundAlwaysMakesTheSameWorld)
+{
+    // The second preset, pinned the same way: a small cylinder without rivers, so a change that
+    // only shows up in one like it is caught too.
+    const auto playground = loadScenario(pathFromUtf8(STARSHIPSIMULATOR_DATA_DIR) / "presets" /
+                                         "coriolis_playground.toml");
+    ASSERT_TRUE(playground.has_value()) << playground.error().describe();
+    constexpr std::uint64_t kPlaygroundHash = 0xECB25B5C7F435F98ULL;
+    EXPECT_EQ(worldHash(playground->habitat), kPlaygroundHash);
+}
+
 TEST(Determinism, TheThreadCountDoesNotChangeTheTerrain)
 {
     const HabitatGeometry geometry{sample()};
@@ -138,8 +150,8 @@ TEST(Determinism, TheThreadCountDoesNotChangeTheTerrain)
 
 TEST(Determinism, ADifferentSeedMakesADifferentWorld)
 {
-    OneillCylinderSpec other = sample();
-    other.terrain.seed       = sample().terrain.seed + 1;
+    HabitatSpec other  = sample();
+    other.terrain.seed = sample().terrain.seed + 1;
     EXPECT_NE(worldHash(sample()), worldHash(other));
 }
 

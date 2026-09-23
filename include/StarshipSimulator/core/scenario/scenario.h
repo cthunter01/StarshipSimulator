@@ -15,12 +15,14 @@
 namespace StarshipSimulator
 {
 
-/// Where the visitor starts: on the floor of a valley, at an axial position, facing a heading
-/// (0 = toward the sunward end, positive turning left).
+/// Where the visitor starts: on a band of land (an O'Neill cylinder's valley; the only band
+/// elsewhere), `alongM` along it and `acrossM` across it from its middle line, facing a heading.
+/// Along an O'Neill cylinder's valley is z itself, and heading 0 faces its sunward end.
 struct StartSpec
 {
-    int    valley     = 1;
-    double zM         = 0.0;
+    int    band       = 1;
+    double alongM     = 0.0;
+    double acrossM    = 0.0;
     double headingDeg = 0.0;
 };
 
@@ -41,17 +43,18 @@ struct Scenario
     static constexpr int kFormatVersion = 1;  // file layout
     // World generation: 2 added rivers, lakes and woods; 3 towns and farms; 4 the tramway's
     // earthworks, and fixing draws that came out in a different order under another compiler.
+    // (M8's habitat kinds leave the O'Neill cylinder's world exactly as version 4 made it.)
     static constexpr int kGeneratorVersion = 4;
 
-    int                formatVersion    = kFormatVersion;
-    int                generatorVersion = kGeneratorVersion;
-    std::string        title            = "Untitled habitat";
-    std::string        description;
-    OneillCylinderSpec habitat;
-    StartSpec          start;
-    SkySpec            sky;
-    DayScheduleSpec    day;
-    ClimateSpec        climate;
+    int             formatVersion    = kFormatVersion;
+    int             generatorVersion = kGeneratorVersion;
+    std::string     title            = "Untitled habitat";
+    std::string     description;
+    HabitatSpec     habitat;
+    StartSpec       start;
+    SkySpec         sky;
+    DayScheduleSpec day;
+    ClimateSpec     climate;
 };
 
 struct ScenarioError
@@ -64,7 +67,7 @@ struct ScenarioError
 
 /// A habitat in one line, for a list of them: how big it is, how hard it pulls, how much land it
 /// holds and what its hull would have to be made of.
-[[nodiscard]] std::string describeHabitat(const OneillCylinderSpec& spec);
+[[nodiscard]] std::string describeHabitat(const HabitatSpec& spec);
 
 /// Everything that stops a scenario being built, as human-readable messages (empty when it is
 /// ready to open). The habitat, its day, its climate and where the visit starts are all checked.

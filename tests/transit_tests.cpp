@@ -32,7 +32,7 @@ struct Network
 const Network& network()
 {
     static const Network kBuilt = [] {
-        OneillCylinderSpec spec;
+        HabitatSpec spec;
         spec.radiusM = 500.0;
         spec.lengthM = 4000.0;
         Network made{.geometry = HabitatGeometry(spec),

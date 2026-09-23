@@ -18,9 +18,9 @@ using namespace StarshipSimulator;  // NOLINT(google-build-using-namespace): tes
 
 constexpr double kStep = 1.0 / 120.0;
 
-OneillCylinderSpec flatSpec(double gravityG = 1.0)
+HabitatSpec flatSpec(double gravityG = 1.0)
 {
-    OneillCylinderSpec spec;
+    HabitatSpec spec;
     spec.surfaceGravityG         = gravityG;
     spec.terrain.hillHeightM     = 0.0;
     spec.terrain.mountainHeightM = 0.0;

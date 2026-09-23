@@ -54,9 +54,11 @@ towns_per_valley = 4
 town_radius_m = 260.0
 farms_per_valley = 14
 
+# Where the visit begins: on a band of land, along and across it from its middle.
 [start]
-valley = 1
-z_m = -2000.0
+band = 1
+along_m = -2000.0
+across_m = 0.0
 heading_deg = 0.0
 
 # Where the habitat is and when the visit begins (UTC).

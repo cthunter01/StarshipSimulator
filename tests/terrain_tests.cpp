@@ -26,13 +26,13 @@ using namespace StarshipSimulator;  // NOLINT(google-build-using-namespace): tes
 
 const HabitatGeometry& islandThree()
 {
-    static const HabitatGeometry kGeometry{OneillCylinderSpec{}};
+    static const HabitatGeometry kGeometry{HabitatSpec{}};
     return kGeometry;
 }
 
-OneillCylinderSpec playgroundSpec()
+HabitatSpec playgroundSpec()
 {
-    OneillCylinderSpec spec;
+    HabitatSpec spec;
     spec.radiusM                      = 250.0;
     spec.lengthM                      = 800.0;
     spec.windowFraction               = 0.4;

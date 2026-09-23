@@ -324,9 +324,9 @@ std::vector<std::pair<std::size_t, std::size_t>> split(std::size_t first, std::s
 
 void addEndDisks(const HabitatGeometry& geometry, std::vector<Job>& jobs)
 {
-    const OneillCylinderSpec& spec    = geometry.spec();
-    const MeridianProfile&    profile = geometry.profile();
-    const auto                add     = [&](const EndcapSpec& endcap, double z, double facing) {
+    const HabitatSpec&     spec    = geometry.spec();
+    const MeridianProfile& profile = geometry.profile();
+    const auto             add     = [&](const EndcapSpec& endcap, double z, double facing) {
         if (endcap.shape == EndcapShape::CONICAL_RAMP)
         {
             jobs.push_back(diskJob(material::kMetal, z, endcap.hubRadiusM, facing));

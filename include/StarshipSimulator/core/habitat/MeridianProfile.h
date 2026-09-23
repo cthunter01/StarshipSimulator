@@ -48,6 +48,6 @@ private:
 };
 
 /// The inner surface profile of an O'Neill cylinder with its endcaps (anti-sunward end first).
-[[nodiscard]] MeridianProfile buildOneillProfile(const OneillCylinderSpec& spec);
+[[nodiscard]] MeridianProfile buildOneillProfile(const HabitatSpec& spec);
 
 }  // namespace StarshipSimulator

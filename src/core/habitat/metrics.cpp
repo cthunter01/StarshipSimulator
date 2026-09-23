@@ -84,7 +84,66 @@ bool buildableToday(MaterialClass material)
            material == MaterialClass::CARBON_FIBRE;
 }
 
-HabitatMetrics computeMetrics(const OneillCylinderSpec& spec)
+namespace
+{
+
+/// Land, windows and the volume of air, which depend on the habitat's shape.
+struct Areas
+{
+    double land   = 0.0;
+    double window = 0.0;
+    double volume = 0.0;
+};
+
+Areas areasOf(const HabitatSpec& spec)
+{
+    const double radius = spec.radiusM;
+    switch (spec.kind)
+    {
+        case HabitatKind::ONEILL_CYLINDER:
+        {
+            const double wall = 2.0 * kPi * radius * spec.lengthM;
+            return {.land   = wall * (1.0 - spec.windowFraction),
+                    .window = wall * spec.windowFraction,
+                    .volume = kPi * radius * radius * spec.lengthM};
+        }
+        case HabitatKind::KALPANA_CYLINDER:
+            // The whole hull is land; the light comes in through the two ends.
+            return {.land   = 2.0 * kPi * radius * spec.lengthM,
+                    .window = 2.0 * kPi * radius * radius,
+                    .volume = kPi * radius * radius * spec.lengthM};
+        case HabitatKind::STANFORD_TORUS:
+        {
+            // The tube's circle at angle phi from its lowest point lies at R_c + a cos(phi) from
+            // the axis; a band of it d(phi) wide has area 2 pi (R_c + a cos(phi)) a d(phi).
+            const double a      = spec.torus.tubeRadiusM;
+            const double centre = radius - a;
+            const double land   = degreesToRadians(spec.torus.landHalfAngleDeg);
+            const double window = kPi * spec.torus.ceilingWindowShare;  // half-angle, about pi
+            return {.land   = 2.0 * kPi * a * 2.0 * ((centre * land) + (a * std::sin(land))),
+                    .window = 2.0 * kPi * a * 2.0 * ((centre * window) - (a * std::sin(window))),
+                    .volume = 2.0 * kPi * kPi * centre * a * a};
+        }
+        case HabitatKind::BERNAL_SPHERE:
+        {
+            // A zone of a sphere between two latitudes has area 2 pi R^2 (sin b - sin a).
+            const double land   = degreesToRadians(spec.sphere.landLatitudeDeg);
+            const double window = degreesToRadians(spec.sphere.windowLatitudeDeg);
+            return {.land   = 2.0 * kPi * radius * radius * 2.0 * std::sin(land),
+                    .window = 2.0 * 2.0 * kPi * radius * radius * (1.0 - std::sin(window)),
+                    .volume = 4.0 / 3.0 * kPi * radius * radius * radius};
+        }
+        case HabitatKind::BISHOP_RING:
+            return {.land   = 2.0 * kPi * radius * spec.lengthM,
+                    .window = 0.0,
+                    .volume = 2.0 * kPi * radius * spec.lengthM * spec.ring.wallHeightM};
+    }
+    return {};
+}
+
+}  // namespace
+
+HabitatMetrics computeMetrics(const HabitatSpec& spec)
 {
     HabitatMetrics metrics;
     const double   radius        = spec.radiusM;
@@ -100,10 +159,10 @@ HabitatMetrics computeMetrics(const OneillCylinderSpec& spec)
     metrics.axisTemperatureDropK =
         (metrics.rimSpeed * metrics.rimSpeed) / (2.0 * units::kSpecificHeatAir);
 
-    const double wall            = 2.0 * kPi * radius * spec.lengthM;
-    metrics.landAreaM2           = wall * (1.0 - spec.windowFraction);
-    metrics.windowAreaM2         = wall * spec.windowFraction;
-    metrics.volumeM3             = kPi * radius * radius * spec.lengthM;
+    const Areas areas            = areasOf(spec);
+    metrics.landAreaM2           = areas.land;
+    metrics.windowAreaM2         = areas.window;
+    metrics.volumeM3             = areas.volume;
     metrics.population           = spec.populationDensityPerKm2 * metrics.landAreaM2 * 1e-6;
     metrics.hoopSpecificStrength = metrics.rimSpeed * metrics.rimSpeed;  // sigma/rho = v^2
     metrics.material             = materialClassFor(metrics.hoopSpecificStrength);

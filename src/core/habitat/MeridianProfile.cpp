@@ -133,7 +133,7 @@ Vec2d MeridianProfile::inwardNormalAt(double u) const
     return {tangent.y, -tangent.x};
 }
 
-MeridianProfile buildOneillProfile(const OneillCylinderSpec& spec)
+MeridianProfile buildOneillProfile(const HabitatSpec& spec)
 {
     const double       radius = spec.radiusM;
     const double       half   = spec.lengthM / 2.0;

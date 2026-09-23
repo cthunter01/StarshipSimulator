@@ -197,9 +197,9 @@ Scenario loadInitialScenario(const AppOptions& options)
 std::vector<Clearing> startClearings(const HabitatGeometry& geometry, const StartSpec& start)
 {
     const int             strips = geometry.stripCount();
-    const int             valley = ((start.valley % strips) + strips) % strips;
+    const int             valley = ((start.band % strips) + strips) % strips;
     const double          theta  = geometry.landCenter(valley);
-    const double          z      = std::clamp(start.zM, geometry.floorZMin(), geometry.floorZMax());
+    const double          z = std::clamp(start.alongM, geometry.floorZMin(), geometry.floorZMax());
     std::vector<Clearing> clearings{{.centre = geometry.surfacePoint(z, theta), .radiusM = 25.0}};
     if (geometry.landscape().hasRivers())
     {
@@ -213,7 +213,7 @@ std::vector<Clearing> startClearings(const HabitatGeometry& geometry, const Star
 }
 
 /// Builds geometry and meshes; safe to run on a worker thread.
-GeneratedWorld generateWorld(const OneillCylinderSpec& spec, const StartSpec& visitStart)
+GeneratedWorld generateWorld(const HabitatSpec& spec, const StartSpec& visitStart)
 {
     const auto     start = std::chrono::steady_clock::now();
     GeneratedWorld world;
@@ -568,7 +568,7 @@ void Application::adoptWorld(GeneratedWorld world, bool placeAtStartPoint)
     }
 }
 
-void Application::startGeneration(const OneillCylinderSpec& spec, bool placeAtStartPoint)
+void Application::startGeneration(const HabitatSpec& spec, bool placeAtStartPoint)
 {
     if (pending_.valid())
     {
@@ -697,9 +697,9 @@ void Application::placeAtStart()
 {
     const HabitatGeometry& geometry = *geometry_;
     const int              strips   = geometry.stripCount();
-    const int              valley   = ((scenario_.start.valley % strips) + strips) % strips;
+    const int              valley   = ((scenario_.start.band % strips) + strips) % strips;
     player_.setLocomotion(Locomotion::WALK);
-    player_.placeOnGround(geometry, scenario_.start.zM, geometry.landCenter(valley));
+    player_.placeOnGround(geometry, scenario_.start.alongM, geometry.landCenter(valley));
     look_.setFrame(player_.viewUp(), kNorth);
     look_.setAngles(degreesToRadians(scenario_.start.headingDeg), 0.0);
 }
@@ -732,7 +732,7 @@ void Application::flyTo(const Vec3d& eye, double yawDeg, double pitchDeg)
 int Application::startValley() const
 {
     const int strips = geometry_->stripCount();
-    return ((scenario_.start.valley % strips) + strips) % strips;
+    return ((scenario_.start.band % strips) + strips) % strips;
 }
 
 double Application::startViewZ() const
@@ -740,7 +740,7 @@ double Application::startViewZ() const
     // Keep viewpoints on the floor, away from its ends (the margin shrinks for small habitats).
     const HabitatGeometry& geometry = *geometry_;
     const double margin = std::min(500.0, 0.25 * (geometry.floorZMax() - geometry.floorZMin()));
-    return std::clamp(scenario_.start.zM, geometry.floorZMin() + margin,
+    return std::clamp(scenario_.start.alongM, geometry.floorZMin() + margin,
                       geometry.floorZMax() - margin);
 }
 
@@ -1892,7 +1892,7 @@ std::optional<int> Application::render(int frame, bool screenshotRequested, ImDr
     lighting.haze                      = static_cast<double>(hudSettings_.haze);
     const std::vector<Marker>   shapes = markers();
     const std::vector<BodyDraw> bodies = bodyDraws(lighting);
-    const OneillCylinderSpec&   spec   = geometry_->spec();
+    const HabitatSpec&          spec   = geometry_->spec();
     // The trees' shadows, along the beam that lights the ground here.
     gpu::ShadowUniforms shadow;
     if (const auto beam = dominantBeam(*geometry_, mirrorAngle(), player_.eyePosition()))

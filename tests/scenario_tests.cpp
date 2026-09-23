@@ -1,6 +1,7 @@
 #include "StarshipSimulator/core/scenario/scenario.h"
 
 #include <filesystem>
+#include <format>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -35,7 +36,7 @@ TEST(Scenario, RoundTripsThroughToml)
     original.habitat.atmosphere.surfacePressurePa   = 50662.5;
     original.habitat.terrain.seed                   = 123456789012345ULL;
     original.habitat.settlements = {.townsPerValley = 2, .townRadiusM = 180.5, .farmsPerValley = 9};
-    original.start               = {.valley = 2, .zM = -123.25, .headingDeg = 45.0};
+    original.start = {.band = 2, .alongM = -123.25, .acrossM = 0.0, .headingDeg = 45.0};
     original.habitat.partner.separationM = 90000.0;
     original.sky.location                = astro::Location::SUN_MARS_L4;
     original.sky.start                   = astro::parseIsoTime("2061-07-28T18:45:30Z").value();
@@ -70,8 +71,8 @@ TEST(Scenario, RoundTripsThroughToml)
     EXPECT_EQ(copy.habitat.settlements.townsPerValley, 2);
     EXPECT_EQ(copy.habitat.settlements.townRadiusM, 180.5);
     EXPECT_EQ(copy.habitat.settlements.farmsPerValley, 9);
-    EXPECT_EQ(copy.start.valley, 2);
-    EXPECT_EQ(copy.start.zM, -123.25);
+    EXPECT_EQ(copy.start.band, 2);
+    EXPECT_EQ(copy.start.alongM, -123.25);
     EXPECT_TRUE(copy.habitat.partner.enabled);
     EXPECT_EQ(copy.habitat.partner.separationM, 90000.0);
     EXPECT_EQ(copy.sky.location, astro::Location::SUN_MARS_L4);
@@ -90,6 +91,79 @@ TEST(Scenario, RoundTripsThroughToml)
     EXPECT_EQ(copy.climate.seasonSwingHours, 3.0);
     EXPECT_EQ(copy.climate.seasonAtEpoch, 0.625);
     EXPECT_EQ(serializeScenario(copy), serializeScenario(original));
+}
+
+TEST(Scenario, EveryKindRoundTrips)
+{
+    for (const HabitatKind kind : allHabitatKinds())
+    {
+        Scenario original;
+        original.habitat.kind    = kind;
+        original.habitat.radiusM = kind == HabitatKind::BISHOP_RING ? 1.0e6 : 900.5;
+        // A ring is 450 km wide; an O'Neill cylinder needs room for its ramps; the rest are short.
+        original.habitat.lengthM = 350.0;
+        if (kind == HabitatKind::BISHOP_RING)
+        {
+            original.habitat.lengthM = 4.5e5;
+        }
+        if (kind == HabitatKind::ONEILL_CYLINDER)
+        {
+            original.habitat.lengthM = 8000.0;
+        }
+        original.habitat.torus.tubeRadiusM        = 70.5;
+        original.habitat.torus.spokes             = 4;
+        original.habitat.torus.ceilingWindowShare = 0.25;
+        original.habitat.torus.sections           = 8;
+        original.habitat.sphere.landLatitudeDeg   = 33.0;
+        original.habitat.sphere.windowLatitudeDeg = 60.0;
+        original.habitat.ring.wallHeightM         = 150000.0;
+        original.habitat.ring.sunTiltDeg          = 12.5;
+        original.start = {.band = 0, .alongM = 42.0, .acrossM = -7.5, .headingDeg = 90.0};
+        original.climate.cloudTopM  = 105.0;  // fits the smallest headroom here
+        original.climate.cloudBaseM = 50.0;
+
+        const std::string text = serializeScenario(original);
+        EXPECT_NE(text.find(std::format("type = \"{}\"", habitatKindKey(kind))), std::string::npos);
+        const auto parsed = parseScenario(text);
+        ASSERT_TRUE(parsed.has_value())
+            << habitatKindKey(kind) << ": " << parsed.error().describe();
+        EXPECT_EQ(parsed->habitat.kind, kind);
+        EXPECT_EQ(parsed->start.acrossM, -7.5);
+        EXPECT_EQ(serializeScenario(*parsed), text) << habitatKindKey(kind);
+        // Only the kind's own tables are written.
+        EXPECT_EQ(text.contains("[habitat.torus]"), kind == HabitatKind::STANFORD_TORUS);
+        EXPECT_EQ(text.contains("strip_pairs"), kind == HabitatKind::ONEILL_CYLINDER);
+        if (kind == HabitatKind::STANFORD_TORUS)
+        {
+            EXPECT_EQ(parsed->habitat.torus.tubeRadiusM, 70.5);
+            EXPECT_EQ(parsed->habitat.torus.spokes, 4);
+            EXPECT_EQ(parsed->habitat.torus.sections, 8);
+        }
+        if (kind == HabitatKind::BERNAL_SPHERE)
+        {
+            EXPECT_EQ(parsed->habitat.sphere.windowLatitudeDeg, 60.0);
+        }
+        if (kind == HabitatKind::BISHOP_RING)
+        {
+            EXPECT_EQ(parsed->habitat.ring.sunTiltDeg, 12.5);
+        }
+    }
+}
+
+TEST(Scenario, ReadsTheNamesFromBeforeHabitatKinds)
+{
+    // Files saved before M8 have no type, and start in a valley at an axial position.
+    const auto old = parseScenario("[start]\nvalley = 2\nz_m = -750.0\n");
+    ASSERT_TRUE(old.has_value()) << old.error().describe();
+    EXPECT_EQ(old->habitat.kind, HabitatKind::ONEILL_CYLINDER);
+    EXPECT_EQ(old->start.band, 2);
+    EXPECT_EQ(old->start.alongM, -750.0);
+
+    const auto unknown = parseScenario("[habitat]\ntype = \"dyson_sphere\"\n");
+    ASSERT_FALSE(unknown.has_value());
+    EXPECT_EQ(unknown.error().line, 2);
+    EXPECT_NE(unknown.error().message.find("stanford_torus"), std::string::npos)
+        << unknown.error().message;
 }
 
 TEST(Scenario, PresetsLoad)
@@ -122,7 +196,7 @@ TEST(Scenario, MissingKeysKeepDefaults)
     const auto parsed = parseScenario("title = \"Minimal\"\n[habitat]\nradius_m = 3000\n");
     ASSERT_TRUE(parsed.has_value()) << parsed.error().describe();
     EXPECT_EQ(parsed->habitat.radiusM, 3000.0);  // integers are fine for numbers
-    EXPECT_EQ(parsed->habitat.lengthM, OneillCylinderSpec{}.lengthM);
+    EXPECT_EQ(parsed->habitat.lengthM, HabitatSpec{}.lengthM);
 }
 
 TEST(Scenario, ErrorsSayWhatAndWhere)
@@ -184,15 +258,45 @@ TEST(Scenario, ErrorsSayWhatAndWhere)
 
 TEST(Scenario, DescribesAHabitatInOneLine)
 {
-    const std::string line = describeHabitat(OneillCylinderSpec{});  // Island Three
+    const std::string line = describeHabitat(HabitatSpec{});  // Island Three
     EXPECT_NE(line.find("8.0 km across"), std::string::npos) << line;
     EXPECT_NE(line.find("32 km long"), std::string::npos) << line;
     EXPECT_NE(line.find("1.00 g"), std::string::npos) << line;
     EXPECT_NE(line.find("structural steel"), std::string::npos) << line;
 
-    OneillCylinderSpec huge;
+    HabitatSpec huge;
     huge.radiusM = 1000000.0;  // a Bishop ring's radius: hoop stress no known material takes
     EXPECT_NE(describeHabitat(huge).find("future materials"), std::string::npos);
+
+    HabitatSpec torus;
+    torus.kind    = HabitatKind::STANFORD_TORUS;
+    torus.radiusM = 895.0;
+    EXPECT_NE(describeHabitat(torus).find("a 1.8 km wheel with a 130 m tube"), std::string::npos)
+        << describeHabitat(torus);
+    HabitatSpec sphere;
+    sphere.kind    = HabitatKind::BERNAL_SPHERE;
+    sphere.radiusM = 250.0;
+    EXPECT_NE(describeHabitat(sphere).find("a 500 m sphere"), std::string::npos)
+        << describeHabitat(sphere);
+    HabitatSpec kalpana;
+    kalpana.kind    = HabitatKind::KALPANA_CYLINDER;
+    kalpana.radiusM = 250.0;
+    kalpana.lengthM = 325.0;
+    EXPECT_NE(describeHabitat(kalpana).find("500 m across, 325 m long"), std::string::npos)
+        << describeHabitat(kalpana);
+}
+
+TEST(Scenario, SaysWhichKindsCannotBeBuiltYet)
+{
+    Scenario torus;
+    torus.habitat.kind       = HabitatKind::STANFORD_TORUS;
+    torus.habitat.radiusM    = 895.0;
+    torus.climate.cloudBaseM = 50.0;
+    torus.climate.cloudTopM  = 102.0;  // inside the 130 m tube
+    torus.start.band         = 0;
+    const auto problems      = validateScenario(torus);
+    ASSERT_EQ(problems.size(), 1U) << problems.front();
+    EXPECT_NE(problems.front().find("cannot be built yet"), std::string::npos);
 }
 
 TEST(Scenario, ValidateNamesEverythingWrongAtOnce)
@@ -205,7 +309,7 @@ TEST(Scenario, ValidateNamesEverythingWrongAtOnce)
     broken.habitat.radiusM    = 50.0;  // too small to hold together
     broken.day.nightAngleDeg  = 80.0;  // sunlight would still get in at midnight
     broken.day.dayLengthHours = 30.0;  // longer than a day
-    broken.start.valley       = 7;     // there is no seventh valley
+    broken.start.band         = 7;     // there is no seventh valley
     const auto problems       = validateScenario(broken);
     EXPECT_GE(problems.size(), 4U);
     for (const std::string& problem : problems)

@@ -1,7 +1,6 @@
 #include "StarshipSimulator/core/tour.h"
 
 #include <algorithm>
-#include <cmath>
 #include <string>
 #include <vector>
 
@@ -18,7 +17,7 @@ using namespace StarshipSimulator;  // NOLINT(google-build-using-namespace): tes
 
 const HabitatGeometry& island()
 {
-    static const HabitatGeometry kGeometry{OneillCylinderSpec{}};
+    static const HabitatGeometry kGeometry{HabitatSpec{}};
     return kGeometry;
 }
 
@@ -26,7 +25,7 @@ const HabitatGeometry& island()
 const HabitatGeometry& playground()
 {
     static const HabitatGeometry kGeometry{[] {
-        OneillCylinderSpec spec;
+        HabitatSpec spec;
         spec.radiusM           = 250.0;
         spec.lengthM           = 800.0;
         spec.sunwardEndcap     = makeEndcap(EndcapShape::FLAT);
@@ -41,10 +40,7 @@ void checkStop(const TourStop& stop, const HabitatGeometry& geometry, const std:
     EXPECT_GT(stop.caption.size(), 40U) << "a stop with nothing to read";
     EXPECT_GE(stop.holdS, 4.0) << "no time to read it";
     // Inside the habitat, and not buried in the ground or outside the hull.
-    const double radius = std::hypot(stop.eye.x, stop.eye.y);
-    EXPECT_LT(radius, geometry.radius()) << tour;
-    EXPECT_GT(stop.eye.z, geometry.profile().zMin()) << tour;
-    EXPECT_LT(stop.eye.z, geometry.profile().zMax()) << tour;
+    EXPECT_TRUE(geometry.enclosure().contains(stop.eye)) << tour;
     EXPECT_GE(stop.pitchDeg, -90.0);
     EXPECT_LE(stop.pitchDeg, 90.0);
 }

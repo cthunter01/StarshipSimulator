@@ -192,11 +192,11 @@ TourStop under(TourStop stop, std::string weather)
 
 std::vector<Tour> habitatTours(const HabitatGeometry& geometry, std::string_view name)
 {
-    const OneillCylinderSpec& spec   = geometry.spec();
-    const double              valley = geometry.landCenter(0);
-    const double              window = geometry.windowCenter(0);
-    const double              middle = 0.5 * (geometry.floorZMin() + geometry.floorZMax());
-    const double              radius = geometry.radius();
+    const HabitatSpec& spec   = geometry.spec();
+    const double       valley = geometry.landCenter(0);
+    const double       window = geometry.windowCenter(0);
+    const double       middle = 0.5 * (geometry.floorZMin() + geometry.floorZMax());
+    const double       radius = geometry.radius();
     // Everything a stop says and every distance it moves comes from this habitat, so the same
     // tours work in a 32 km cylinder and in a 250 m one.
     const double across = 2.0 * radius;

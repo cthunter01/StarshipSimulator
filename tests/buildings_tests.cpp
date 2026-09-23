@@ -36,10 +36,10 @@ struct Village
         spec.settlements.townRadiusM    = 150.0;
         spec.settlements.farmsPerValley = 2;
     }
-    OneillCylinderSpec spec;
-    HabitatGeometry    geometry{spec};
-    TerrainGrid        grid        = sampleTerrain(geometry, 4.0);
-    Settlements        settlements = planSettlements(geometry, grid);
+    HabitatSpec     spec;
+    HabitatGeometry geometry{spec};
+    TerrainGrid     grid        = sampleTerrain(geometry, 4.0);
+    Settlements     settlements = planSettlements(geometry, grid);
 };
 
 const Village& village()

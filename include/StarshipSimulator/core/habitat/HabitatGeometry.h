@@ -1,11 +1,15 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <optional>
+#include <vector>
 
+#include "StarshipSimulator/core/habitat/Enclosure.h"
 #include "StarshipSimulator/core/habitat/Landscape.h"
 #include "StarshipSimulator/core/habitat/MeridianProfile.h"
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
+#include "StarshipSimulator/core/habitat/land_layout.h"
 #include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/procgen/SimplexNoise.h"
 
@@ -14,16 +18,16 @@ namespace StarshipSimulator
 
 enum class RegionKind : std::uint8_t
 {
-    LAND,     // a valley floor strip
-    WINDOW,   // a window strip (walkable glass)
-    ENDCAP,   // endcap slopes or domes
+    LAND,     // a band of land (an O'Neill cylinder's valley floor)
+    WINDOW,   // walkable glass (an O'Neill cylinder's window strip)
+    ENDCAP,   // the slopes off the land: endcaps, domes
     OUTSIDE,  // beyond the ends of the habitat
 };
 
 struct Region
 {
     RegionKind kind  = RegionKind::OUTSIDE;
-    int        index = -1;  // strip number for Land and Window
+    int        index = -1;  // the band for LAND, the window strip for WINDOW
 };
 
 [[nodiscard]] const char* regionKindName(RegionKind kind);
@@ -39,22 +43,48 @@ struct GroundSample
     Region region;
 };
 
-/// The walkable shape of an O'Neill cylinder in the rotating habitat frame (spin axis +Z, sun
-/// toward +Z): the revolved meridian profile plus procedural terrain, with window strips along the
-/// floor. Window i is centred on angle i * stripAngle, land strip i halfway to the next window.
+/// The walkable shape of a spinning habitat in the rotating habitat frame (spin axis +Z, sun toward
+/// +Z): the floor's meridian profile revolved about the axis, plus procedural terrain, and the
+/// bands of land on it. On an O'Neill cylinder, window i is centred on angle i * stripAngle and
+/// land strip (valley) i halfway to the next window.
 class HabitatGeometry
 {
 public:
     /// Throws std::invalid_argument when the spec does not validate.
-    explicit HabitatGeometry(const OneillCylinderSpec& spec);
+    explicit HabitatGeometry(const HabitatSpec& spec);
 
-    [[nodiscard]] const OneillCylinderSpec& spec() const { return spec_; }
-    [[nodiscard]] const MeridianProfile&    profile() const { return profile_; }
-    [[nodiscard]] const Landscape&          landscape() const { return landscape_; }
-    [[nodiscard]] double                    radius() const { return spec_.radiusM; }
-    [[nodiscard]] double                    omega() const { return omega_; }
-    [[nodiscard]] double                    floorZMin() const { return floorZMin_; }
-    [[nodiscard]] double                    floorZMax() const { return floorZMax_; }
+    [[nodiscard]] const HabitatSpec&     spec() const { return spec_; }
+    [[nodiscard]] HabitatKind            kind() const { return spec_.kind; }
+    [[nodiscard]] const MeridianProfile& profile() const { return *profile_; }
+    [[nodiscard]] const std::shared_ptr<const MeridianProfile>& sharedProfile() const
+    {
+        return profile_;
+    }
+    [[nodiscard]] const Landscape& landscape() const { return landscape_; }
+    /// The air inside: where people and cameras can be.
+    [[nodiscard]] const Enclosure& enclosure() const { return enclosure_; }
+    /// The floor's reference radius: gravity, air, water and clouds are measured from it.
+    [[nodiscard]] double radius() const { return spec_.radiusM; }
+    [[nodiscard]] double omega() const { return omega_; }
+    /// The z range of the land (on an O'Neill cylinder: the level floor between the endcaps).
+    [[nodiscard]] double floorZMin() const { return floorZMin_; }
+    [[nodiscard]] double floorZMax() const { return floorZMax_; }
+    /// The floor's radius at z (clamped to the profile), before any terrain.
+    [[nodiscard]] double floorRadiusAt(double z) const;
+    /// How far it is from the floor straight up to the far side (or the ceiling).
+    [[nodiscard]] double spanAcrossM() const;
+
+    [[nodiscard]] const std::vector<LandBand>& bands() const { return bands_; }
+    [[nodiscard]] int             bandCount() const { return static_cast<int>(bands_.size()); }
+    [[nodiscard]] const LandBand& band(int index) const;
+    /// Whether (z, theta) is on a band of land.
+    [[nodiscard]] bool onLand(double z, double theta) const;
+    /// Distance (m) along the floor from a point to the nearest window strip, 0 inside one; it also
+    /// grows beyond the ends of the level floor. `radius` is the floor's radius there.
+    [[nodiscard]] double distanceToWindow(double z, double theta, double radius) const;
+    /// Height of the water's surface above the floor datum at z, measured like terrain height. The
+    /// surface is level under spin gravity: a cylinder around the axis.
+    [[nodiscard]] double waterLevelAt(double z) const;
     /// Range of z a person can occupy (inside the end walls, away from the domes' poles).
     [[nodiscard]] double walkableZMin() const { return walkableZMin_; }
     [[nodiscard]] double walkableZMax() const { return walkableZMax_; }
@@ -96,19 +126,18 @@ public:
     [[nodiscard]] static double angularDistance(double a, double b);
 
 private:
-    /// Distance (m) from a point on the surface to the nearest window strip, 0 inside one.
-    [[nodiscard]] double distanceToWindow(double z, double theta, double radius) const;
-
-    OneillCylinderSpec spec_;
-    MeridianProfile    profile_;
-    SimplexNoise       hills_;
-    SimplexNoise       ridges_;
-    double             omega_        = 0.0;
-    double             floorZMin_    = 0.0;
-    double             floorZMax_    = 0.0;
-    double             walkableZMin_ = 0.0;
-    double             walkableZMax_ = 0.0;
-    Landscape          landscape_;
+    HabitatSpec                            spec_;
+    std::shared_ptr<const MeridianProfile> profile_;
+    SimplexNoise                           hills_;
+    SimplexNoise                           ridges_;
+    double                                 omega_        = 0.0;
+    double                                 floorZMin_    = 0.0;
+    double                                 floorZMax_    = 0.0;
+    double                                 walkableZMin_ = 0.0;
+    double                                 walkableZMax_ = 0.0;
+    std::vector<LandBand>                  bands_;
+    Enclosure                              enclosure_;
+    Landscape                              landscape_;
 };
 
 }  // namespace StarshipSimulator

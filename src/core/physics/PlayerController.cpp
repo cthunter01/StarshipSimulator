@@ -201,9 +201,9 @@ void PlayerController::stepWinged(const MoveIntent& intent, const LookRig& look,
 {
     // Strap-on wings, in the air that turns with the habitat. Near the floor a person cannot lift
     // their own weight; a few hundred metres up, where the spin gravity has fallen away, they can.
-    const OneillCylinderSpec& spec   = geometry.spec();
-    const double              radius = std::hypot(eye_.x, eye_.y);
-    const double              density =
+    const HabitatSpec& spec   = geometry.spec();
+    const double       radius = std::hypot(eye_.x, eye_.y);
+    const double       density =
         airDensityAt(spec.atmosphere, geometry.omega(), geometry.radius(), radius);
     const double weight = settings.wingMassKg * geometry.gravityAt(radius);
 

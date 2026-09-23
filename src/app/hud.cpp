@@ -411,8 +411,8 @@ void drawSkyLabel(const std::optional<SkyLabel>& label)
 
 void drawMetrics(const HudModel& model, HudSettings& settings, HudActions& actions)
 {
-    const HabitatMetrics&     m    = *model.metrics;
-    const OneillCylinderSpec& spec = model.geometry->spec();
+    const HabitatMetrics& m    = *model.metrics;
+    const HabitatSpec&    spec = model.geometry->spec();
     ui::field("Size", std::format("{:.1f} km across, {:.1f} km long", 2.0 * spec.radiusM / 1000.0,
                                   spec.lengthM / 1000.0));
     ui::field("Spin", std::format("{:.2f} rpm, one turn every {:.0f} s", m.rpm, m.periodS));
@@ -482,7 +482,7 @@ std::string clockHour(double hour)
     return std::format("{:02}:{:02}", minutes / 60, minutes % 60);
 }
 
-void drawEditorEndcaps(OneillCylinderSpec& spec)
+void drawEditorEndcaps(HabitatSpec& spec)
 {
     int antisunward = static_cast<int>(spec.antisunwardEndcap.shape);
     int sunward     = static_cast<int>(spec.sunwardEndcap.shape);
@@ -505,7 +505,7 @@ void drawEditorEndcaps(OneillCylinderSpec& spec)
                     depth, std::max(spec.lengthM - depth, 0.0)));
 }
 
-void drawEditorPartner(OneillCylinderSpec& spec)
+void drawEditorPartner(HabitatSpec& spec)
 {
     ImGui::Checkbox("Counter-rotating partner", &spec.partner.enabled);
     sliderScaled("Distance (km)", spec.partner.separationM, 1000.0, 10.0, 300.0, "%.0f");
@@ -514,7 +514,7 @@ void drawEditorPartner(OneillCylinderSpec& spec)
         minimumPartnerSeparation(spec) / 1000.0));
 }
 
-void drawEditorShape(OneillCylinderSpec& spec)
+void drawEditorShape(HabitatSpec& spec)
 {
     sliderDouble("Radius (m)", spec.radiusM, 200.0, 10000.0, "%.0f");
     sliderDouble("Length (m)", spec.lengthM, 1000.0, 60000.0, "%.0f");
@@ -536,7 +536,7 @@ void drawEditorShape(OneillCylinderSpec& spec)
 }
 
 /// The mirrors and the day they make.
-void drawEditorDay(OneillCylinderSpec& spec, DayScheduleSpec& day)
+void drawEditorDay(HabitatSpec& spec, DayScheduleSpec& day)
 {
     sliderDouble("Mirror angle (deg)", spec.mirrors.openingAngleDeg, 20.0, 150.0, "%.0f");
     ui::textMuted(describeSun(spec.mirrors.openingAngleDeg));
@@ -620,10 +620,10 @@ void drawEditorPlace(Scenario& draft, const SkyModel& sky)
     }
     sliderDouble("Clock offset from UTC (h)", draft.sky.utcOffsetHours, -14.0, 14.0, "%.1f");
     ImGui::Separator();
-    ImGui::SliderInt("Start in valley", &draft.start.valley, 0,
+    ImGui::SliderInt("Start in valley", &draft.start.band, 0,
                      std::max(draft.habitat.stripPairs - 1, 0));
     const double half = 0.5 * draft.habitat.lengthM / 1000.0;
-    sliderScaled("Start along (km)", draft.start.zM, 1000.0, -half, half, "%.2f");
+    sliderScaled("Start along (km)", draft.start.alongM, 1000.0, -half, half, "%.2f");
     sliderDouble("Facing (deg)", draft.start.headingDeg, 0.0, 360.0, "%.0f");
     ui::textMuted("0 degrees faces the sunward end; the angle turns you to the left.");
 }
@@ -638,7 +638,7 @@ void numberRow(const char* label, const std::string& value)
 }
 
 /// What the habitat in the editor would be like to live in, worked out as you drag the sliders.
-void drawEditorNumbers(const OneillCylinderSpec& spec)
+void drawEditorNumbers(const HabitatSpec& spec)
 {
     const HabitatMetrics metrics = computeMetrics(spec);
     if (ImGui::BeginTable("numbers", 2, ImGuiTableFlags_SizingStretchProp))

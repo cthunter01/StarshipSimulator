@@ -76,9 +76,16 @@ draws, push and fetch the pictures of the macOS CI job, `gh run download <run id
 - `include/StarshipSimulator/<module>/`: public headers; `src/<module>/`: sources
 - `core` (`StarshipSimulator_core`): everything that can be unit tested without a GPU. **No SDL, ImGui, Jolt,
   physics or render includes**: the `layering` test (`cmake/CheckLayering.cmake`) fails otherwise
-  - `habitat/`: `OneillCylinderSpec` (the shareable description), `metrics` (spin, gravity, air, hull strength),
-    `MeridianProfile` (the revolved cross-section), `HabitatGeometry` (regions, terrain, ground queries, water,
-    forest density), `Landscape` (rivers, lakes, shore shaping, woodland), `mirror_optics` (where the sun
+  - `habitat/`: `HabitatSpec` (the shareable description of any kind of habitat: `HabitatKind` is an O'Neill
+    cylinder, a Kalpana cylinder, a Stanford torus, a Bernal sphere or a Bishop ring, with the fields a kind
+    does not use ignored; `habitatKindBuilt` says which kinds the M8 steps have made buildable so far),
+    `metrics` (spin, gravity, air, hull strength; land, windows and volume per kind),
+    `MeridianProfile` (the floor's revolved cross-section), `HabitatGeometry` (regions, terrain, ground
+    queries, water, forest density, bands), `land_layout` (the bands of land: an O'Neill cylinder's valleys
+    run along z, every other kind has one band running round the axis; the rivers, towns and trams are laid
+    out on a band's plan, x across and y along, left-handed like a valley's so one layout works on both),
+    `Enclosure` (the air inside: where people and cameras can be), `Landscape` (rivers, lakes, shore shaping,
+    woodland), `mirror_optics` (where the sun
     appears, day/night, which beam lights a point), `day_schedule` (mirror angle by local time),
     `weather` (`ClimateSpec`, `weatherAt`: cloud, rain, wetness, mist, wind and the season as a smooth function
     of time, never simulated or remembered, so two people at the same moment see the same sky; `seasonalDay`
@@ -129,7 +136,9 @@ draws, push and fetch the pictures of the macOS CI job, `gh run download <run id
   - The terrain and settlement sources are compiled with `-O2` even in Debug (`src/core/CMakeLists.txt`),
     or world generation takes several seconds
   - `scenario/`: TOML habitat files (toml++, used only in `scenario.cpp`; bump `kGeneratorVersion` when
-    generation changes; `[climate]` holds the cloud deck, how often it rains and the length of the year,
+    generation changes; `[habitat] type` names the kind and only that kind's tables are written
+    (`[habitat.torus]`, `[habitat.sphere]`, `[habitat.ring]`); `[start]` is `band`, `along_m`, `across_m`
+    (the names before M8, `valley` and `z_m`, are still read); `[climate]` holds the cloud deck, how often it rains and the length of the year,
     `season_at_epoch` deciding where in that year J2000 falls, and so which season a preset starts in).
     `validateScenario` returns every problem with a whole scenario as a sentence (the editor lists them
     all while you drag sliders; `parseScenario` reports the first); `describeHabitat` sums one up in a
@@ -242,10 +251,12 @@ draws, push and fetch the pictures of the macOS CI job, `gh run download <run id
   **One random draw to a statement**: C++ does not say which argument of a call (or which operand of
   `+`) is worked out first, so `f(rng.uniform(), rng.uniform())` hands the two values over in
   whichever order the compiler chose, and the same habitat file then grows a different town under a
-  different compiler. Put each draw in its own named variable first. `determinism_tests` hashes a
-  whole generated world against one value for every compiler and standard library CI runs (GCC and
-  Clang with libstdc++, Apple Clang with libc++, MSVC); when generation changes on purpose, bump
-  `Scenario::kGeneratorVersion` and record the new hash
+  different compiler. Put each draw in its own named variable first. `determinism_tests` hashes whole
+  generated worlds (a small Island Three and the Coriolis Playground preset) against one value each for
+  every compiler and standard library CI runs (GCC and Clang with libstdc++, Apple Clang with libc++,
+  MSVC); when generation changes on purpose, bump `Scenario::kGeneratorVersion` and record the new hashes.
+  Generalizing the code for new kinds of habitat must leave the existing worlds' hashes (and their
+  `--capture` pictures) exactly as they were
 - Precision: world positions are `double`. The GPU only sees camera-relative `float` data (compute
   `position - camera` in double, then convert). Depth is reverse-Z with an infinite far plane: clear to 0,
   compare `GREATER`

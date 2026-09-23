@@ -63,10 +63,10 @@ Band endBand(const EndcapSpec& endcap, double radius, double z, double facing)
 /// The outline from the anti-sunward end (-z) to the sunward end (+z), outward along r.
 std::vector<Band> hullOutline(const HabitatGeometry& geometry)
 {
-    const OneillCylinderSpec& spec   = geometry.spec();
-    const double              radius = spec.radiusM;
-    const double              half   = spec.lengthM / 2.0;
-    const auto                wall   = [&](double z0, double z1, bool windows) {
+    const HabitatSpec& spec   = geometry.spec();
+    const double       radius = spec.radiusM;
+    const double       half   = spec.lengthM / 2.0;
+    const auto         wall   = [&](double z0, double z1, bool windows) {
         Band band;
         band.windows = windows;
         band.points  = {{.z = z0, .r = radius, .nz = 0.0, .nr = 1.0},

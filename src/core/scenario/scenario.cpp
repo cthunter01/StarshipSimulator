@@ -25,6 +25,7 @@
 #include "StarshipSimulator/core/habitat/habitat_spec.h"
 #include "StarshipSimulator/core/habitat/metrics.h"
 #include "StarshipSimulator/core/habitat/weather.h"
+#include "StarshipSimulator/core/math.h"
 #include "StarshipSimulator/core/utf8_path.h"
 
 namespace StarshipSimulator
@@ -45,6 +46,17 @@ std::string locationKeyList()
     for (const astro::Location location : astro::allLocations())
     {
         keys += std::format("{}{}", keys.empty() ? "" : ", ", astro::locationKey(location));
+    }
+    return keys;
+}
+
+/// "oneill_cylinder, kalpana_cylinder, ..."
+std::string habitatKindKeyList()
+{
+    std::string keys;
+    for (const HabitatKind kind : allHabitatKinds())
+    {
+        keys += std::format("{}{}", keys.empty() ? "" : ", ", habitatKindKey(kind));
     }
     return keys;
 }
@@ -174,6 +186,24 @@ public:
              lineOf(*node));
     }
 
+    void read(std::string_view key, HabitatKind& value)
+    {
+        const toml::node* node = table_->get(key);
+        if (node == nullptr)
+        {
+            return;
+        }
+        std::string text;
+        read(key, text);
+        if (const auto kind = habitatKindFromKey(text))
+        {
+            value = *kind;
+            return;
+        }
+        fail(std::format("'{}' in [{}] must be one of {}", key, name_, habitatKindKeyList()),
+             lineOf(*node));
+    }
+
     void read(std::string_view key, astro::Location& value)
     {
         const toml::node* node = table_->get(key);
@@ -261,23 +291,47 @@ void readEndcap(TableReader& parent, std::string_view key, const std::string& na
     reader.read("hub_radius_m", endcap.hubRadiusM);
 }
 
-void readHabitat(const toml::table& table, OneillCylinderSpec& spec,
-                 std::optional<ScenarioError>& error)
+/// The torus's, the sphere's and the ring's own tables.
+void readShapes(TableReader& habitat, HabitatSpec& spec, std::optional<ScenarioError>& error)
+{
+    if (const toml::table* torus = habitat.table("torus"))
+    {
+        TableReader reader(*torus, "habitat.torus", error);
+        reader.allowOnly({"tube_radius_m", "hub_radius_m", "spokes", "spoke_radius_m",
+                          "land_half_angle_deg", "ceiling_window_share", "sections", "shield_m"});
+        reader.read("tube_radius_m", spec.torus.tubeRadiusM);
+        reader.read("hub_radius_m", spec.torus.hubRadiusM);
+        reader.read("spokes", spec.torus.spokes);
+        reader.read("spoke_radius_m", spec.torus.spokeRadiusM);
+        reader.read("land_half_angle_deg", spec.torus.landHalfAngleDeg);
+        reader.read("ceiling_window_share", spec.torus.ceilingWindowShare);
+        reader.read("sections", spec.torus.sections);
+        reader.read("shield_m", spec.torus.shieldM);
+    }
+    if (const toml::table* sphere = habitat.table("sphere"))
+    {
+        TableReader reader(*sphere, "habitat.sphere", error);
+        reader.allowOnly({"land_latitude_deg", "window_latitude_deg"});
+        reader.read("land_latitude_deg", spec.sphere.landLatitudeDeg);
+        reader.read("window_latitude_deg", spec.sphere.windowLatitudeDeg);
+    }
+    if (const toml::table* ring = habitat.table("ring"))
+    {
+        TableReader reader(*ring, "habitat.ring", error);
+        reader.allowOnly({"wall_height_m", "sun_tilt_deg"});
+        reader.read("wall_height_m", spec.ring.wallHeightM);
+        reader.read("sun_tilt_deg", spec.ring.sunTiltDeg);
+    }
+}
+
+void readHabitat(const toml::table& table, HabitatSpec& spec, std::optional<ScenarioError>& error)
 {
     TableReader habitat(table, "habitat", error);
     habitat.allowOnly({"type", "radius_m", "length_m", "surface_gravity_g", "strip_pairs",
                        "window_fraction", "population_density_per_km2", "sunward_endcap",
-                       "antisunward_endcap", "mirrors", "partner", "atmosphere", "terrain",
-                       "settlements"});
-    std::string type = "oneill_cylinder";
-    habitat.read("type", type);
-    if (type != "oneill_cylinder" && !error)
-    {
-        error = ScenarioError{
-            .message =
-                std::format("habitat type '{}' is not supported yet (only oneill_cylinder)", type),
-            .line = habitat.line()};
-    }
+                       "antisunward_endcap", "torus", "sphere", "ring", "mirrors", "partner",
+                       "atmosphere", "terrain", "settlements"});
+    habitat.read("type", spec.kind);
     habitat.read("radius_m", spec.radiusM);
     habitat.read("length_m", spec.lengthM);
     habitat.read("surface_gravity_g", spec.surfaceGravityG);
@@ -287,6 +341,7 @@ void readHabitat(const toml::table& table, OneillCylinderSpec& spec,
     readEndcap(habitat, "sunward_endcap", "habitat.sunward_endcap", spec.sunwardEndcap, error);
     readEndcap(habitat, "antisunward_endcap", "habitat.antisunward_endcap", spec.antisunwardEndcap,
                error);
+    readShapes(habitat, spec, error);
 
     if (const toml::table* mirrors = habitat.table("mirrors"))
     {
@@ -429,12 +484,13 @@ void dayAndClimateProblems(const Scenario& scenario, std::vector<std::string>& p
             "the night mirror angle must be between 90 and 150 degrees, or sunlight still gets in "
             "at midnight");
     }
-    if (scenario.climate.cloudTopM > 0.8 * scenario.habitat.radiusM)
+    if (const double headroom = headroomM(scenario.habitat);
+        scenario.climate.cloudTopM > 0.8 * headroom)
     {
         problems.push_back(
             std::format("the cloud deck must stay well inside the habitat: its top belongs below "
                         "{:.0f} m, not {:.0f} m",
-                        0.8 * scenario.habitat.radiusM, scenario.climate.cloudTopM));
+                        0.8 * headroom, scenario.climate.cloudTopM));
     }
     if (!validClimate(scenario.climate))
     {
@@ -452,20 +508,29 @@ void skyAndStartProblems(const Scenario& scenario, std::vector<std::string>& pro
     {
         problems.emplace_back("the habitat's clock must be within 14 hours of UTC");
     }
-    if (scenario.start.valley < 0 || scenario.start.valley >= scenario.habitat.stripPairs)
+    const HabitatSpec& spec  = scenario.habitat;
+    const int          bands = bandCount(spec);
+    if (scenario.start.band < 0 || scenario.start.band >= bands)
     {
         problems.push_back(
-            std::format("this habitat has valleys 0 to {}, so the visit cannot "
-                        "start in valley {}",
-                        scenario.habitat.stripPairs - 1, scenario.start.valley));
+            spec.kind == HabitatKind::ONEILL_CYLINDER
+                ? std::format("this habitat has valleys 0 to {}, so the visit cannot "
+                              "start in valley {}",
+                              bands - 1, scenario.start.band)
+                : std::format("this habitat has one band of land (band 0), so the visit cannot "
+                              "start on band {}",
+                              scenario.start.band));
     }
-    const double halfFloor = std::max(0.5 * scenario.habitat.lengthM, 0.0);
-    if (std::abs(scenario.start.zM) > halfFloor)
+    // Along an O'Neill cylinder's valley is z; the other kinds' land goes round the axis.
+    const double halfAlong = spec.kind == HabitatKind::ONEILL_CYLINDER
+                                 ? std::max(0.5 * spec.lengthM, 0.0)
+                                 : kPi * spec.radiusM;
+    if (std::abs(scenario.start.alongM) > halfAlong)
     {
         problems.push_back(
             std::format("the visit starts outside the habitat: it must begin within {:.0f} m of "
                         "the middle, not {:.0f} m",
-                        halfFloor, scenario.start.zM));
+                        halfAlong, scenario.start.alongM));
     }
 }
 
@@ -485,6 +550,57 @@ void writeEndcap(std::string& out, std::string_view table, const EndcapSpec& end
             "hub_radius_m = {}\n",
             number(endcap.rampSlopeDeg), number(endcap.rampTopRadiusFraction),
             number(endcap.upperSlopeDeg), number(endcap.hubRadiusM));
+    }
+}
+
+/// The [habitat] table's own keys and the shape tables of its kind.
+void writeShape(std::string& out, const HabitatSpec& spec)
+{
+    out += std::format("[habitat]\ntype = {}\nradius_m = {}\n",
+                       tomlString(habitatKindKey(spec.kind)), number(spec.radiusM));
+    if (spec.kind == HabitatKind::ONEILL_CYLINDER || spec.kind == HabitatKind::KALPANA_CYLINDER ||
+        spec.kind == HabitatKind::BISHOP_RING)
+    {
+        out += std::format("length_m = {}\n", number(spec.lengthM));
+    }
+    out += std::format("surface_gravity_g = {}\n", number(spec.surfaceGravityG));
+    if (spec.kind == HabitatKind::ONEILL_CYLINDER)
+    {
+        out += std::format("strip_pairs = {}\nwindow_fraction = {}\n", spec.stripPairs,
+                           number(spec.windowFraction));
+    }
+    out += std::format("population_density_per_km2 = {}\n", number(spec.populationDensityPerKm2));
+    switch (spec.kind)
+    {
+        case HabitatKind::ONEILL_CYLINDER:
+            writeEndcap(out, "sunward_endcap", spec.sunwardEndcap);
+            writeEndcap(out, "antisunward_endcap", spec.antisunwardEndcap);
+            break;
+        case HabitatKind::STANFORD_TORUS:
+        {
+            const TorusSpec& torus = spec.torus;
+            out += std::format(
+                "\n# The tube around the wheel, and what connects it to the hub.\n"
+                "[habitat.torus]\ntube_radius_m = {}\nhub_radius_m = {}\nspokes = {}\n"
+                "spoke_radius_m = {}\nland_half_angle_deg = {}\nceiling_window_share = {}\n"
+                "sections = {}\nshield_m = {}\n",
+                number(torus.tubeRadiusM), number(torus.hubRadiusM), torus.spokes,
+                number(torus.spokeRadiusM), number(torus.landHalfAngleDeg),
+                number(torus.ceilingWindowShare), torus.sections, number(torus.shieldM));
+            break;
+        }
+        case HabitatKind::BERNAL_SPHERE:
+            out += std::format(
+                "\n# The band of land around the equator, and the windows at the poles.\n"
+                "[habitat.sphere]\nland_latitude_deg = {}\nwindow_latitude_deg = {}\n",
+                number(spec.sphere.landLatitudeDeg), number(spec.sphere.windowLatitudeDeg));
+            break;
+        case HabitatKind::BISHOP_RING:
+            out += std::format("\n[habitat.ring]\nwall_height_m = {}\nsun_tilt_deg = {}\n",
+                               number(spec.ring.wallHeightM), number(spec.ring.sunTiltDeg));
+            break;
+        case HabitatKind::KALPANA_CYLINDER:
+            break;
     }
 }
 
@@ -537,9 +653,12 @@ std::expected<Scenario, ScenarioError> parseScenario(std::string_view toml)
     if (const toml::table* start = top.table("start"))
     {
         TableReader reader(*start, "start", error);
-        reader.allowOnly({"valley", "z_m", "heading_deg"});
-        reader.read("valley", scenario.start.valley);
-        reader.read("z_m", scenario.start.zM);
+        reader.allowOnly({"band", "along_m", "across_m", "heading_deg", "valley", "z_m"});
+        reader.read("valley", scenario.start.band);  // the names before M8
+        reader.read("z_m", scenario.start.alongM);
+        reader.read("band", scenario.start.band);
+        reader.read("along_m", scenario.start.alongM);
+        reader.read("across_m", scenario.start.acrossM);
         reader.read("heading_deg", scenario.start.headingDeg);
     }
     readSkyAndDay(top, scenario, error);
@@ -565,8 +684,8 @@ std::expected<Scenario, ScenarioError> parseScenario(std::string_view toml)
 
 std::string serializeScenario(const Scenario& scenario)
 {
-    const OneillCylinderSpec& spec = scenario.habitat;
-    std::string               out;
+    const HabitatSpec& spec = scenario.habitat;
+    std::string        out;
     out += "# StarshipSimulator habitat scenario\n";
     out +=
         std::format("format_version = {}\ngenerator_version = {}\ntitle = {}\n",
@@ -576,20 +695,16 @@ std::string serializeScenario(const Scenario& scenario)
         out += std::format("description = {}\n", tomlString(scenario.description));
     }
     out += "\n# Spin axis +Z points at the Sun. Gravity comes from spin: omega^2 * radius.\n";
-    out += "[habitat]\ntype = \"oneill_cylinder\"\n";
-    out += std::format(
-        "radius_m = {}\nlength_m = {}\nsurface_gravity_g = {}\nstrip_pairs = {}\n"
-        "window_fraction = {}\npopulation_density_per_km2 = {}\n",
-        number(spec.radiusM), number(spec.lengthM), number(spec.surfaceGravityG), spec.stripPairs,
-        number(spec.windowFraction), number(spec.populationDensityPerKm2));
-    writeEndcap(out, "sunward_endcap", spec.sunwardEndcap);
-    writeEndcap(out, "antisunward_endcap", spec.antisunwardEndcap);
+    writeShape(out, spec);
     out += "\n# 45 degrees puts the sun overhead; 90 is sunset.\n";
     out += std::format("[habitat.mirrors]\nopening_angle_deg = {}\nreflectivity = {}\n",
                        number(spec.mirrors.openingAngleDeg), number(spec.mirrors.reflectivity));
-    out += "\n# The counter-rotating partner cylinder, alongside (axis to axis).\n";
-    out += std::format("[habitat.partner]\nenabled = {}\nseparation_m = {}\n",
-                       boolean(spec.partner.enabled), number(spec.partner.separationM));
+    if (spec.kind == HabitatKind::ONEILL_CYLINDER)
+    {
+        out += "\n# The counter-rotating partner cylinder, alongside (axis to axis).\n";
+        out += std::format("[habitat.partner]\nenabled = {}\nseparation_m = {}\n",
+                           boolean(spec.partner.enabled), number(spec.partner.separationM));
+    }
     out += std::format("\n[habitat.atmosphere]\nsurface_pressure_kpa = {}\ntemperature_k = {}\n",
                        number(spec.atmosphere.surfacePressurePa / 1000.0),
                        number(spec.atmosphere.temperatureK));
@@ -606,9 +721,11 @@ std::string serializeScenario(const Scenario& scenario)
         "\n[habitat.settlements]\ntowns_per_valley = {}\ntown_radius_m = {}\n"
         "farms_per_valley = {}\n",
         settlements.townsPerValley, number(settlements.townRadiusM), settlements.farmsPerValley);
-    out +=
-        std::format("\n[start]\nvalley = {}\nz_m = {}\nheading_deg = {}\n", scenario.start.valley,
-                    number(scenario.start.zM), number(scenario.start.headingDeg));
+    out += std::format(
+        "\n# Where the visit begins: on a band of land, along and across it from its middle.\n"
+        "[start]\nband = {}\nalong_m = {}\nacross_m = {}\nheading_deg = {}\n",
+        scenario.start.band, number(scenario.start.alongM), number(scenario.start.acrossM),
+        number(scenario.start.headingDeg));
     out += std::format("\n# Where the habitat is and when the visit begins (UTC).\n# Locations: {}",
                        locationKeyList());
     out += std::format("\n[sky]\nlocation = {}\nstart = {}\nutc_offset_hours = {}\n",
@@ -634,17 +751,45 @@ std::string serializeScenario(const Scenario& scenario)
     return out;
 }
 
-std::string describeHabitat(const OneillCylinderSpec& spec)
+std::string describeHabitat(const HabitatSpec& spec)
 {
-    const HabitatMetrics metrics = computeMetrics(spec);
+    const HabitatMetrics metrics  = computeMetrics(spec);
+    const double         landKm2  = metrics.landAreaM2 / 1e6;
+    const char*          material = materialClassName(metrics.material);
+    switch (spec.kind)
+    {
+        case HabitatKind::ONEILL_CYLINDER:
+            break;
+        case HabitatKind::KALPANA_CYLINDER:
+            return std::format("{:.0f} m across, {:.0f} m long, {:.2f} g, {:.2f} km2 of land, {}",
+                               2.0 * spec.radiusM, spec.lengthM, spec.surfaceGravityG, landKm2,
+                               material);
+        case HabitatKind::STANFORD_TORUS:
+            return std::format(
+                "a {:.1f} km wheel with a {:.0f} m tube, {:.2f} g, {:.2f} km2 of land, {}",
+                2.0 * spec.radiusM / 1000.0, 2.0 * spec.torus.tubeRadiusM, spec.surfaceGravityG,
+                landKm2, material);
+        case HabitatKind::BERNAL_SPHERE:
+            return std::format("a {:.0f} m sphere, {:.2f} g, {:.2f} km2 of land, {}",
+                               2.0 * spec.radiusM, spec.surfaceGravityG, landKm2, material);
+        case HabitatKind::BISHOP_RING:
+            return std::format("a {:.0f} km ring, {:.0f} km wide, {:.2f} g, {:.0f} km2 of land, {}",
+                               2.0 * spec.radiusM / 1000.0, spec.lengthM / 1000.0,
+                               spec.surfaceGravityG, landKm2, material);
+    }
     return std::format("{:.1f} km across, {:.0f} km long, {:.2f} g, {:.0f} km2 of land, {}",
                        2.0 * spec.radiusM / 1000.0, spec.lengthM / 1000.0, spec.surfaceGravityG,
-                       metrics.landAreaM2 / 1e6, materialClassName(metrics.material));
+                       landKm2, material);
 }
 
 std::vector<std::string> validateScenario(const Scenario& scenario)
 {
     std::vector<std::string> problems = validate(scenario.habitat);
+    if (!habitatKindBuilt(scenario.habitat.kind))
+    {
+        problems.push_back(
+            std::format("a {} cannot be built yet", habitatKindName(scenario.habitat.kind)));
+    }
     dayAndClimateProblems(scenario, problems);
     skyAndStartProblems(scenario, problems);
     return problems;

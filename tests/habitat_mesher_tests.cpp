@@ -23,7 +23,7 @@ using namespace StarshipSimulator;  // NOLINT(google-build-using-namespace): tes
 /// Island Three meshed coarsely, so the tests run fast.
 const HabitatMeshes& coarseIslandThree()
 {
-    static const HabitatGeometry kGeometry{OneillCylinderSpec{}};
+    static const HabitatGeometry kGeometry{HabitatSpec{}};
     static const HabitatMeshes   kMeshes = buildHabitatMeshes(
         kGeometry,
         MeshingSettings{
@@ -33,7 +33,7 @@ const HabitatMeshes& coarseIslandThree()
 
 const HabitatGeometry& islandThree()
 {
-    static const HabitatGeometry kGeometry{OneillCylinderSpec{}};
+    static const HabitatGeometry kGeometry{HabitatSpec{}};
     return kGeometry;
 }
 
@@ -143,7 +143,7 @@ TEST(HabitatMesher, NeighbouringChunksShareTheirEdgesExactly)
 
 TEST(HabitatMesher, OutputDoesNotDependOnTheThreadCount)
 {
-    OneillCylinderSpec spec;
+    HabitatSpec spec;
     spec.radiusM           = 1000.0;
     spec.lengthM           = 8000.0;
     spec.antisunwardEndcap = makeEndcap(EndcapShape::HEMISPHERE);

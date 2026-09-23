@@ -21,8 +21,8 @@ namespace gpu = StarshipSimulator::gpu;
 using StarshipSimulator::Camera;
 using StarshipSimulator::degreesToRadians;
 using StarshipSimulator::HabitatGeometry;
+using StarshipSimulator::HabitatSpec;
 using StarshipSimulator::Mat4f;
-using StarshipSimulator::OneillCylinderSpec;
 using StarshipSimulator::Vec3d;
 using StarshipSimulator::Vec4f;
 using StarshipSimulator::Weather;
@@ -58,7 +58,7 @@ TEST(FrameUniforms, ViewportAndCamera)
 
 TEST(HabitatUniforms, DescribeShapeLightAndAir)
 {
-    const HabitatGeometry      geometry{OneillCylinderSpec{}};
+    const HabitatGeometry      geometry{HabitatSpec{}};
     const gpu::HabitatUniforms habitat = gpu::makeHabitatUniforms(
         geometry, degreesToRadians(60.0), gpu::LightingSettings{}, Weather{}, gpu::CloudSettings{});
     EXPECT_FLOAT_EQ(habitat.shape.x, 4000.0F);

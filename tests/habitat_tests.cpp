@@ -20,9 +20,9 @@ namespace
 using namespace StarshipSimulator;  // NOLINT(google-build-using-namespace): test brevity
 
 /// Island Three without terrain relief, for exact geometric checks.
-OneillCylinderSpec flatIslandThree()
+HabitatSpec flatIslandThree()
 {
-    OneillCylinderSpec spec;
+    HabitatSpec spec;
     spec.terrain.hillHeightM     = 0.0;
     spec.terrain.mountainHeightM = 0.0;
     spec.terrain.riverWidthM     = 0.0;
@@ -41,7 +41,7 @@ void expectNear(const Vec3d& actual, const Vec3d& expected, double tolerance)
 
 TEST(Metrics, IslandThreeReferenceNumbers)
 {
-    const HabitatMetrics m = computeMetrics(OneillCylinderSpec{});
+    const HabitatMetrics m = computeMetrics(HabitatSpec{});
     EXPECT_NEAR(m.omega, 0.049514, 1e-6);
     EXPECT_NEAR(m.periodS, 126.90, 0.01);
     EXPECT_NEAR(m.rpm, 0.4728, 1e-4);
@@ -54,6 +54,47 @@ TEST(Metrics, IslandThreeReferenceNumbers)
     EXPECT_NEAR(m.hoopSpecificStrength / 1e6, 0.0392, 1e-4);
     EXPECT_EQ(m.material, MaterialClass::STEEL);
     EXPECT_NEAR(m.population, 2.01e6, 0.01e6);
+}
+
+TEST(Metrics, EachKindMeasuresItsOwnShape)
+{
+    // The Stanford torus of the 1975 study: a 1790 m wheel turning once a minute.
+    HabitatSpec torus;
+    torus.kind             = HabitatKind::STANFORD_TORUS;
+    torus.radiusM          = 895.0;
+    const HabitatMetrics t = computeMetrics(torus);
+    EXPECT_NEAR(t.periodS, 60.0, 0.1);
+    EXPECT_NEAR(t.rimSpeed, 93.7, 0.1);
+    EXPECT_NEAR(t.coriolisWalkingRatio, 0.0299, 2e-4);
+    // The floor 30 degrees up either side of the tube's lowest line, on a tube of 65 m around a
+    // centre line 830 m from the axis: 2 pi a 2 (R_c phi + a sin phi).
+    EXPECT_NEAR(t.landAreaM2, 2.0 * kPi * 65.0 * 2.0 * ((830.0 * kPi / 6.0) + (65.0 * 0.5)), 1.0);
+    EXPECT_NEAR(t.volumeM3, 2.0 * kPi * kPi * 830.0 * 65.0 * 65.0, 1.0);
+    EXPECT_EQ(t.material, MaterialClass::STEEL);
+
+    // Island One: a 500 m sphere, land to 35 degrees either side of the equator.
+    HabitatSpec sphere;
+    sphere.kind            = HabitatKind::BERNAL_SPHERE;
+    sphere.radiusM         = 250.0;
+    const HabitatMetrics s = computeMetrics(sphere);
+    EXPECT_NEAR(s.periodS, 31.7, 0.1);
+    EXPECT_NEAR(s.landAreaM2, 4.0 * kPi * 250.0 * 250.0 * std::sin(degreesToRadians(35.0)), 1.0);
+    EXPECT_NEAR(s.volumeM3, 4.0 / 3.0 * kPi * 250.0 * 250.0 * 250.0, 1.0);
+
+    // Kalpana One: the paper's 510,000 m2 of 1 g living area, the whole hull.
+    HabitatSpec kalpana;
+    kalpana.kind    = HabitatKind::KALPANA_CYLINDER;
+    kalpana.radiusM = 250.0;
+    kalpana.lengthM = 325.0;
+    EXPECT_NEAR(computeMetrics(kalpana).landAreaM2, 510000.0, 1000.0);
+
+    // A Bishop ring needs a hull no known material makes today.
+    HabitatSpec ring;
+    ring.kind    = HabitatKind::BISHOP_RING;
+    ring.radiusM = 1.0e6;
+    ring.lengthM = 500000.0;
+    EXPECT_EQ(computeMetrics(ring).material, MaterialClass::FUTURE_MATERIALS);
+    EXPECT_NEAR(computeMetrics(ring).landAreaM2 / 1e6, 3.14e6, 0.01e6);  // 3 million km2
 }
 
 TEST(Metrics, BishopRingNeedsFutureMaterials)
@@ -71,16 +112,63 @@ TEST(Metrics, SmallerHabitatsSpinFaster)
 
 // ---- Spec validation ---------------------------------------------------------------------------
 
+TEST(HabitatSpec, EachKindHasItsOwnRules)
+{
+    HabitatSpec torus;
+    torus.kind    = HabitatKind::STANFORD_TORUS;
+    torus.radiusM = 895.0;
+    EXPECT_TRUE(validate(torus).empty()) << validate(torus).front();
+    torus.torus.tubeRadiusM = 400.0;  // wider than a wheel this size can bend
+    ASSERT_EQ(validate(torus).size(), 1U);
+    EXPECT_NE(validate(torus).front().find("tube"), std::string::npos);
+
+    HabitatSpec sphere;
+    sphere.kind    = HabitatKind::BERNAL_SPHERE;
+    sphere.radiusM = 250.0;
+    EXPECT_TRUE(validate(sphere).empty()) << validate(sphere).front();
+    sphere.sphere.windowLatitudeDeg = 37.0;  // the windows would start on the land
+    ASSERT_EQ(validate(sphere).size(), 1U);
+    EXPECT_NE(validate(sphere).front().find("latitude"), std::string::npos);
+
+    // Kalpana One is shorter than an O'Neill cylinder may be, and needs no windows along it.
+    HabitatSpec kalpana;
+    kalpana.kind    = HabitatKind::KALPANA_CYLINDER;
+    kalpana.radiusM = 250.0;
+    kalpana.lengthM = 325.0;
+    EXPECT_TRUE(validate(kalpana).empty()) << validate(kalpana).front();
+    HabitatSpec shortOneill = kalpana;
+    shortOneill.kind        = HabitatKind::ONEILL_CYLINDER;
+    EXPECT_FALSE(validate(shortOneill).empty());
+
+    HabitatSpec ring;
+    ring.kind    = HabitatKind::BISHOP_RING;
+    ring.radiusM = 1.0e6;
+    ring.lengthM = 500000.0;
+    EXPECT_TRUE(validate(ring).empty()) << validate(ring).front();
+    ring.radiusM = 4000.0;  // a ring is a planet-sized thing
+    EXPECT_FALSE(validate(ring).empty());
+
+    EXPECT_EQ(headroomM(HabitatSpec{}), 4000.0);  // Island Three: the axis, 4 km up
+    EXPECT_EQ(headroomM(torus), 800.0);           // the tube: 2 x 400 m
+    EXPECT_EQ(bandCount(HabitatSpec{}), 3);       // Island Three's three valleys
+    EXPECT_EQ(bandCount(torus), 1);
+    for (const HabitatKind kind : allHabitatKinds())
+    {
+        EXPECT_EQ(habitatKindFromKey(habitatKindKey(kind)), kind);
+    }
+    EXPECT_FALSE(habitatKindFromKey("dyson_sphere").has_value());
+}
+
 TEST(HabitatSpec, DefaultsAreValidAndNonsenseIsNot)
 {
-    EXPECT_TRUE(validate(OneillCylinderSpec{}).empty());
-    OneillCylinderSpec bad;
+    EXPECT_TRUE(validate(HabitatSpec{}).empty());
+    HabitatSpec bad;
     bad.radiusM    = -5.0;
     bad.stripPairs = 0;
     EXPECT_GE(validate(bad).size(), 2U);
     EXPECT_THROW(HabitatGeometry{bad}, std::invalid_argument);
 
-    OneillCylinderSpec tooShort;
+    HabitatSpec tooShort;
     tooShort.lengthM = 8000.0;  // the conical ramp alone is 7 km deep
     EXPECT_FALSE(validate(tooShort).empty());
 }
@@ -89,7 +177,7 @@ TEST(HabitatSpec, DefaultsAreValidAndNonsenseIsNot)
 
 TEST(MeridianProfile, IslandThreeHasRampFloorAndDome)
 {
-    const MeridianProfile profile = buildOneillProfile(OneillCylinderSpec{});
+    const MeridianProfile profile = buildOneillProfile(HabitatSpec{});
     const double          lower   = 2000.0 / std::tan(degreesToRadians(25.0));
     const double          upper   = 1940.0 / std::tan(degreesToRadians(35.0));
     const double          floorZ  = -16000.0 + lower + upper;
@@ -109,7 +197,7 @@ TEST(MeridianProfile, IslandThreeHasRampFloorAndDome)
 
 TEST(MeridianProfile, ArcLengthRoundTrips)
 {
-    const MeridianProfile profile = buildOneillProfile(OneillCylinderSpec{});
+    const MeridianProfile profile = buildOneillProfile(HabitatSpec{});
     for (const double z : {-15000.0, -9000.0, 0.0, 15000.0, 19000.0})
     {
         EXPECT_NEAR(profile.pointAt(profile.arcAt(z)).x, z, 1e-6);
@@ -127,7 +215,7 @@ TEST(MeridianProfile, ArcLengthRoundTrips)
 
 TEST(HabitatGeometry, RegionsAlternateAroundTheAxis)
 {
-    const HabitatGeometry geometry(OneillCylinderSpec{});
+    const HabitatGeometry geometry(HabitatSpec{});
     EXPECT_EQ(geometry.regionAt(0.0, 0.0).kind, RegionKind::WINDOW);
     EXPECT_EQ(geometry.regionAt(0.0, 0.0).index, 0);
     EXPECT_EQ(geometry.regionAt(0.0, kPi).kind, RegionKind::LAND);
@@ -142,7 +230,7 @@ TEST(HabitatGeometry, RegionsAlternateAroundTheAxis)
 
 TEST(HabitatGeometry, WindowsAreFlatGlassAndLandHasHills)
 {
-    const HabitatGeometry geometry(OneillCylinderSpec{});
+    const HabitatGeometry geometry(HabitatSpec{});
     EXPECT_EQ(geometry.terrainHeight(0.0, 0.0), 0.0);
     EXPECT_EQ(geometry.groundRadius(0.0, 0.0).value_or(-1.0), 4000.0);
     // Land right next to the glass is flush with it.
@@ -182,7 +270,7 @@ TEST(HabitatGeometry, GroundUpAndSlope)
 
 TEST(HabitatGeometry, WalkableRangeStopsAtTheEnds)
 {
-    const HabitatGeometry geometry(OneillCylinderSpec{});
+    const HabitatGeometry geometry(HabitatSpec{});
     EXPECT_NEAR(geometry.walkableZMin(), -15999.0, 1e-9);
     EXPECT_NEAR(geometry.walkableZMax(), 19999.0, 1e-9);
 }
@@ -242,7 +330,7 @@ TEST(MirrorOptics, DaylightFadesAtDuskAndNight)
     EXPECT_GT(daylightFactor(degreesToRadians(88.0)), 0.0);
     EXPECT_LT(daylightFactor(degreesToRadians(88.0)), 1.0);
 
-    const HabitatGeometry geometry(OneillCylinderSpec{});
+    const HabitatGeometry geometry(HabitatSpec{});
     const auto            beams = sunBeams(geometry, degreesToRadians(60.0));
     ASSERT_EQ(beams.size(), 3U);
     EXPECT_NEAR(beams[0].intensity, 0.9, 1e-12);  // mirror reflectivity
@@ -293,7 +381,7 @@ TEST(DaySchedule, IsContinuous)
 
 TEST(HabitatSpec, PartnerMirrorsMustClearEachOther)
 {
-    OneillCylinderSpec spec;
+    HabitatSpec spec;
     EXPECT_GE(spec.partner.separationM, minimumPartnerSeparation(spec));
     spec.partner.separationM = 20000.0;
     EXPECT_FALSE(validate(spec).empty());

@@ -29,16 +29,16 @@ struct HabitatMetrics
     double coriolisWalkingRatio = 0.0;  // Coriolis acceleration at 1.4 m/s over floor gravity
     double axisPressureRatio    = 0.0;  // air pressure at the axis relative to the floor
     double axisTemperatureDropK = 0.0;  // for a well-mixed (adiabatic) atmosphere
-    double landAreaM2           = 0.0;  // valley floors
+    double landAreaM2           = 0.0;  // the floor that is land
     double windowAreaM2         = 0.0;
-    double volumeM3             = 0.0;  // cylinder section
+    double volumeM3             = 0.0;  // of air inside
     double population           = 0.0;
     double hoopSpecificStrength = 0.0;  // J/kg = (m/s)^2 a free-standing hoop needs
     MaterialClass material      = MaterialClass::STEEL;
 };
 
 [[nodiscard]] double spinRate(double radiusM, double gravityG);  // rad/s for this gravity at radius
-[[nodiscard]] HabitatMetrics computeMetrics(const OneillCylinderSpec& spec);
+[[nodiscard]] HabitatMetrics computeMetrics(const HabitatSpec& spec);
 
 /// Pressure at distance r from the axis relative to the floor, for an isothermal atmosphere.
 [[nodiscard]] double pressureRatioAt(double omega, double radiusM, double r, double temperatureK);

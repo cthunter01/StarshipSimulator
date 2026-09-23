@@ -128,7 +128,7 @@ private:
 
     // Habitats
     void                 adoptWorld(GeneratedWorld world, bool placeAtStart);
-    void                 startGeneration(const OneillCylinderSpec& spec, bool placeAtStart);
+    void                 startGeneration(const HabitatSpec& spec, bool placeAtStart);
     void                 pollGeneration();
     void                 loadScenarioFile(const std::filesystem::path& path);
     void                 editScenarioFile(const std::filesystem::path& path);

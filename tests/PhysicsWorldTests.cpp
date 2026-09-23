@@ -31,7 +31,7 @@ constexpr double kRadius = 250.0;
 /// large there. Optionally with one lake per valley.
 std::shared_ptr<const HabitatGeometry> smallHabitat(bool lakes = false)
 {
-    OneillCylinderSpec spec;
+    HabitatSpec spec;
     spec.radiusM                 = kRadius;
     spec.lengthM                 = 800.0;
     spec.windowFraction          = 0.4;

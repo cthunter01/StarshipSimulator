@@ -110,8 +110,8 @@ AlmanacPage standingHere(const AlmanacState& state)
 
 AlmanacPage theHabitat(const AlmanacState& state)
 {
-    const OneillCylinderSpec& spec    = state.geometry->spec();
-    const HabitatMetrics&     metrics = state.metrics;
+    const HabitatSpec&    spec    = state.geometry->spec();
+    const HabitatMetrics& metrics = state.metrics;
 
     AlmanacPage page;
     page.title = "This habitat";

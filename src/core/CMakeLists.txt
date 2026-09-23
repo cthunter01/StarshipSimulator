@@ -21,8 +21,10 @@ add_library(StarshipSimulator_core STATIC
     gpu_abi/spirv_reflect.cpp
     gpu_abi/uniforms.cpp
     habitat/day_schedule.cpp
+    habitat/Enclosure.cpp
     habitat/HabitatGeometry.cpp
     habitat/habitat_spec.cpp
+    habitat/land_layout.cpp
     habitat/Landscape.cpp
     habitat/MeridianProfile.cpp
     habitat/metrics.cpp
